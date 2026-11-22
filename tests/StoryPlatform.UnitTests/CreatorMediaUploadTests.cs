@@ -1,3 +1,6 @@
+using StoryPlatform.UnitTests.Infrastructure.Caching;
+using StoryPlatform.Infrastructure.Caching;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.MediaGeneration;
@@ -193,6 +196,27 @@ public sealed class CreatorMediaUploadTests
         Assert.Empty(package.Replacements); Assert.Null(package.ConfirmedByUserId);
         story.ArchivedAt=DateTime.UtcNow;
         await Assert.ThrowsAsync<NotFoundException>(() => f.Media.GetPublishedCreatorPackageAsync(1));
+    }
+
+    [Fact]
+    public async Task PublishedCreatorPackage_WithCache_RoundTripsAndStillChecksLiveState()
+    {
+        var f=new Fixture(); await f.Initialize();
+        var backing=new DistributedAppCacheTests.DictionaryDistributedCache();
+        var media=MediaGenerationServiceTests.Create(f.Store, storage: f.Storage,
+            cache: new DistributedAppCache(backing, NullLogger<DistributedAppCache>.Instance));
+        var story=f.Store.Items<Story>().Single(); story.IsPublished=true; story.Status=StoryStatus.Ready;
+        var version=f.Store.Items<StoryVersion>().Single();
+
+        var first=await media.GetPublishedCreatorPackageAsync(1);
+        var second=await media.GetPublishedCreatorPackageAsync(1);
+
+        Assert.True(backing.Store.ContainsKey("storyplatform:" + MediaGenerationService.CommunityMediaCacheKey(
+            1, version.Id, version.MediaState.MediaPackageRevision)));
+        Assert.Equal(System.Text.Json.JsonSerializer.Serialize(first), System.Text.Json.JsonSerializer.Serialize(second));
+        Assert.Empty(second.Replacements); Assert.Null(second.ConfirmedByUserId);
+        story.ArchivedAt=DateTime.UtcNow;
+        await Assert.ThrowsAsync<NotFoundException>(() => media.GetPublishedCreatorPackageAsync(1));
     }
 
     [Theory]

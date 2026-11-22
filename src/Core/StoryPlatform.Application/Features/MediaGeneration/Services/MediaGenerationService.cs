@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using StoryPlatform.Application.Abstractions.Caching;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
@@ -27,6 +28,7 @@ namespace StoryPlatform.Application.Features.MediaGeneration.Services;
 public sealed partial class MediaGenerationService : IMediaGenerationService, IMediaGenerationJobProcessor
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IAppCache? _cache;
     private readonly IMediaContextBuilder _contextBuilder;
     private readonly IProviderMediaContextProjector _contextProjector;
     private readonly IStoryBlockParser _blockParser;
@@ -76,8 +78,10 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         IMediaUploadValidator? uploadValidator = null, IProviderMediaContextProjector? contextProjector = null,
         IPlanSettingsProvider? planSettings = null,
         StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? tokenQuota = null,
-        StoryPlatform.Application.Abstractions.AI.IAccountAiActivityService? aiActivity = null)
+        StoryPlatform.Application.Abstractions.AI.IAccountAiActivityService? aiActivity = null,
+        IAppCache? cache = null)
     {
+        _cache = cache;
         _planSettings = planSettings;
         _tokenQuota = tokenQuota;
         _unitOfWork = unitOfWork;
@@ -167,11 +171,39 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         if (story is null || story.IsDeleted || story.Scope != StoryScope.Creator || !story.IsPublished
             || story.Status != StoryStatus.Ready || story.ArchivedAt != null)
             throw new NotFoundException("Story", storyId);
-        var package = await BuildPackageAsync(story, storyId, cancellationToken);
-        return package with { Replacements = [], ConfirmedByUserId = null };
+        // Trạng thái công khai luôn đọc mới ở trên; chỉ phần gói (chưa ký) được cache. Key gồm version và revision
+        // nên bản sửa media mới không bao giờ đọc nhầm gói cũ. Link ký (10 phút) được tạo lại ở mỗi request.
+        var version = (await _unitOfWork.Repository<StoryVersion>().FindAsync(
+            x => x.StoryId == storyId && x.IsCurrent, cancellationToken: cancellationToken)).FirstOrDefault()
+            ?? throw new NotFoundException("Current story version", storyId);
+        var unsigned = await _cache.GetOrSetOrLoadAsync(
+            CommunityMediaCacheKey(storyId, version.Id, version.MediaState.MediaPackageRevision),
+            async ct =>
+            {
+                var built = await BuildUnsignedPackageAsync(story, storyId, ct);
+                return built with { Package = built.Package with { Replacements = [], ConfirmedByUserId = null } };
+            },
+            CommunityMediaCacheTtl, cancellationToken);
+        return await SignPackageAsync(unsigned.Package, cancellationToken,
+            unsigned.LegacyPaths.ToHashSet(StringComparer.Ordinal));
     }
 
+    public static string CommunityMediaCacheKey(int storyId, int storyVersionId, int packageRevision) =>
+        $"community-media:{storyId}:v{storyVersionId}:r{packageRevision}";
+
+    private static readonly TimeSpan CommunityMediaCacheTtl = TimeSpan.FromMinutes(10);
+
+    /// <summary>Gói media chưa ký link, kèm các đường dẫn HTTPS cũ (seed) được phép trả nguyên.</summary>
+    public sealed record UnsignedMediaPackage(StoryMediaPackage Package, IReadOnlyList<string> LegacyPaths);
+
     private async Task<StoryMediaPackage> BuildPackageAsync(Story story, int storyId, CancellationToken cancellationToken)
+    {
+        var unsigned = await BuildUnsignedPackageAsync(story, storyId, cancellationToken);
+        return await SignPackageAsync(unsigned.Package, cancellationToken,
+            unsigned.LegacyPaths.ToHashSet(StringComparer.Ordinal));
+    }
+
+    private async Task<UnsignedMediaPackage> BuildUnsignedPackageAsync(Story story, int storyId, CancellationToken cancellationToken)
     {
         var version = (await _unitOfWork.Repository<StoryVersion>().FindAsync(
             x => x.StoryId == storyId && x.IsCurrent, cancellationToken: cancellationToken)).FirstOrDefault()
@@ -234,9 +266,9 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
             var audio = assets.FirstOrDefault(x => x.IsCurrent && x.StoryVocabularyId == word.Id && x.Type == MediaType.VocabularyAudio);
             return new VocabularyAudioMediaItem(word.Id, word.Term, audio?.Id, audio?.Status.ToString() ?? "Queued", audio?.Url);
         }).ToArray() };
-        return await SignPackageAsync(package, cancellationToken,
+        return new UnsignedMediaPackage(package,
             assets.Where(x => x.RequestedPackageRevision == null && x.Status == MediaStatus.Ready && x.Url != null)
-                .Select(x => x.Url!).ToHashSet(StringComparer.Ordinal));
+                .Select(x => x.Url!).Distinct(StringComparer.Ordinal).ToArray());
     }
 
     private async Task<StoryMediaPackage> SignPackageAsync(StoryMediaPackage package, CancellationToken ct, IReadOnlySet<string> legacyPaths)

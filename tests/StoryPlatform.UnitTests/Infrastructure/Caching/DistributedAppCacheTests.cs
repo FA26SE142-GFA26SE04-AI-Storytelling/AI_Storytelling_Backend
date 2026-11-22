@@ -12,7 +12,7 @@ public class DistributedAppCacheTests
 {
     private sealed record Sample(int Id, string Name);
 
-    private sealed class DictionaryDistributedCache : IDistributedCache
+    internal sealed class DictionaryDistributedCache : IDistributedCache
     {
         public readonly ConcurrentDictionary<string, byte[]> Store = new();
         public byte[]? Get(string key) => Store.TryGetValue(key, out var value) ? value : null;

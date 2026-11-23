@@ -18,9 +18,12 @@ public class ChildStoryBrowseService : IChildStoryBrowseService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IChildRoadmapEligibility _eligibility;
     private readonly IStoryCoverResolver? _covers;
+    private readonly StoryPlatform.Application.Features.ChildProfiles.Safety.Interfaces.IChildFeatureService? _childFeatures;
 
-    public ChildStoryBrowseService(IUnitOfWork unitOfWork, IChildRoadmapEligibility eligibility, IStoryCoverResolver? covers = null)
+    public ChildStoryBrowseService(IUnitOfWork unitOfWork, IChildRoadmapEligibility eligibility, IStoryCoverResolver? covers = null,
+        StoryPlatform.Application.Features.ChildProfiles.Safety.Interfaces.IChildFeatureService? childFeatures = null)
     {
+        _childFeatures = childFeatures;
         _unitOfWork = unitOfWork;
         _eligibility = eligibility;
         _covers = covers;
@@ -43,6 +46,13 @@ public class ChildStoryBrowseService : IChildStoryBrowseService
         var search = query.Search?.Trim().ToLowerInvariant();
         var wantMine = source != LibrarySource;
         var wantLibrary = source != MineSource;
+        // Quyền của bé: tắt "Tìm truyện trong thư viện" chỉ chặn phần thư viện; truyện của em (mine) luôn còn.
+        if (wantLibrary && _childFeatures is not null && !await _childFeatures.IsEnabledAsync(
+                childProfileId, StoryPlatform.Application.Features.ChildProfiles.Safety.ChildFeatures.LibraryBrowse, cancellationToken))
+        {
+            if (source == LibrarySource) throw new StoryPlatform.Application.Features.ChildProfiles.Safety.ChildFeatureDisabledException();
+            wantLibrary = false;
+        }
         var selected = await _unitOfWork.Repository<ChildRoadmapItem>().FindAsync(item => !item.IsDeleted
             && item.ChildProfileId == childProfileId && item.Source == ChildRoadmapItemSource.Manual
             && (item.Status == ChildRoadmapItemStatus.Waiting || item.Status == ChildRoadmapItemStatus.Open

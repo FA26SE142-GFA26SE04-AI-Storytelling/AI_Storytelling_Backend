@@ -12,9 +12,10 @@ public class RolePermissionAdminService(IUnitOfWork uow, IAuditLogWriter audit, 
 {
     public const string AuditAction = "RolePermissionsUpdated";
 
-    /// <summary>Mỗi bước duyệt nội dung dành cho trẻ phải luôn còn ít nhất một role nhân viên giữ quyền.</summary>
+    /// <summary>Mỗi bước duyệt nội dung dành cho trẻ phải luôn còn ít nhất một role giữ quyền.</summary>
     public static readonly IReadOnlyList<string> ReviewSteps =
     [
+        Permissions.Shared.StoryReviewApprove,
         Permissions.Moderation.QueueProcess,
         Permissions.Moderation.PublishedReview,
         Permissions.Review.PublicStory,
@@ -46,19 +47,18 @@ public class RolePermissionAdminService(IUnitOfWork uow, IAuditLogWriter audit, 
         var role = await FindRoleAsync(roleCode, cancellationToken);
         var links = await LinksAsync(role.Id, cancellationToken);
         var codes = Codes(links);
-        var staffCodes = links.Where(x => x.Permission.IsStaffGrantable).Select(x => x.Permission.Code);
-        return new RolePermissionsDto(role.Code, codes, Assignable(role.Code, staffCodes));
+        return new RolePermissionsDto(role.Code, codes, Assignable(role.Code, codes));
     }
 
     /// <summary>
     /// Tạm thời chỉ cho thu hoặc trả lại quyền: các service vẫn kiểm role trực tiếp, nên quyền cấp cho role khác
     /// qua được endpoint nhưng bị service chặn. Quyền role đang giữ vẫn nằm trong tập để Administrator gỡ được.
     /// </summary>
-    private static List<string> Assignable(string roleCode, IEnumerable<string> heldStaffCodes)
+    private static List<string> Assignable(string roleCode, IEnumerable<string> heldCodes)
     {
         var defaults = DefaultRolePermissions.Map.TryGetValue(roleCode, out var map) ? map : new HashSet<string>();
-        return defaults.Where(code => PermissionCatalog.Find(code)?.IsStaffGrantable == true)
-            .Concat(heldStaffCodes)
+        return defaults
+            .Concat(heldCodes)
             .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
     }
 
@@ -66,8 +66,6 @@ public class RolePermissionAdminService(IUnitOfWork uow, IAuditLogWriter audit, 
         UpdateRolePermissionsRequest request, CancellationToken cancellationToken = default)
     {
         var role = await FindRoleAsync(roleCode, cancellationToken);
-        if (!role.IsStaff)
-            throw new ForbiddenException("Không được sửa quyền của role người dùng.");
         if (request.PermissionCodes is null)
             throw new BadRequestException("Danh sách quyền không hợp lệ.");
 
@@ -75,23 +73,20 @@ public class RolePermissionAdminService(IUnitOfWork uow, IAuditLogWriter audit, 
             .ToDictionary(p => p.Code, StringComparer.Ordinal);
         var requested = request.PermissionCodes.Distinct(StringComparer.Ordinal).ToList();
         var invalid = requested
-            .Where(code => !catalog.TryGetValue(code, out var p) || !p.IsStaffGrantable)
+            .Where(code => !catalog.ContainsKey(code))
             .Order(StringComparer.Ordinal)
             .ToList();
         if (invalid.Count > 0)
-            throw new BadRequestException($"Quyền không hợp lệ hoặc không được gán cho nhân viên: {string.Join(", ", invalid)}.");
+            throw new BadRequestException($"Quyền không hợp lệ: {string.Join(", ", invalid)}.");
 
         var currentLinks = await LinksAsync(role.Id, cancellationToken);
-        var assignable = Assignable(role.Code,
-            currentLinks.Where(x => x.Permission.IsStaffGrantable).Select(x => x.Permission.Code)).ToHashSet(StringComparer.Ordinal);
+        var assignable = Assignable(role.Code, currentLinks.Select(x => x.Permission.Code)).ToHashSet(StringComparer.Ordinal);
         var notAssignable = requested.Where(code => !assignable.Contains(code)).Order(StringComparer.Ordinal).ToList();
         if (notAssignable.Count > 0)
             throw new BadRequestException($"Chưa hỗ trợ cấp các quyền này cho {role.Code}: {string.Join(", ", notAssignable)}.");
 
         var before = Codes(currentLinks);
-        // Quyền ngoài nhóm nhân viên (ví dụ xem thư viện cộng đồng) không sửa qua API nên giữ nguyên.
-        var after = currentLinks.Where(x => !x.Permission.IsStaffGrantable).Select(x => x.Permission.Code)
-            .Concat(requested).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
+        var after = requested.Order(StringComparer.Ordinal).ToList();
 
         if (role.Code == RoleCodes.Administrator && !after.Contains(Permissions.Admin.PermissionManage))
             throw new ConflictException("Administrator phải giữ quyền quản lý phân quyền.", "PERMISSION_MANAGE_REQUIRED");
@@ -106,14 +101,13 @@ public class RolePermissionAdminService(IUnitOfWork uow, IAuditLogWriter audit, 
         await audit.LogAsync(actorUserId, AuditAction, "Role", role.Id, before, after, cancellationToken);
         await permissions.InvalidateAsync(role.Code, cancellationToken);
 
-        return new RolePermissionsDto(role.Code, after,
-            Assignable(role.Code, after.Where(code => catalog[code].IsStaffGrantable)));
+        return new RolePermissionsDto(role.Code, after, Assignable(role.Code, after));
     }
 
     private async Task EnsureReviewersRemainAsync(Role target, IReadOnlyCollection<string> targetAfter, CancellationToken ct)
     {
-        var otherStaff = await uow.Repository<Role>().FindAsync(r => r.IsStaff && !r.IsDeleted && r.Id != target.Id, cancellationToken: ct);
-        var otherIds = otherStaff.Select(r => r.Id).ToList();
+        var others = await uow.Repository<Role>().FindAsync(r => !r.IsDeleted && r.Id != target.Id, cancellationToken: ct);
+        var otherIds = others.Select(r => r.Id).ToList();
         var otherCodes = (await uow.Repository<RolePermission>().FindAsync(
                 x => otherIds.Contains(x.RoleId) && !x.Permission.IsDeleted,
                 includeProperties: nameof(RolePermission.Permission), cancellationToken: ct))

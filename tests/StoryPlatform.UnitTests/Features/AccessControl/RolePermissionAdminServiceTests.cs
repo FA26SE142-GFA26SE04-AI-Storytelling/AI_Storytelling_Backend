@@ -44,8 +44,7 @@ public sealed class RolePermissionAdminServiceTests : IAsyncLifetime
     private Task<List<string>> CodesOf(string role) => _db.Set<RolePermission>().AsNoTracking()
         .Where(x => x.Role.Code == role).Select(x => x.Permission.Code).OrderBy(x => x).ToListAsync();
 
-    private static string[] StaffDefaults(string role) => DefaultRolePermissions.Map[role]
-        .Where(code => PermissionCatalog.Find(code)!.IsStaffGrantable).ToArray();
+    private static string[] Defaults(string role) => DefaultRolePermissions.Map[role].ToArray();
 
     [Fact]
     public async Task Lists_permissions_in_group_order_and_staff_roles_flagged()
@@ -62,14 +61,12 @@ public sealed class RolePermissionAdminServiceTests : IAsyncLifetime
     [Fact]
     public async Task Update_replaces_set_writes_audit_and_invalidates()
     {
-        var target = StaffDefaults(RoleCodes.Moderator).Where(c => c != Permissions.Moderation.CategoryManage).ToArray();
+        var target = Defaults(RoleCodes.Moderator).Where(c => c != Permissions.Moderation.CategoryManage).ToArray();
 
         var result = await Service().UpdateRolePermissionsAsync(AdminUserId, RoleCodes.Moderator, Request(target));
         _db.ChangeTracker.Clear();
 
-        var expected = DefaultRolePermissions.Map[RoleCodes.Moderator]
-            .Where(c => !PermissionCatalog.Find(c)!.IsStaffGrantable) // quyền không phải nhân viên giữ nguyên
-            .Concat(target).Order(StringComparer.Ordinal).ToList();
+        var expected = target.Order(StringComparer.Ordinal).ToList();
         Assert.Equal(expected, await CodesOf(RoleCodes.Moderator));
         Assert.Equal(expected, result.PermissionCodes);
         var log = await _db.Set<AuditLog>().AsNoTracking().SingleAsync();
@@ -87,7 +84,7 @@ public sealed class RolePermissionAdminServiceTests : IAsyncLifetime
         // Service của chi trả vẫn đòi Administrator, nên cấp cho Moderator sẽ không dùng được (chặn đến giai đoạn 3).
         var ex = await Assert.ThrowsAsync<BadRequestException>(() => Service().UpdateRolePermissionsAsync(
             AdminUserId, RoleCodes.Moderator,
-            Request([.. StaffDefaults(RoleCodes.Moderator), Permissions.Admin.CreatorPayoutManage, Permissions.Admin.AuditView])));
+            Request([.. Defaults(RoleCodes.Moderator), Permissions.Admin.CreatorPayoutManage, Permissions.Admin.AuditView])));
         Assert.Equal("Chưa hỗ trợ cấp các quyền này cho Moderator: audit.view, creator.payout.manage.", ex.Message);
         _db.ChangeTracker.Clear();
         Assert.DoesNotContain(Permissions.Admin.CreatorPayoutManage, await CodesOf(RoleCodes.Moderator));
@@ -96,10 +93,10 @@ public sealed class RolePermissionAdminServiceTests : IAsyncLifetime
     [Fact]
     public async Task Revoked_default_can_be_restored()
     {
-        var without = StaffDefaults(RoleCodes.Moderator).Where(c => c != Permissions.Review.GrayZone).ToArray();
+        var without = Defaults(RoleCodes.Moderator).Where(c => c != Permissions.Review.GrayZone).ToArray();
         await Service().UpdateRolePermissionsAsync(AdminUserId, RoleCodes.Moderator, Request(without));
         _db.ChangeTracker.Clear(); // mỗi request có DbContext riêng
-        await Service().UpdateRolePermissionsAsync(AdminUserId, RoleCodes.Moderator, Request(StaffDefaults(RoleCodes.Moderator)));
+        await Service().UpdateRolePermissionsAsync(AdminUserId, RoleCodes.Moderator, Request(Defaults(RoleCodes.Moderator)));
         _db.ChangeTracker.Clear();
         Assert.Contains(Permissions.Review.GrayZone, await CodesOf(RoleCodes.Moderator));
     }
@@ -114,11 +111,11 @@ public sealed class RolePermissionAdminServiceTests : IAsyncLifetime
         _db.ChangeTracker.Clear();
 
         await Service().UpdateRolePermissionsAsync(AdminUserId, RoleCodes.Moderator,
-            Request([.. StaffDefaults(RoleCodes.Moderator), Permissions.Admin.AuditView]));
+            Request([.. Defaults(RoleCodes.Moderator), Permissions.Admin.AuditView]));
         _db.ChangeTracker.Clear();
         Assert.Contains(Permissions.Admin.AuditView, await CodesOf(RoleCodes.Moderator));
 
-        await Service().UpdateRolePermissionsAsync(AdminUserId, RoleCodes.Moderator, Request(StaffDefaults(RoleCodes.Moderator)));
+        await Service().UpdateRolePermissionsAsync(AdminUserId, RoleCodes.Moderator, Request(Defaults(RoleCodes.Moderator)));
         _db.ChangeTracker.Clear();
         Assert.DoesNotContain(Permissions.Admin.AuditView, await CodesOf(RoleCodes.Moderator));
     }
@@ -127,16 +124,46 @@ public sealed class RolePermissionAdminServiceTests : IAsyncLifetime
     public async Task Role_permissions_report_assignable_codes()
     {
         var result = await Service().GetRolePermissionsAsync(RoleCodes.Moderator);
-        Assert.Equal(StaffDefaults(RoleCodes.Moderator).Order(StringComparer.Ordinal), result.AssignableCodes);
+        Assert.Equal(Defaults(RoleCodes.Moderator).Order(StringComparer.Ordinal), result.AssignableCodes);
         Assert.DoesNotContain(Permissions.Admin.CreatorPayoutManage, result.AssignableCodes);
     }
 
-    [Fact]
-    public async Task Non_staff_role_is_forbidden()
+    [Theory]
+    [InlineData("User", Permissions.Parent.StoryRatingWrite)]
+    [InlineData("ContentCreator", Permissions.Creator.Studio)]
+    [InlineData("CreatorApplicant", Permissions.Creator.ApplicationSubmit)]
+    public async Task End_user_role_permission_can_be_revoked_and_restored(string role, string code)
     {
-        var ex = await Assert.ThrowsAsync<ForbiddenException>(() =>
-            Service().UpdateRolePermissionsAsync(AdminUserId, RoleCodes.User, Request()));
-        Assert.Equal("Không được sửa quyền của role người dùng.", ex.Message);
+        await Service().UpdateRolePermissionsAsync(AdminUserId, role, Request(Defaults(role).Where(c => c != code).ToArray()));
+        _db.ChangeTracker.Clear();
+        Assert.DoesNotContain(code, await CodesOf(role));
+
+        await Service().UpdateRolePermissionsAsync(AdminUserId, role, Request(Defaults(role)));
+        _db.ChangeTracker.Clear();
+        Assert.Contains(code, await CodesOf(role));
+    }
+
+    [Fact]
+    public async Task Parent_cannot_be_granted_a_permission_of_another_role()
+    {
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() => Service().UpdateRolePermissionsAsync(
+            AdminUserId, RoleCodes.User, Request([.. Defaults(RoleCodes.User), Permissions.Creator.Studio])));
+        Assert.Equal("Chưa hỗ trợ cấp các quyền này cho User: creator.studio.", ex.Message);
+    }
+
+    [Fact]
+    public async Task Story_approval_must_keep_at_least_one_role()
+    {
+        // Phụ huynh và Administrator cùng giữ story.review.approve; gỡ khỏi cả hai thì không ai duyệt truyện cho trẻ.
+        await Service().UpdateRolePermissionsAsync(AdminUserId, RoleCodes.User,
+            Request(Defaults(RoleCodes.User).Where(c => c != Permissions.Shared.StoryReviewApprove).ToArray()));
+        _db.ChangeTracker.Clear();
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() => Service().UpdateRolePermissionsAsync(
+            AdminUserId, RoleCodes.Administrator,
+            Request(Defaults(RoleCodes.Administrator).Where(c => c != Permissions.Shared.StoryReviewApprove).ToArray())));
+        Assert.Equal("REVIEWER_REQUIRED", ex.ErrorCode);
+        Assert.Equal("Phải còn ít nhất một role duyệt bước này: story.review.approve.", ex.Message);
     }
 
     [Fact]
@@ -156,17 +183,17 @@ public sealed class RolePermissionAdminServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Non_grantable_or_unknown_codes_are_rejected_with_list()
+    public async Task Unknown_codes_are_rejected_with_list()
     {
         var ex = await Assert.ThrowsAsync<BadRequestException>(() => Service().UpdateRolePermissionsAsync(
-            AdminUserId, RoleCodes.Moderator, Request([.. StaffDefaults(RoleCodes.Moderator), Permissions.Parent.StoryAuthor, "x.y", "REVIEW.GRAY_ZONE"])));
-        Assert.Equal("Quyền không hợp lệ hoặc không được gán cho nhân viên: REVIEW.GRAY_ZONE, parent.story.author, x.y.", ex.Message);
+            AdminUserId, RoleCodes.Moderator, Request([.. Defaults(RoleCodes.Moderator), "x.y", "REVIEW.GRAY_ZONE"])));
+        Assert.Equal("Quyền không hợp lệ: REVIEW.GRAY_ZONE, x.y.", ex.Message);
     }
 
     [Fact]
     public async Task Duplicate_codes_are_merged()
     {
-        var codes = StaffDefaults(RoleCodes.Moderator);
+        var codes = Defaults(RoleCodes.Moderator);
         await Service().UpdateRolePermissionsAsync(AdminUserId, RoleCodes.Moderator, Request([.. codes, .. codes]));
         _db.ChangeTracker.Clear();
         Assert.Equal(DefaultRolePermissions.Map[RoleCodes.Moderator].Order(StringComparer.Ordinal), await CodesOf(RoleCodes.Moderator));
@@ -177,7 +204,7 @@ public sealed class RolePermissionAdminServiceTests : IAsyncLifetime
     {
         var ex = await Assert.ThrowsAsync<ConflictException>(() => Service().UpdateRolePermissionsAsync(
             AdminUserId, RoleCodes.Administrator,
-            Request(StaffDefaults(RoleCodes.Administrator).Where(c => c != Permissions.Admin.PermissionManage).ToArray())));
+            Request(Defaults(RoleCodes.Administrator).Where(c => c != Permissions.Admin.PermissionManage).ToArray())));
         Assert.Equal("PERMISSION_MANAGE_REQUIRED", ex.ErrorCode);
     }
 
@@ -185,11 +212,11 @@ public sealed class RolePermissionAdminServiceTests : IAsyncLifetime
     public async Task Last_reviewer_of_a_step_cannot_be_removed()
     {
         await Service().UpdateRolePermissionsAsync(AdminUserId, RoleCodes.Administrator,
-            Request(StaffDefaults(RoleCodes.Administrator).Where(c => c != Permissions.Review.GrayZone).ToArray()));
+            Request(Defaults(RoleCodes.Administrator).Where(c => c != Permissions.Review.GrayZone).ToArray()));
 
         var ex = await Assert.ThrowsAsync<ConflictException>(() => Service().UpdateRolePermissionsAsync(
             AdminUserId, RoleCodes.Moderator,
-            Request(StaffDefaults(RoleCodes.Moderator).Where(c => c != Permissions.Review.GrayZone).ToArray())));
+            Request(Defaults(RoleCodes.Moderator).Where(c => c != Permissions.Review.GrayZone).ToArray())));
         Assert.Equal("REVIEWER_REQUIRED", ex.ErrorCode);
         Assert.Equal("Phải còn ít nhất một role duyệt bước này: review.gray_zone.", ex.Message);
     }

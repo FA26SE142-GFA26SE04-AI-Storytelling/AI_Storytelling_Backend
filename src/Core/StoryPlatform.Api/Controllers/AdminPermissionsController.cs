@@ -8,8 +8,8 @@ using StoryPlatform.Application.Features.AccessControl.Interfaces;
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>
-/// Administrator xem danh mục quyền và chỉnh quyền của role nhân viên (Moderator, Administrator).
-/// Quyền của Phụ huynh, Creator chỉ đổi bằng code.
+/// Administrator xem danh mục quyền và chỉnh quyền của mọi role người lớn (thu hoặc trả lại quyền mặc định).
+/// Phiên của trẻ không dùng permission.
 /// </summary>
 [Route("api/v1/admin")]
 [HasPermission(Permissions.Admin.PermissionManage)]
@@ -20,7 +20,7 @@ public class AdminPermissionsController(IRolePermissionAdminService service) : B
     public async Task<ActionResult<ApiResponse<IReadOnlyList<PermissionDto>>>> ListPermissions(CancellationToken cancellationToken) =>
         HandleResult(await service.ListPermissionsAsync(cancellationToken), "Lấy danh mục quyền thành công.");
 
-    /// <summary>Danh sách role; IsStaff = true là role sửa được quyền.</summary>
+    /// <summary>Danh sách role.</summary>
     [HttpGet("roles")]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<RoleDto>>>> ListRoles(CancellationToken cancellationToken) =>
         HandleResult(await service.ListRolesAsync(cancellationToken), "Lấy danh sách role thành công.");
@@ -30,7 +30,7 @@ public class AdminPermissionsController(IRolePermissionAdminService service) : B
     public async Task<ActionResult<ApiResponse<RolePermissionsDto>>> GetRolePermissions(string code, CancellationToken cancellationToken) =>
         HandleResult(await service.GetRolePermissionsAsync(code, cancellationToken), "Lấy quyền của role thành công.");
 
-    /// <summary>Thay toàn bộ permission nhân viên của một role nhân viên; ghi nhật ký thao tác.</summary>
+    /// <summary>Thay toàn bộ permission của một role; ghi nhật ký thao tác.</summary>
     [HttpPut("roles/{code}/permissions")]
     public async Task<ActionResult<ApiResponse<RolePermissionsDto>>> UpdateRolePermissions(
         string code, [FromBody] UpdateRolePermissionsRequest request, CancellationToken cancellationToken) =>

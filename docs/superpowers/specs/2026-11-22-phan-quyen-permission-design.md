@@ -9,6 +9,8 @@ Ngày: 2026-11-22. Nguồn: brainstorming với user.
 > - **Cache (mục 5.7)** dùng `IAppCache` (Redis dùng chung), TTL 60 giây, xóa khóa khi lưu nên mọi instance thấy ngay. Không có Redis thì đọc DB.
 > - **PUT (mục 5.6)** chỉ quản lý quyền nhóm Kiểm duyệt/Quản trị; quyền khác của role nhân viên (ví dụ `community.view`) được giữ nguyên.
 > - **Màn hình**: trang "Phân quyền" trong khu Administrator của frontend.
+> - **Chỉ thu/trả lại (PR #186, 22/11/2026)**: vì khoảng 53 chỗ trong service vẫn kiểm role, PUT chỉ nhận quyền mặc định của role cộng quyền role đang giữ; GET trả `AssignableCodes`.
+> - **Mọi role người lớn (23/11/2026)**: bỏ A4; PUT thay toàn bộ tập quyền của role (mọi nhóm); `story.review.approve` thêm vào danh sách bước duyệt phải còn người giữ.
 
 ## 1. Mục đích
 
@@ -75,7 +77,7 @@ Với người dùng cuối (Phụ huynh, Trẻ, Creator), role cố định v�
 - A1. Không được làm mất bước duyệt của con người trước khi nội dung đến tay trẻ. Sửa quyền chỉ đổi **ai** được duyệt, không bỏ được bước duyệt.
 - A2. Token của trẻ không bao giờ có permission của người lớn. `ChildSessionPolicy` và `DefaultPolicy` giữ nguyên.
 - A3. Không có trạng thái nào mà không còn ai sửa được quyền (tự khóa mình).
-- A4. Không mở quyền của người dùng cuối qua màn hình Admin. Quyền của `User`, `ContentCreator`, `CreatorApplicant` chỉ đổi bằng code.
+- A4. ~~Không mở quyền của người dùng cuối qua màn hình Admin.~~ **Bỏ ngày 23/11/2026** theo yêu cầu của user: Admin chỉnh được quyền của mọi role người lớn (`User`, `ContentCreator`, `CreatorApplicant`, `Moderator`, `Administrator`), nhưng chỉ thu hoặc trả lại quyền mặc định của role; `story.review.approve` (phụ huynh duyệt truyện) nằm trong luật "luôn còn ít nhất một role duyệt". Phiên của trẻ vẫn không dùng permission.
 
 ## 4. Các phương án đã cân nhắc
 

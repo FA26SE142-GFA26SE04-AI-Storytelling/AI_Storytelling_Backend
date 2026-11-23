@@ -2,7 +2,7 @@ using StoryPlatform.Application.Features.AccessControl.DTOs;
 
 namespace StoryPlatform.Application.Features.AccessControl.Interfaces;
 
-/// <summary>Administrator xem danh mục quyền và chỉnh quyền của role nhân viên.</summary>
+/// <summary>Administrator xem danh mục quyền và chỉnh quyền của mọi role người lớn.</summary>
 public interface IRolePermissionAdminService
 {
     Task<IReadOnlyList<PermissionDto>> ListPermissionsAsync(CancellationToken cancellationToken = default);

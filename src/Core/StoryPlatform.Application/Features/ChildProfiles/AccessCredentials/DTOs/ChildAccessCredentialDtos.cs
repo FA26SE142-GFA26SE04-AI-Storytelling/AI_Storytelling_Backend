@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using StoryPlatform.Application.Features.ChildProfiles.ReadingTime.DTOs;
 
 namespace StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.DTOs;
 
@@ -31,6 +32,8 @@ public class ChildSessionProfileDto
     public int ChildProfileId { get; set; }
     public string Nickname { get; set; } = string.Empty;
     public string AgeBand { get; set; } = string.Empty;
+    /// <summary>Trạng thái "Thời gian &amp; thói quen" (null khi không bật cổng kiểm tra). App gọi /me mỗi ≤ 60 giây khi ở ngoài truyện.</summary>
+    public ReadingTimeStatusDto? ReadingTime { get; set; }
 }
 
 /// <summary>Secret QR lâu dài trả về lúc tạo/tạo lại; client dựng QR từ giá trị này (xem lại qua GET credential).</summary>

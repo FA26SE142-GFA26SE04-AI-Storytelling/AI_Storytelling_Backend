@@ -10,6 +10,9 @@ using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.Services;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.ReadingTime;
+using StoryPlatform.Application.Features.ChildProfiles.ReadingTime.DTOs;
+using StoryPlatform.Application.Features.ChildProfiles.ReadingTime.Interfaces;
 using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -958,4 +961,82 @@ public class ChildAccessCredentialServiceTests
         EasyLoginSecretProtected = secret == null ? null : "enc:" + secret,
         EasyLoginCreatedAt = secret == null ? null : new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc)
     };
+
+    // ---------- Thời gian & thói quen ----------
+
+    private readonly Mock<IReadingTimeGate> _readingTime = new();
+
+    private ChildAccessCredentialService SutWithReadingTime() => new(
+        _unitOfWork.Object, _guard.Object, _jwtTokenGenerator.Object, _limiter.Object,
+        _auditLogWriter.Object, _eligibility.Object, _protector, readingTime: _readingTime.Object);
+
+    [Theory]
+    [InlineData(ReadingSchedulePolicy.OutsideErrorCode)]
+    [InlineData(ReadingSchedulePolicy.BedtimeErrorCode)]
+    [InlineData(ReadingSchedulePolicy.ScreenLimitErrorCode)]
+    [InlineData(ReadingSchedulePolicy.BreakErrorCode)]
+    public async Task LoginWithEasyLoginAsync_BlockedByReadingTime_IsNotCountedAsFailure(string code)
+    {
+        SetupCredentials(Credential("qr-secret"));
+        _readingTime.Setup(gate => gate.EnsureCanStartAsync(1, true, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ForbiddenException("chặn", code));
+
+        var error = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            SutWithReadingTime().LoginWithEasyLoginAsync("qr-secret", ClientKey));
+
+        Assert.Equal(code, error.ErrorCode);
+        _sessionRepo.Verify(r => r.AddAsync(It.IsAny<ChildSession>(), It.IsAny<CancellationToken>()), Times.Never);
+        _limiter.Verify(l => l.RegisterFailure(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task LoginWithEasyLoginAsync_Allowed_ChecksGateAsChildFacing()
+    {
+        SetupCredentials(Credential("qr-secret"));
+        _jwtTokenGenerator.Setup(g => g.GenerateChildAccessToken(1, It.IsAny<string>())).Returns("child-jwt");
+        var addedSession = CaptureAddedSession();
+
+        await SutWithReadingTime().LoginWithEasyLoginAsync("qr-secret", ClientKey);
+
+        Assert.NotNull(addedSession());
+        _readingTime.Verify(gate => gate.EnsureCanStartAsync(1, true, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task StartSupervisedSessionAsync_ChecksGateAsParentFacing()
+    {
+        AllowSupervision();
+        SetupSupervisorSession(SupervisorSession());
+        SetupCredentials(Credential("qr-secret"));
+        _jwtTokenGenerator.Setup(g => g.GenerateChildAccessToken(1, It.IsAny<string>())).Returns("child-jwt");
+        var addedSession = CaptureAddedSession();
+
+        await SutWithReadingTime().StartSupervisedSessionAsync(1, 2, "supervisor-refresh");
+
+        Assert.NotNull(addedSession());
+        _readingTime.Verify(gate => gate.EnsureCanStartAsync(1, false, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetMySessionProfileAsync_WithGate_ReturnsReadingTime()
+    {
+        _profileRepo.Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChildProfile { Id = 1, Nickname = "Bé An", AgeBand = AgeBand.Age_6_8 });
+        _readingTime.Setup(gate => gate.GetStatusAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ReadingTimeStatusDto { State = "EndingSoon", EndReason = "ScreenLimit", ScreenMinutesUsed = 41, ScreenMinutesLimit = 45 });
+
+        var result = await SutWithReadingTime().GetMySessionProfileAsync(1);
+
+        Assert.Equal("EndingSoon", result.ReadingTime!.State);
+        Assert.Equal(45, result.ReadingTime.ScreenMinutesLimit);
+    }
+
+    [Fact]
+    public async Task GetMySessionProfileAsync_WithoutGate_HasNoReadingTime()
+    {
+        _profileRepo.Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChildProfile { Id = 1, Nickname = "Bé An", AgeBand = AgeBand.Age_6_8 });
+
+        Assert.Null((await _sut.GetMySessionProfileAsync(1)).ReadingTime);
+    }
 }

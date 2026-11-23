@@ -170,7 +170,8 @@ public sealed class SeedDataAlignmentTests
             "authoring_guide_items", "authoring_guide_placeholders"];
         // Khóa Data Protection do ứng dụng tự sinh lúc chạy; seed khóa vào SQL sẽ đưa khóa vào mã nguồn.
         // Read-aloud recordings require an actual child upload; SQL seed cannot create its storage object.
-        string[] generatedAtRuntime = ["data_protection_keys", "read_aloud_recordings", "story_reflections"];
+        // Thời gian & thói quen: mặc định tắt, dòng cấu hình chỉ sinh khi phụ huynh lưu lần đầu (không seed).
+        string[] generatedAtRuntime = ["data_protection_keys", "read_aloud_recordings", "reading_schedule_windows", "reading_schedules", "story_reflections"];
         var root = new DirectoryInfo(AppContext.BaseDirectory);
         while (root is not null && !File.Exists(Path.Combine(root.FullName, "StoryPlatform.sln"))) root = root.Parent;
         Assert.NotNull(root);

@@ -35,6 +35,8 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<StoryReflection> StoryReflections => Set<StoryReflection>();
 
     public DbSet<SafetyPolicy> SafetyPolicies => Set<SafetyPolicy>();
+    public DbSet<ReadingSchedule> ReadingSchedules => Set<ReadingSchedule>();
+    public DbSet<ReadingScheduleWindow> ReadingScheduleWindows => Set<ReadingScheduleWindow>();
     public DbSet<SafetyPolicyCategory> SafetyPolicyCategories => Set<SafetyPolicyCategory>();
     public DbSet<ChildAccessCredential> ChildAccessCredentials => Set<ChildAccessCredential>();
     public DbSet<ChildSession> ChildSessions => Set<ChildSession>();

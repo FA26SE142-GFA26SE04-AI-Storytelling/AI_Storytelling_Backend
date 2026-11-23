@@ -319,6 +319,11 @@ public class SafetyPolicyService : ISafetyPolicyService
         policy.AllowInteractiveStories = request.AllowInteractiveStories;
         policy.ChildCreationEnabled = request.ChildCreationEnabled;
         policy.ChildCreationMode = request.ChildCreationMode;
+        if (request.QuizEnabled is bool quiz) policy.QuizEnabled = quiz;
+        if (request.NotebookEnabled is bool notebook) policy.NotebookEnabled = notebook;
+        if (request.LibraryBrowseEnabled is bool browse) policy.LibraryBrowseEnabled = browse;
+        if (request.ReflectionEnabled is bool reflection) policy.ReflectionEnabled = reflection;
+        if (request.RewardsEnabled is bool rewards) policy.RewardsEnabled = rewards;
         ApplyVoiceSetting(policy, request, isOwner);
     }
 
@@ -406,6 +411,11 @@ public class SafetyPolicyService : ISafetyPolicyService
         ConsentOutdated = ConsentPolicy.IsOutdated(policy.ConsentPolicyVersion),
         EffectiveVoiceAnswersEnabled = policy.VoiceAnswersEnabled
                                        && !ConsentPolicy.IsOutdated(policy.ConsentPolicyVersion),
+        QuizEnabled = policy.QuizEnabled,
+        NotebookEnabled = policy.NotebookEnabled,
+        LibraryBrowseEnabled = policy.LibraryBrowseEnabled,
+        ReflectionEnabled = policy.ReflectionEnabled,
+        RewardsEnabled = policy.RewardsEnabled,
         Categories = categories
     };
 

@@ -65,6 +65,28 @@ public class ChildAccessCredentialServiceTests
 
     private readonly FakeSecretProtector _protector = new();
 
+    [Fact]
+    public async Task GetMySessionProfileAsync_ListsDisabledChildFeatures()
+    {
+        var features = new Mock<StoryPlatform.Application.Features.ChildProfiles.Safety.Interfaces.IChildFeatureService>();
+        features.Setup(f => f.GetDisabledAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(["child.quiz", "child.rewards"]);
+        var sut = new ChildAccessCredentialService(
+            _unitOfWork.Object, _guard.Object, _jwtTokenGenerator.Object, _limiter.Object,
+            _auditLogWriter.Object, _eligibility.Object, _protector, childFeatures: features.Object);
+
+        var profile = await sut.GetMySessionProfileAsync(1);
+
+        Assert.Equal(["child.quiz", "child.rewards"], profile.DisabledFeatures);
+    }
+
+    [Fact]
+    public async Task GetMySessionProfileAsync_WithoutFeatureService_DisablesNothing()
+    {
+        var profile = await _sut.GetMySessionProfileAsync(1);
+        Assert.Empty(profile.DisabledFeatures);
+    }
+
     /// <summary>Mã hóa giả, đảo ngược được, để kiểm service lưu / trả đúng bản mã hóa.</summary>
     private sealed class FakeSecretProtector : IEasyLoginSecretProtector
     {

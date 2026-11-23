@@ -549,6 +549,60 @@ public class SafetyPolicyServiceTests
             .ReturnsAsync(new List<ContentCategory> { category7, category8, category9 });
     }
 
+    [Fact]
+    public async Task SetSafetyPolicyAsync_MissingChildFeatureFields_KeepCurrentValues()
+    {
+        AllowPermission();
+        var policy = new SafetyPolicy { Id = 5, ChildProfileId = 1, QuizEnabled = false, RewardsEnabled = false };
+        _policyRepo.Setup(r => r.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<SafetyPolicy, bool>>>(), null,
+                It.IsAny<CancellationToken>())).ReturnsAsync(policy);
+        _categoryRepo.Setup(r => r.FindAsync(
+                It.IsAny<Expression<Func<SafetyPolicyCategory, bool>>>(), null,
+                It.IsAny<CancellationToken>())).ReturnsAsync(new List<SafetyPolicyCategory>());
+
+        var result = await _sut.SetSafetyPolicyAsync(1, 2, ValidRequest());
+
+        Assert.False(policy.QuizEnabled);
+        Assert.False(policy.RewardsEnabled);
+        Assert.True(policy.NotebookEnabled);
+        Assert.False(result.QuizEnabled);
+    }
+
+    [Fact]
+    public async Task SetSafetyPolicyAsync_ChildFeatureFields_AreSaved()
+    {
+        AllowPermission();
+        var policy = new SafetyPolicy { Id = 5, ChildProfileId = 1 };
+        _policyRepo.Setup(r => r.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<SafetyPolicy, bool>>>(), null,
+                It.IsAny<CancellationToken>())).ReturnsAsync(policy);
+        _categoryRepo.Setup(r => r.FindAsync(
+                It.IsAny<Expression<Func<SafetyPolicyCategory, bool>>>(), null,
+                It.IsAny<CancellationToken>())).ReturnsAsync(new List<SafetyPolicyCategory>());
+        var request = ValidRequest();
+        request.QuizEnabled = false;
+        request.NotebookEnabled = false;
+        request.LibraryBrowseEnabled = false;
+        request.ReflectionEnabled = false;
+        request.RewardsEnabled = false;
+
+        var result = await _sut.SetSafetyPolicyAsync(1, 2, request);
+
+        Assert.False(policy.QuizEnabled || policy.NotebookEnabled || policy.LibraryBrowseEnabled
+                     || policy.ReflectionEnabled || policy.RewardsEnabled);
+        Assert.False(result.QuizEnabled || result.NotebookEnabled || result.LibraryBrowseEnabled
+                     || result.ReflectionEnabled || result.RewardsEnabled);
+    }
+
+    [Fact]
+    public void NewSafetyPolicy_EnablesEveryChildFeature()
+    {
+        var policy = new SafetyPolicy();
+        Assert.True(policy.QuizEnabled && policy.NotebookEnabled && policy.LibraryBrowseEnabled
+                    && policy.ReflectionEnabled && policy.RewardsEnabled);
+    }
+
     private void AllowPermission(int userId = 2)
     {
         _guard.Setup(g => g.EnsureOwnerAsync(

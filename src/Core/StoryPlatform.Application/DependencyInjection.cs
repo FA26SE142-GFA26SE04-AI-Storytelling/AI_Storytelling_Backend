@@ -88,6 +88,7 @@ public static class DependencyInjection
             StoryPlatform.Application.Features.AuthoringGuideManagement.Services.AuthoringGuideManagementService>();
         services.AddScoped<StoryPlatform.Application.Features.ParentAuthoring.AuthoringGuideCatalogSeeder>();
         services.AddScoped<Features.AccessControl.Services.PermissionCatalogSeeder>();
+        services.AddScoped<Features.ChildProfiles.Safety.Interfaces.IChildFeatureService, Features.ChildProfiles.Safety.Services.ChildFeatureService>();
         // Thay bản tĩnh do AddAppAuthorization đăng ký trước: runtime đọc quyền từ DB (đăng ký sau thắng khi resolve).
         services.AddScoped<Features.AccessControl.Interfaces.IPermissionService, Features.AccessControl.Services.PermissionService>();
         services.AddScoped<Features.AccessControl.Interfaces.IRolePermissionAdminService, Features.AccessControl.Services.RolePermissionAdminService>();

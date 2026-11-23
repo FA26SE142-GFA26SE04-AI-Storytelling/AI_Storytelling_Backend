@@ -28,6 +28,11 @@ public class SafetyPolicyDto
     public bool VoiceConsentRequired { get; set; }
     public bool ConsentOutdated { get; set; }
     public bool EffectiveVoiceAnswersEnabled { get; set; }
+    public bool QuizEnabled { get; set; }
+    public bool NotebookEnabled { get; set; }
+    public bool LibraryBrowseEnabled { get; set; }
+    public bool ReflectionEnabled { get; set; }
+    public bool RewardsEnabled { get; set; }
     public List<SafetyPolicyCategoryDto> Categories { get; set; } = new();
 }
 
@@ -69,6 +74,13 @@ public class SetSafetyPolicyRequestDto
     public ChildCreationMode ChildCreationMode { get; set; } = ChildCreationMode.ReviewFirst;
 
     public bool VoiceAnswersEnabled { get; set; }
+
+    /// <summary>Quyền của bé; null (client cũ không gửi) = giữ giá trị đang lưu.</summary>
+    public bool? QuizEnabled { get; set; }
+    public bool? NotebookEnabled { get; set; }
+    public bool? LibraryBrowseEnabled { get; set; }
+    public bool? ReflectionEnabled { get; set; }
+    public bool? RewardsEnabled { get; set; }
 
     /// <summary>Owner đồng ý mục (e) giọng nói khi bật lần đầu.</summary>
     public bool VoiceConsentAccepted { get; set; }

@@ -7,6 +7,8 @@ using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.ReadingSessions;
 using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.ChildProfiles.Safety;
 
 namespace StoryPlatform.Api.Controllers;
 
@@ -39,6 +41,7 @@ public sealed class ChildStorySummaryController : ControllerBase
     }
 
     /// <summary>Trẻ gửi bản ghi âm kể lại truyện cho bố mẹ. Cần bố mẹ bật giọng nói; mỗi phiên gửi một lần.</summary>
+    [RequireChildFeature(ChildFeatures.Voice)]
     [HttpPost("recording")]
     [Consumes("multipart/form-data")]
     [RequestSizeLimit(MaxRequestBytes)]

@@ -5,12 +5,15 @@ using StoryPlatform.Api.Extensions;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.ReadingSessions;
 using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.ChildProfiles.Safety;
 
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>Thành tích của em: EXP, streak, huy hiệu, Cây tri thức (Luồng 3 — mục 8).</summary>
 [ApiController]
 [Authorize(Policy = ServiceExtensions.ChildSessionPolicy)]
+[RequireChildFeature(ChildFeatures.Rewards)]
 [Route("api/v1/child/rewards")]
 public sealed class ChildRewardsController : ControllerBase
 {

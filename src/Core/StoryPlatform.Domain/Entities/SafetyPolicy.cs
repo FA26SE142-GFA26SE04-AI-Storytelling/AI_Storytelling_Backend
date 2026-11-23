@@ -27,6 +27,13 @@ public class SafetyPolicy : BaseEntity
     public ChildCreationMode ChildCreationMode { get; set; } = ChildCreationMode.ReviewFirst;
     public bool VoiceAnswersEnabled { get; set; }
 
+    // Quyền của bé (phụ huynh bật/tắt từng chức năng trong phiên của bé); mặc định bật.
+    public bool QuizEnabled { get; set; } = true;
+    public bool NotebookEnabled { get; set; } = true;
+    public bool LibraryBrowseEnabled { get; set; } = true;
+    public bool ReflectionEnabled { get; set; } = true;
+    public bool RewardsEnabled { get; set; } = true;
+
     /// <summary>Thời điểm Owner đồng ý mục (e) về giọng nói; NULL = chưa đồng ý.</summary>
     public DateTime? VoiceConsentAt { get; set; }
 

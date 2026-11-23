@@ -9,6 +9,8 @@ using StoryPlatform.Application.Features.Auth.DTOs;
 using StoryPlatform.Application.Features.Auth.Interfaces;
 using StoryPlatform.Application.Features.AuditLogs.DTOs;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
@@ -197,7 +199,7 @@ public class AuthController : BaseApiController
 
     /// <summary>Yêu cầu đổi email Parent; OTP được gửi tới email mới.</summary>
     [HttpPost("change-email")]
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.AccountSelfManage)]
     public async Task<ActionResult<ApiResponse<object?>>> RequestEmailChange(
         [FromBody] RequestEmailChangeRequestDto request,
         CancellationToken cancellationToken)
@@ -209,7 +211,7 @@ public class AuthController : BaseApiController
 
     /// <summary>Xác nhận đổi email bằng OTP gửi tới email mới.</summary>
     [HttpPost("change-email/confirm")]
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.AccountSelfManage)]
     public async Task<ActionResult<ApiResponse<object?>>> ConfirmEmailChange(
         [FromBody] ConfirmEmailChangeRequestDto request,
         CancellationToken cancellationToken)
@@ -221,7 +223,7 @@ public class AuthController : BaseApiController
 
     /// <summary>Xem mọi hồ sơ trẻ sẽ bị xóa cùng tài khoản User.</summary>
     [HttpGet("me/delete-preview")]
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.AccountSelfManage)]
     public async Task<ActionResult<ApiResponse<DeleteAccountPreviewDto>>> GetDeleteAccountPreview(
         CancellationToken cancellationToken)
     {
@@ -232,7 +234,7 @@ public class AuthController : BaseApiController
 
     /// <summary>Xóa và ẩn danh hóa tài khoản User.</summary>
     [HttpDelete("me")]
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.AccountSelfManage)]
     public async Task<ActionResult<ApiResponse<object?>>> DeleteAccount(
         [FromBody] DeleteAccountRequestDto request, CancellationToken cancellationToken)
     {

@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.ContentCategories.DTOs;
 using StoryPlatform.Application.Features.ContentCategories.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
@@ -25,7 +27,7 @@ public class ContentCategoryController : BaseApiController
     /// Tạo mới một danh mục nội dung.
     /// </summary>
     [HttpPost]
-    [Authorize(Roles = "Moderator")]
+    [HasPermission(Permissions.Moderation.CategoryManage)]
     public async Task<ActionResult<ApiResponse<ContentCategoryDto>>> CreateContentCategory(
         [FromBody] CreateContentCategoryRequestDto request, CancellationToken cancellationToken)
     {
@@ -38,7 +40,7 @@ public class ContentCategoryController : BaseApiController
     /// Cập nhật tên hiển thị và trạng thái hoạt động của danh mục nội dung.
     /// </summary>
     [HttpPut("{contentCategoryId:int}")]
-    [Authorize(Roles = "Moderator")]
+    [HasPermission(Permissions.Moderation.CategoryManage)]
     public async Task<ActionResult<ApiResponse<ContentCategoryDto>>> UpdateContentCategory(
         int contentCategoryId, [FromBody] UpdateContentCategoryRequestDto request,
         CancellationToken cancellationToken)
@@ -51,7 +53,7 @@ public class ContentCategoryController : BaseApiController
     /// Xoá hẳn một danh mục nội dung chưa được dùng ở đâu; đang được dùng thì trả 409 (hãy tắt IsActive).
     /// </summary>
     [HttpDelete("{contentCategoryId:int}")]
-    [Authorize(Roles = "Moderator")]
+    [HasPermission(Permissions.Moderation.CategoryManage)]
     public async Task<ActionResult<ApiResponse<object?>>> DeleteContentCategory(
         int contentCategoryId, CancellationToken cancellationToken)
     {

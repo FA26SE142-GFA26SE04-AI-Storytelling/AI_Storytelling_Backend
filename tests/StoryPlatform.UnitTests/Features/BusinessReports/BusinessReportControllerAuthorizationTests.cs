@@ -1,3 +1,4 @@
+using StoryPlatform.Api.Extensions;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
@@ -40,7 +41,7 @@ public class BusinessReportControllerAuthorizationTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddAuthorization();
+        services.AddAppAuthorization();
         using var provider = services.BuildServiceProvider();
         var policyProvider = provider.GetRequiredService<IAuthorizationPolicyProvider>();
         var authorization = provider.GetRequiredService<IAuthorizationService>();

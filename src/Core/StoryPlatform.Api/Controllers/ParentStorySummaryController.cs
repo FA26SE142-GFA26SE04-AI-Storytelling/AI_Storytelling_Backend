@@ -3,11 +3,13 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.ReadingSessions;
 using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>Tóm tắt cuối truyện con gửi, phía chủ hồ sơ: nghe ghi âm, xem câu hỏi theo tranh/cảnh, đánh dấu đã trả lời và xóa.</summary>
-[Authorize(Roles = "User")]
+[HasPermission(Permissions.Parent.FeedbackManage)]
 public class ParentStorySummaryController : BaseApiController
 {
     private readonly IParentStorySummaryService _summaries;

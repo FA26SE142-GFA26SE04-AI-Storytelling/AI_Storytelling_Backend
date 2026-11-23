@@ -144,7 +144,7 @@ public class ChildAccessCredentialControllerTests
             typeof(Microsoft.AspNetCore.Authorization.AuthorizeAttribute), false)
             .Cast<Microsoft.AspNetCore.Authorization.AuthorizeAttribute>());
 
-        Assert.Equal("User", authorize.Roles);
+        Assert.Equal("User", authorize.GrantedRoles());
     }
     [Fact]
     public async Task GetStoryHandoverOptions_DelegatesWithStoryIdAndCurrentUserId()
@@ -191,6 +191,6 @@ public class ChildAccessCredentialControllerTests
             typeof(Microsoft.AspNetCore.Authorization.AuthorizeAttribute), false)
             .Cast<Microsoft.AspNetCore.Authorization.AuthorizeAttribute>());
 
-        Assert.Equal("User", authorize.Roles);
+        Assert.Equal("User", authorize.GrantedRoles());
     }
 }

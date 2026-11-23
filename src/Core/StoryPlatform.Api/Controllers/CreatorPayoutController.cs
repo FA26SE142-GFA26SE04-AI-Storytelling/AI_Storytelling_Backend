@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.CreatorPayouts.DTOs;
 using StoryPlatform.Application.Features.CreatorPayouts.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
@@ -23,7 +25,7 @@ public class CreatorPayoutController : BaseApiController
 
     /// <summary>Số dư, thông tin nhận tiền (hoặc lời nhắc nhập), lịch sử nhận tiền và thu nhập các kỳ đã chốt.</summary>
     [HttpGet("me")]
-    [Authorize(Roles = "ContentCreator")]
+    [HasPermission(Permissions.Creator.PayoutViewOwn)]
     public async Task<ActionResult<ApiResponse<CreatorPayoutOverviewDto>>> GetMine(CancellationToken cancellationToken)
     {
         var result = await _service.GetOverviewAsync(GetCurrentUserId(), cancellationToken);
@@ -32,7 +34,7 @@ public class CreatorPayoutController : BaseApiController
 
     /// <summary>Nhập hoặc sửa thông tin nhận tiền: ngân hàng, số tài khoản, tên chủ tài khoản.</summary>
     [HttpPut("me/account")]
-    [Authorize(Roles = "ContentCreator")]
+    [HasPermission(Permissions.Creator.PayoutViewOwn)]
     public async Task<ActionResult<ApiResponse<CreatorPayoutAccountDto>>> UpdateMyAccount(
         [FromBody] UpdateCreatorPayoutAccountRequestDto request, CancellationToken cancellationToken)
     {
@@ -42,7 +44,7 @@ public class CreatorPayoutController : BaseApiController
 
     /// <summary>Danh sách chi: Creator Active, số dư từ 200.000 đ, đã có thông tin nhận tiền.</summary>
     [HttpGet("/api/v1/admin/creator-payouts/due")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.CreatorPayoutManage)]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<CreatorPayoutDueDto>>>> GetDue(CancellationToken cancellationToken)
     {
         var result = await _service.GetDueAsync(cancellationToken);
@@ -51,7 +53,7 @@ public class CreatorPayoutController : BaseApiController
 
     /// <summary>Số dư, thông tin nhận tiền và lịch sử của một Creator.</summary>
     [HttpGet("/api/v1/admin/creator-payouts/creators/{creatorUserId:int}")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.CreatorPayoutManage)]
     public async Task<ActionResult<ApiResponse<CreatorPayoutOverviewDto>>> GetCreator(
         int creatorUserId, CancellationToken cancellationToken)
     {
@@ -61,7 +63,7 @@ public class CreatorPayoutController : BaseApiController
 
     /// <summary>Đánh dấu Đã chi đúng bằng số dư, kèm mã giao dịch ngân hàng và ngày chuyển; số dư về 0.</summary>
     [HttpPost("/api/v1/admin/creator-payouts/creators/{creatorUserId:int}/mark-paid")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.CreatorPayoutManage)]
     public async Task<ActionResult<ApiResponse<CreatorPayoutDto>>> MarkPaid(
         int creatorUserId, [FromBody] MarkCreatorPayoutPaidRequestDto request, CancellationToken cancellationToken)
     {
@@ -71,7 +73,7 @@ public class CreatorPayoutController : BaseApiController
 
     /// <summary>Huỷ một lần chi (chuyển nhầm, ngân hàng trả lại) kèm lý do; số dư được cộng lại.</summary>
     [HttpPost("/api/v1/admin/creator-payouts/{payoutId:int}/cancel")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.CreatorPayoutManage)]
     public async Task<ActionResult<ApiResponse<CreatorPayoutDto>>> Cancel(
         int payoutId, [FromBody] CancelCreatorPayoutRequestDto request, CancellationToken cancellationToken)
     {

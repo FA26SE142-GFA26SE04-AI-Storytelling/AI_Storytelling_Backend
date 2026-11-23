@@ -3,13 +3,15 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.StoryRatings.DTOs;
 using StoryPlatform.Application.Features.StoryRatings.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>
 /// Moderator xử lý mục StoryRating đang nhận (claim qua ModerationQueue). Administrator không xử lý loại mục này.
 /// </summary>
-[Authorize(Roles = "Moderator")]
+[HasPermission(Permissions.Moderation.RatingModerate)]
 public class StoryRatingModerationController : BaseApiController
 {
     private readonly IStoryRatingModerationService _moderationService;

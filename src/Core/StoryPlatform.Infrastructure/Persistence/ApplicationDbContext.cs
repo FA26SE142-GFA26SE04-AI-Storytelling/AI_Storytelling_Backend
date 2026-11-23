@@ -91,6 +91,9 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<AiGovernanceMetric> AiGovernanceMetrics => Set<AiGovernanceMetric>();
     public DbSet<BusinessReport> BusinessReports => Set<BusinessReport>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<Role> Roles => Set<Role>();
+    public DbSet<Permission> Permissions => Set<Permission>();
+    public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
     public DbSet<ChildProfileVersionHistory> ChildProfileVersionHistories => Set<ChildProfileVersionHistory>();
     public DbSet<TokenQuotaConfig> TokenQuotaConfigs => Set<TokenQuotaConfig>();
     public DbSet<SubscriptionPlan> SubscriptionPlans => Set<SubscriptionPlan>();

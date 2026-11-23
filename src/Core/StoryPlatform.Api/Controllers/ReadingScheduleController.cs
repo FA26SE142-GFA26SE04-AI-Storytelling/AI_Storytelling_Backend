@@ -2,7 +2,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using StoryPlatform.Api.Authorization;
 using StoryPlatform.Application.Common.Models;
+using StoryPlatform.Application.Features.AccessControl;
 using StoryPlatform.Application.Features.ChildProfiles.ReadingTime.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.ReadingTime.Interfaces;
 
@@ -20,7 +22,7 @@ public class ReadingScheduleController : BaseApiController
 
     /// <summary>Cấu hình hiện tại; chưa lưu lần nào thì trả gợi ý theo độ tuổi (isSuggested = true).</summary>
     [HttpGet("{childProfileId:int}")]
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.ChildProfileManage)]
     public async Task<ActionResult<ApiResponse<ReadingScheduleDto>>> GetReadingSchedule(
         int childProfileId, CancellationToken cancellationToken)
     {
@@ -30,7 +32,7 @@ public class ReadingScheduleController : BaseApiController
 
     /// <summary>Lưu toàn bộ cấu hình (thay danh sách khung giờ); có hiệu lực ngay từ lần kiểm tra kế tiếp.</summary>
     [HttpPut("{childProfileId:int}")]
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.ChildProfileManage)]
     public async Task<ActionResult<ApiResponse<ReadingScheduleDto>>> SetReadingSchedule(
         int childProfileId,
         [FromBody] SetReadingScheduleRequestDto request,

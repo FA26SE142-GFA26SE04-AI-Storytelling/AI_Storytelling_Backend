@@ -3,11 +3,13 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.ContentReports.DTOs;
 using StoryPlatform.Application.Features.ContentReports.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>Người giám sát báo cáo truyện đã công khai (WF-L4E, UC-L4E-01).</summary>
-[Authorize(Roles = "User")]
+[HasPermission(Permissions.Parent.ContentReportSubmit)]
 public class ContentReportController : BaseApiController
 {
     private readonly IContentReportService _reportService;

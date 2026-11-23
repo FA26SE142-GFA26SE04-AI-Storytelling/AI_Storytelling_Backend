@@ -7,12 +7,15 @@ using StoryPlatform.Application.Features.StoryWishes;
 using StoryPlatform.Application.Features.StoryWishes.Interfaces;
 using StoryPlatform.Application.Features.WishCards;
 using StoryPlatform.Application.Features.WishCards.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.ChildProfiles.Safety;
 
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>Bé ước một câu chuyện, phía trẻ (WF-L2D UC-L2D-01).</summary>
 [ApiController]
 [Authorize(Policy = ServiceExtensions.ChildSessionPolicy)]
+[RequireChildFeature(ChildFeatures.Wishes)]
 [Route("api/v1/child/wishes")]
 public sealed class ChildWishesController : ControllerBase
 {

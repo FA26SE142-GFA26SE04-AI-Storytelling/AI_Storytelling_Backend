@@ -61,7 +61,7 @@ public class ParentReadingFeedbackControllerTests
             .Select(method => method.Name).OrderBy(name => name).ToArray();
 
         Assert.NotNull(authorize);
-        Assert.Equal("User", authorize!.Roles);
+        Assert.Equal("User", authorize!.GrantedRoles());
         Assert.Equal(new[] { "DeleteReadAloudRecording", "DeleteReflectionNote", "List", "Overview", "Quiz", "ReadAloudRecordings", "Reflection" }, methods);
         Assert.Equal("{childProfileId:int}/sessions/{sessionId:int}/reflection",
             type.GetMethod("Reflection")!.GetCustomAttribute<HttpGetAttribute>()!.Template);

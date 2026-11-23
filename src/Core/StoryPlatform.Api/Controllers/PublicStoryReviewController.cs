@@ -3,11 +3,13 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.Moderation.DTOs;
 using StoryPlatform.Application.Features.Moderation.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>Lượt duyệt truyện Public Library của Moderator (WF-L5A, SCR-L5A-03).</summary>
-[Authorize(Roles = "Moderator,Administrator")]
+[HasPermission(Permissions.Review.PublicStory)]
 public class PublicStoryReviewController : BaseApiController
 {
     private readonly IPublicStoryReviewService _reviewService;

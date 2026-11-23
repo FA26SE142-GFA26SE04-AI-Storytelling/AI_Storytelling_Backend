@@ -179,6 +179,6 @@ public sealed class StoryRatingModerationServiceTests
     {
         var authorize = typeof(StoryRatingModerationController).GetCustomAttribute<AuthorizeAttribute>();
 
-        Assert.Equal("Moderator", authorize!.Roles);
+        Assert.Equal("Moderator", authorize!.GrantedRoles());
     }
 }

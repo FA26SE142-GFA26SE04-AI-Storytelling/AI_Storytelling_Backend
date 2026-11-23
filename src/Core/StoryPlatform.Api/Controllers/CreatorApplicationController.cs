@@ -5,6 +5,8 @@ using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.CreatorApplications.DTOs;
 using StoryPlatform.Application.Features.CreatorApplications.Interfaces;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
@@ -24,7 +26,7 @@ public class CreatorApplicationController : BaseApiController
 
     /// <summary>Đơn mới nhất của Creator đang đăng nhập: chờ duyệt, đã duyệt, hoặc bị từ chối kèm lý do.</summary>
     [HttpGet("me")]
-    [Authorize(Roles = CreatorApplicantAccess.ApplicantRole + ",ContentCreator")]
+    [HasPermission(Permissions.Creator.ApplicationViewOwn)]
     public async Task<ActionResult<ApiResponse<CreatorApplicationDto>>> GetMine(CancellationToken cancellationToken)
     {
         var result = await _service.GetMineAsync(GetCurrentUserId(), cancellationToken);
@@ -33,7 +35,7 @@ public class CreatorApplicationController : BaseApiController
 
     /// <summary>Nộp lại đơn sau khi bị từ chối; tạo đơn chờ duyệt mới.</summary>
     [HttpPost("me/resubmit")]
-    [Authorize(Roles = CreatorApplicantAccess.ApplicantRole)]
+    [HasPermission(Permissions.Creator.ApplicationSubmit)]
     public async Task<ActionResult<ApiResponse<CreatorApplicationDto>>> Resubmit(
         [FromBody] ResubmitCreatorApplicationRequestDto request, CancellationToken cancellationToken)
     {
@@ -43,7 +45,7 @@ public class CreatorApplicationController : BaseApiController
 
     /// <summary>Danh sách đơn; status = Pending, Approved hoặc Rejected để lọc (Pending: cũ nhất trước).</summary>
     [HttpGet("/api/v1/admin/creator-applications")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.CreatorApplicationReview)]
     public async Task<ActionResult<ApiResponse<PagedResult<CreatorApplicationDto>>>> List(
         [FromQuery] CreatorApplicationStatus? status, [FromQuery] int pageIndex = 1, [FromQuery] int pageSize = 20,
         CancellationToken cancellationToken = default)
@@ -53,7 +55,7 @@ public class CreatorApplicationController : BaseApiController
     }
 
     [HttpGet("/api/v1/admin/creator-applications/{applicationId:int}")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.CreatorApplicationReview)]
     public async Task<ActionResult<ApiResponse<CreatorApplicationDto>>> Get(
         int applicationId, CancellationToken cancellationToken)
     {
@@ -63,7 +65,7 @@ public class CreatorApplicationController : BaseApiController
 
     /// <summary>Duyệt đơn: tài khoản Creator thành Active, Creator nhận thông báo và email.</summary>
     [HttpPost("/api/v1/admin/creator-applications/{applicationId:int}/approve")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.CreatorApplicationReview)]
     public async Task<ActionResult<ApiResponse<CreatorApplicationDto>>> Approve(
         int applicationId, CancellationToken cancellationToken)
     {
@@ -73,7 +75,7 @@ public class CreatorApplicationController : BaseApiController
 
     /// <summary>Từ chối đơn kèm lý do bắt buộc; Creator thấy lý do và có thể nộp lại.</summary>
     [HttpPost("/api/v1/admin/creator-applications/{applicationId:int}/reject")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.CreatorApplicationReview)]
     public async Task<ActionResult<ApiResponse<CreatorApplicationDto>>> Reject(
         int applicationId, [FromBody] RejectCreatorApplicationRequestDto request, CancellationToken cancellationToken)
     {

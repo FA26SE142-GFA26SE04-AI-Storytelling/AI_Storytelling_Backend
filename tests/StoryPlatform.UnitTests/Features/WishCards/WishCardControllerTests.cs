@@ -29,7 +29,7 @@ public class WishCardControllerTests
         var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Select(method => method.Name).OrderBy(name => name).ToArray();
 
-        Assert.Equal("Moderator,Administrator", authorize!.Roles);
+        Assert.Equal("Moderator,Administrator", authorize!.GrantedRoles());
         Assert.Equal("api/v1/moderation/wish-cards", type.GetCustomAttribute<RouteAttribute>(inherit: false)!.Template);
         Assert.Equal(new[] { "Create", "Get", "List", "SetActive", "Update" }, methods);
     }

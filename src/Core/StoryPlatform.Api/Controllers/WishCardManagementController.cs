@@ -3,11 +3,13 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.WishCards;
 using StoryPlatform.Application.Features.WishCards.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>Moderator quản lý bộ thẻ ước cho Bé ước / Bé sáng tác (WF-L2D, WF-L5E). Ẩn chứ không xóa.</summary>
-[Authorize(Roles = "Moderator,Administrator")]
+[HasPermission(Permissions.Review.WishCardManage)]
 [Route("api/v1/moderation/wish-cards")]
 public sealed class WishCardManagementController : BaseApiController
 {

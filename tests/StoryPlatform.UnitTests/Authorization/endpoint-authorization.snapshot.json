@@ -1,0 +1,1704 @@
+{
+  "AIStoryInputController.GetContext#GET children/{childProfileId:int}/context": [
+    "User"
+  ],
+  "AIStoryInputController.GetProgress#GET stories/{storyId:int}/requests/{requestId:int}": [
+    "User"
+  ],
+  "AIStoryInputController.Retry#POST stories/{storyId:int}/requests/{requestId:int}/retry": [
+    "User"
+  ],
+  "AIStoryInputController.Submit#POST requests": [
+    "User"
+  ],
+  "AdminAuditLogController.Get#GET {auditLogId:int}": [
+    "Administrator"
+  ],
+  "AdminAuditLogController.GetFilters#GET filters": [
+    "Administrator"
+  ],
+  "AdminAuditLogController.Search#GET ": [
+    "Administrator"
+  ],
+  "AdminPermissionsController.GetRolePermissions#GET roles/{code}/permissions": [
+    "Administrator"
+  ],
+  "AdminPermissionsController.ListPermissions#GET permissions": [
+    "Administrator"
+  ],
+  "AdminPermissionsController.ListRoles#GET roles": [
+    "Administrator"
+  ],
+  "AdminPermissionsController.UpdateRolePermissions#PUT roles/{code}/permissions": [
+    "Administrator"
+  ],
+  "AiGenerationCapacityController.GetCapacity#GET capacity": [
+    "ContentCreator",
+    "User"
+  ],
+  "AuthController.ActivateStaffAccount#POST staff-activation": [
+    "anonymous",
+    "child",
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "AuthController.ChangePassword#POST change-password": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "AuthController.ConfirmEmailChange#POST change-email/confirm": [
+    "User"
+  ],
+  "AuthController.DeleteAccount#DELETE me": [
+    "User"
+  ],
+  "AuthController.ForgotPassword#POST forgot-password": [
+    "anonymous",
+    "child",
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "AuthController.GetDeleteAccountPreview#GET me/delete-preview": [
+    "User"
+  ],
+  "AuthController.GetMyAuditLog#GET me/audit-log": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "AuthController.GetProfile#GET me": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "AuthController.ListSessions#GET sessions": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "AuthController.Login#POST login": [
+    "anonymous",
+    "child",
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "AuthController.Logout#POST logout": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "AuthController.LogoutAllDevices#POST logout-all-devices": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "AuthController.RefreshToken#POST refresh-token": [
+    "anonymous",
+    "child",
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "AuthController.Register#POST register": [
+    "anonymous",
+    "child",
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "AuthController.RegisterCreator#POST register-creator": [
+    "anonymous",
+    "child",
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "AuthController.RequestEmailChange#POST change-email": [
+    "User"
+  ],
+  "AuthController.ResendVerificationEmail#POST resend-verification-email": [
+    "anonymous",
+    "child",
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "AuthController.ResetPassword#POST reset-password": [
+    "anonymous",
+    "child",
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "AuthController.RevokeSession#DELETE sessions/{id:int}": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "AuthController.UpdateProfile#PUT me": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "AuthController.VerifyEmail#POST verify-email": [
+    "anonymous",
+    "child",
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "AuthoringGuideManagementController.CreateDraft#POST draft": [
+    "Administrator",
+    "Moderator"
+  ],
+  "AuthoringGuideManagementController.DiscardDraft#DELETE draft": [
+    "Administrator",
+    "Moderator"
+  ],
+  "AuthoringGuideManagementController.Overview#GET ": [
+    "Administrator",
+    "Moderator"
+  ],
+  "AuthoringGuideManagementController.Preview#POST draft/preview": [
+    "Administrator",
+    "Moderator"
+  ],
+  "AuthoringGuideManagementController.Publish#POST draft/publish": [
+    "Administrator",
+    "Moderator"
+  ],
+  "AuthoringGuideManagementController.RemoveItem#DELETE draft/items/{guideId}": [
+    "Administrator",
+    "Moderator"
+  ],
+  "AuthoringGuideManagementController.UpsertItem#PUT draft/items/{guideId}": [
+    "Administrator",
+    "Moderator"
+  ],
+  "AuthoringGuideManagementController.Version#GET versions/{versionId:int}": [
+    "Administrator",
+    "Moderator"
+  ],
+  "AuthoringGuideManagementController.Versions#GET versions": [
+    "Administrator",
+    "Moderator"
+  ],
+  "AuthoringGuidesController.Get#GET ": [
+    "User"
+  ],
+  "AuthoringGuidesController.Render#POST {guideId}/render": [
+    "User"
+  ],
+  "BusinessReportController.Generate#POST generate": [
+    "Administrator"
+  ],
+  "BusinessReportController.GetAccounts#GET admin/accounts": [
+    "Administrator"
+  ],
+  "BusinessReportController.GetById#GET admin/{reportId:int}": [
+    "Administrator"
+  ],
+  "BusinessReportController.GetCreators#GET admin/creators": [
+    "Administrator"
+  ],
+  "BusinessReportController.GetLatestPublished#GET latest-published": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "BusinessReportController.GetRevenue#GET admin/revenue": [
+    "Administrator"
+  ],
+  "BusinessReportController.List#GET admin": [
+    "Administrator"
+  ],
+  "BusinessReportController.Publish#POST {reportId:int}/publish": [
+    "Administrator"
+  ],
+  "ChildAccessCredentialController.CreateOrRegenerateEasyLogin#POST {childProfileId:int}/easylogin": [
+    "User"
+  ],
+  "ChildAccessCredentialController.GetCredential#GET {childProfileId:int}": [
+    "User"
+  ],
+  "ChildAccessCredentialController.GetMySession#GET me": [
+    "child"
+  ],
+  "ChildAccessCredentialController.GetStoryHandoverOptions#GET story-handover": [
+    "User"
+  ],
+  "ChildAccessCredentialController.LoginWithEasyLogin#POST easylogin/login": [
+    "anonymous",
+    "child",
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ChildAccessCredentialController.RevokeCredential#DELETE {childProfileId:int}": [
+    "User"
+  ],
+  "ChildAccessCredentialController.StartStoryHandover#POST {childProfileId:int}/handover-story": [
+    "User"
+  ],
+  "ChildAccessCredentialController.StartSupervisedSession#POST {childProfileId:int}/handover": [
+    "User"
+  ],
+  "ChildManualStoriesController.Library#GET ": [
+    "child"
+  ],
+  "ChildManualStoriesController.Package#GET {confirmationId:int}/package": [
+    "child"
+  ],
+  "ChildNotebookController.Collect#POST sessions/{sessionId:int}/words": [
+    "child"
+  ],
+  "ChildNotebookController.List#GET ": [
+    "child"
+  ],
+  "ChildNotebookController.Remove#DELETE {entryId:int}": [
+    "child"
+  ],
+  "ChildPackageAssetsController.Get#GET {assetId:int}": [
+    "child"
+  ],
+  "ChildProfileController.ActivateChildProfile#PATCH {id:int}/activate": [
+    "User"
+  ],
+  "ChildProfileController.ArchiveChildProfile#DELETE {id:int}": [
+    "User"
+  ],
+  "ChildProfileController.CreateChildProfile#POST ": [
+    "User"
+  ],
+  "ChildProfileController.GetChildProfileAuditLog#GET {id:int}/audit-log": [
+    "User"
+  ],
+  "ChildProfileController.GetChildProfileById#GET {id:int}": [
+    "User"
+  ],
+  "ChildProfileController.GetReadingSlots#GET reading-slots": [
+    "User"
+  ],
+  "ChildProfileController.ListMyChildProfiles#GET mine": [
+    "User"
+  ],
+  "ChildProfileController.RestoreChildProfile#PATCH {id:int}/restore": [
+    "User"
+  ],
+  "ChildProfileController.ResumeChildProfile#PATCH {id:int}/resume": [
+    "User"
+  ],
+  "ChildProfileController.SelectReadingSlots#PUT reading-slots": [
+    "User"
+  ],
+  "ChildProfileController.SuspendChildProfile#PATCH {id:int}/suspend": [
+    "User"
+  ],
+  "ChildProfileController.UpdateChildProfile#PUT {id:int}": [
+    "User"
+  ],
+  "ChildQuizController.GetQuiz#GET sessions/{sessionId:int}": [
+    "child"
+  ],
+  "ChildQuizController.GetResult#GET sessions/{sessionId:int}/result": [
+    "child"
+  ],
+  "ChildQuizController.SubmitAnswer#POST sessions/{sessionId:int}/answers": [
+    "child"
+  ],
+  "ChildReadingController.Complete#POST sessions/{sessionId:int}/complete": [
+    "child"
+  ],
+  "ChildReadingController.GetContent#GET sessions/{sessionId:int}/content": [
+    "child"
+  ],
+  "ChildReadingController.GetDefinition#GET sessions/{sessionId:int}/vocabulary/{vocabularyId:int}": [
+    "child"
+  ],
+  "ChildReadingController.GetSignal#GET sessions/{sessionId:int}/signal": [
+    "child"
+  ],
+  "ChildReadingController.LogEvent#POST sessions/{sessionId:int}/events": [
+    "child"
+  ],
+  "ChildReadingController.ReadAloud#POST sessions/{sessionId:int}/segments/{segmentId:int}/read-aloud": [
+    "child"
+  ],
+  "ChildReadingController.ReadAloudPractice#POST sessions/{sessionId:int}/read-aloud-practice/{interactionId:int}": [
+    "child"
+  ],
+  "ChildReadingController.SaveProgress#PUT sessions/{sessionId:int}/progress": [
+    "child"
+  ],
+  "ChildReadingController.SearchStories#GET stories": [
+    "child"
+  ],
+  "ChildReadingController.SetBookmark#PUT sessions/{sessionId:int}/bookmark": [
+    "child"
+  ],
+  "ChildReadingController.SetFavorite#PUT sessions/{sessionId:int}/favorite": [
+    "child"
+  ],
+  "ChildReadingController.SetFeeling#PUT sessions/{sessionId:int}/feeling": [
+    "child"
+  ],
+  "ChildReadingController.SetListenOnly#PUT sessions/{sessionId:int}/listen-only": [
+    "child"
+  ],
+  "ChildReadingController.Start#POST sessions": [
+    "child"
+  ],
+  "ChildReadingController.SubmitListeningAttempt#POST sessions/{sessionId:int}/interactions/{interactionId:int}/attempts": [
+    "child"
+  ],
+  "ChildRewardsController.Get#GET ": [
+    "child"
+  ],
+  "ChildRewardsController.WaterKnowledgeTree#POST knowledge-tree/water": [
+    "child"
+  ],
+  "ChildRoadmapController.AddStory#POST stories": [
+    "User"
+  ],
+  "ChildRoadmapController.Clear#DELETE {childProfileId:int}/items": [
+    "User"
+  ],
+  "ChildRoadmapController.Get#GET {childProfileId:int}": [
+    "User"
+  ],
+  "ChildRoadmapController.Remove#DELETE {childProfileId:int}/items/{itemId:int}": [
+    "User"
+  ],
+  "ChildRoadmapController.Reorder#PUT {childProfileId:int}/order": [
+    "User"
+  ],
+  "ChildStoryReflectionController.Get#GET ": [
+    "child"
+  ],
+  "ChildStoryReflectionController.SendNote#POST note": [
+    "child"
+  ],
+  "ChildStoryReflectionController.SetEmotions#PUT emotions": [
+    "child"
+  ],
+  "ChildStoryReflectionController.SetFavoriteScene#PUT favorite-scene": [
+    "child"
+  ],
+  "ChildStorySummaryController.Ask#POST questions": [
+    "child"
+  ],
+  "ChildStorySummaryController.SendRecording#POST recording": [
+    "child"
+  ],
+  "ChildWishesController.ListCards#GET /api/v1/child/wish-cards": [
+    "child"
+  ],
+  "ChildWishesController.ListMine#GET ": [
+    "child"
+  ],
+  "ChildWishesController.SelectCard#PUT draft/cards": [
+    "child"
+  ],
+  "ChildWishesController.StartDraft#POST draft": [
+    "child"
+  ],
+  "ChildWishesController.Submit#POST draft/submit": [
+    "child"
+  ],
+  "ContentCategoryController.CreateContentCategory#POST ": [
+    "Moderator"
+  ],
+  "ContentCategoryController.DeleteContentCategory#DELETE {contentCategoryId:int}": [
+    "Moderator"
+  ],
+  "ContentCategoryController.GetContentCategory#GET {contentCategoryId:int}": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ContentCategoryController.ListContentCategories#GET ": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ContentCategoryController.UpdateContentCategory#PUT {contentCategoryId:int}": [
+    "Moderator"
+  ],
+  "ContentGenerationController.GetProgress#GET progress": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ContentGenerationController.Retry#POST retry": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ContentReportController.Create#POST ": [
+    "User"
+  ],
+  "ContentReportReviewController.Archive#POST {itemId:int}/archive": [
+    "Moderator"
+  ],
+  "ContentReportReviewController.Dismiss#POST {itemId:int}/dismiss": [
+    "Moderator"
+  ],
+  "ContentReportReviewController.GetDetail#GET {itemId:int}": [
+    "Moderator"
+  ],
+  "CreatorAIStoryInputController.GetContext#GET context": [
+    "ContentCreator"
+  ],
+  "CreatorAIStoryInputController.GetProgress#GET stories/{storyId:int}/requests/{requestId:int}": [
+    "ContentCreator"
+  ],
+  "CreatorAIStoryInputController.Retry#POST stories/{storyId:int}/requests/{requestId:int}/retry": [
+    "ContentCreator"
+  ],
+  "CreatorAIStoryInputController.Submit#POST requests": [
+    "ContentCreator"
+  ],
+  "CreatorAccountController.Deactivate#POST {creatorUserId:int}/deactivate": [
+    "Administrator"
+  ],
+  "CreatorAccountController.Get#GET {creatorUserId:int}": [
+    "Administrator"
+  ],
+  "CreatorAccountController.List#GET ": [
+    "Administrator"
+  ],
+  "CreatorAccountController.Reactivate#POST {creatorUserId:int}/reactivate": [
+    "Administrator"
+  ],
+  "CreatorApplicationController.Approve#POST /api/v1/admin/creator-applications/{applicationId:int}/approve": [
+    "Administrator"
+  ],
+  "CreatorApplicationController.Get#GET /api/v1/admin/creator-applications/{applicationId:int}": [
+    "Administrator"
+  ],
+  "CreatorApplicationController.GetMine#GET me": [
+    "ContentCreator",
+    "CreatorApplicant"
+  ],
+  "CreatorApplicationController.List#GET /api/v1/admin/creator-applications": [
+    "Administrator"
+  ],
+  "CreatorApplicationController.Reject#POST /api/v1/admin/creator-applications/{applicationId:int}/reject": [
+    "Administrator"
+  ],
+  "CreatorApplicationController.Resubmit#POST me/resubmit": [
+    "CreatorApplicant"
+  ],
+  "CreatorAssistanceController.Answer#POST {taskId:int}/clarification-answer": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "CreatorAssistanceController.Cancel#POST {taskId:int}/cancel": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "CreatorAssistanceController.Close#POST {taskId:int}/close": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "CreatorAssistanceController.Create#POST ": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "CreatorAssistanceController.Direction#POST {taskId:int}/direction": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "CreatorAssistanceController.Get#GET {taskId:int}": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "CreatorAssistanceController.List#GET ": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "CreatorAssistanceController.Steps#GET {taskId:int}/steps": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "CreatorAssistanceController.Suggestions#POST {taskId:int}/suggestions": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "CreatorAssistanceController.Trial#POST {taskId:int}/trials": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "CreatorAuthoringController.Confirm#POST {storyId:int}/imports/confirm": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "CreatorAuthoringController.ConfirmContent#POST {storyId:int}/manual/confirm-content": [
+    "ContentCreator"
+  ],
+  "CreatorAuthoringController.Create#POST manual": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "CreatorAuthoringController.Get#GET {storyId:int}": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "CreatorAuthoringController.Mine#GET ": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "CreatorAuthoringController.Preview#POST {storyId:int}/imports/preview": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "CreatorAuthoringController.PreviewFile#POST {storyId:int}/imports/preview-file": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "CreatorAuthoringController.Restore#POST {storyId:int}/content/restore": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "CreatorAuthoringController.Save#POST {storyId:int}/manual/versions": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "CreatorAuthoringController.Version#GET {storyId:int}/content/versions/{versionId:int}": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "CreatorAuthoringController.Versions#GET {storyId:int}/content/versions": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "CreatorMediaUploadsController.GenerateAudio#POST segments/{segmentId:int}/generate": [
+    "ContentCreator"
+  ],
+  "CreatorMediaUploadsController.GenerateImage#POST illustration-beats/{beatId:int}/generate": [
+    "ContentCreator"
+  ],
+  "CreatorMediaUploadsController.UploadAudio#POST segments/{segmentId:int}/upload": [
+    "ContentCreator"
+  ],
+  "CreatorMediaUploadsController.UploadImage#POST illustration-beats/{beatId:int}/upload": [
+    "ContentCreator"
+  ],
+  "CreatorModerationCheckController.Check#POST {storyId:int}/content/check": [
+    "ContentCreator"
+  ],
+  "CreatorPayoutController.Cancel#POST /api/v1/admin/creator-payouts/{payoutId:int}/cancel": [
+    "Administrator"
+  ],
+  "CreatorPayoutController.GetCreator#GET /api/v1/admin/creator-payouts/creators/{creatorUserId:int}": [
+    "Administrator"
+  ],
+  "CreatorPayoutController.GetDue#GET /api/v1/admin/creator-payouts/due": [
+    "Administrator"
+  ],
+  "CreatorPayoutController.GetMine#GET me": [
+    "ContentCreator"
+  ],
+  "CreatorPayoutController.MarkPaid#POST /api/v1/admin/creator-payouts/creators/{creatorUserId:int}/mark-paid": [
+    "Administrator"
+  ],
+  "CreatorPayoutController.UpdateMyAccount#PUT me/account": [
+    "ContentCreator"
+  ],
+  "CreatorPublicationController.CreateRevision#POST /api/v1/creator/stories/{storyId:int}/revisions": [
+    "ContentCreator"
+  ],
+  "CreatorPublicationController.DecideRemoval#POST /api/v1/moderation/public-story-removals/{itemId:int}/decision": [
+    "Administrator",
+    "Moderator"
+  ],
+  "CreatorPublicationController.GetStatus#GET /api/v1/creator/stories/{storyId:int}/publication": [
+    "ContentCreator"
+  ],
+  "CreatorPublicationController.RequestRemoval#POST /api/v1/creator/stories/{storyId:int}/removal-requests": [
+    "ContentCreator"
+  ],
+  "CreatorStatisticsController.GetContent#GET content": [
+    "ContentCreator"
+  ],
+  "CreatorStatisticsController.GetReading#GET reading": [
+    "ContentCreator"
+  ],
+  "CreatorStatisticsController.GetRevenue#GET revenue": [
+    "ContentCreator"
+  ],
+  "CreatorTierController.Get#GET ": [
+    "Administrator"
+  ],
+  "CreatorTierController.Revoke#POST revoke": [
+    "Administrator"
+  ],
+  "ExistingStoriesController.Adapt#POST {storyId:int}/existing/adapt": [
+    "User"
+  ],
+  "ExistingStoriesController.Archive#POST {storyId:int}/existing/archive": [
+    "User"
+  ],
+  "ExistingStoriesController.Evaluate#POST {storyId:int}/existing/evaluate": [
+    "User"
+  ],
+  "ExistingStoriesController.GetLatestEvaluation#GET {storyId:int}/existing/evaluation": [
+    "User"
+  ],
+  "ExistingStoriesController.Import#POST import": [
+    "User"
+  ],
+  "ExistingStoriesController.ImportFile#POST import-file": [
+    "User"
+  ],
+  "ExistingStoriesController.KeepOriginal#POST {storyId:int}/existing/keep-original": [
+    "User"
+  ],
+  "ExistingStoriesController.UpdateContent#PUT {storyId:int}/existing/content": [
+    "User"
+  ],
+  "GrayZoneReviewController.Decide#POST {itemId:int}/decision": [
+    "Administrator",
+    "Moderator"
+  ],
+  "GrayZoneReviewController.Get#GET {itemId:int}": [
+    "Administrator",
+    "Moderator"
+  ],
+  "LearningProfileController.CreateLearningProfile#POST {childProfileId:int}": [
+    "User"
+  ],
+  "LearningProfileController.DeleteLearningProfile#DELETE {childProfileId:int}": [
+    "User"
+  ],
+  "LearningProfileController.GetLearningProfile#GET {childProfileId:int}": [
+    "User"
+  ],
+  "LearningProfileController.SetLearningProfile#PUT {childProfileId:int}": [
+    "User"
+  ],
+  "MediaGenerationController.Confirm#POST confirm": [
+    "ContentCreator",
+    "User"
+  ],
+  "MediaGenerationController.GetPackage#GET package": [
+    "ContentCreator",
+    "User"
+  ],
+  "MediaGenerationController.GetProgress#GET progress": [
+    "ContentCreator",
+    "User"
+  ],
+  "MediaGenerationController.KeepCurrent#POST replacements/{candidateAssetId:int}/keep-current": [
+    "ContentCreator",
+    "User"
+  ],
+  "MediaGenerationController.RegenerateIllustrationBeat#POST illustration-beats/{beatId:int}/regenerate": [
+    "ContentCreator",
+    "User"
+  ],
+  "MediaGenerationController.RegenerateSegmentAudio#POST segments/{segmentId:int}/regenerate": [
+    "ContentCreator",
+    "User"
+  ],
+  "MediaGenerationController.Retry#POST retry": [
+    "ContentCreator",
+    "User"
+  ],
+  "ModerationQueueController.Claim#POST {itemId:int}/claim": [
+    "Administrator",
+    "Moderator"
+  ],
+  "ModerationQueueController.GetStatistics#GET statistics": [
+    "Moderator"
+  ],
+  "ModerationQueueController.GrantReviewView#POST review-views": [
+    "Administrator",
+    "Moderator"
+  ],
+  "ModerationQueueController.List#GET ": [
+    "Administrator",
+    "Moderator"
+  ],
+  "ModerationQueueController.Open#GET {itemId:int}": [
+    "Administrator",
+    "Moderator"
+  ],
+  "ModerationRubricsController.Activate#POST {id:int}/activate": [
+    "Administrator",
+    "Moderator"
+  ],
+  "ModerationRubricsController.Active#GET active": [
+    "Administrator",
+    "Moderator"
+  ],
+  "ModerationRubricsController.Clone#POST {id:int}/clone": [
+    "Administrator",
+    "Moderator"
+  ],
+  "ModerationRubricsController.Create#POST ": [
+    "Administrator",
+    "Moderator"
+  ],
+  "ModerationRubricsController.Delete#DELETE {id:int}": [
+    "Administrator",
+    "Moderator"
+  ],
+  "ModerationRubricsController.Evaluate#POST {id:int}/evaluations": [
+    "Administrator",
+    "Moderator"
+  ],
+  "ModerationRubricsController.Get#GET {id:int}": [
+    "Administrator",
+    "Moderator"
+  ],
+  "ModerationRubricsController.List#GET ": [
+    "Administrator",
+    "Moderator"
+  ],
+  "ModerationRubricsController.Logs#GET {id:int}/audit-logs": [
+    "Administrator",
+    "Moderator"
+  ],
+  "ModerationRubricsController.Update#PUT {id:int}": [
+    "Administrator",
+    "Moderator"
+  ],
+  "ModerationRubricsController.Validate#POST {id:int}/validate": [
+    "Administrator",
+    "Moderator"
+  ],
+  "MyRoadmapController.Get#GET ": [
+    "child"
+  ],
+  "NotificationController.DeleteNotification#DELETE {notificationId:int}": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "NotificationController.GetUnreadCount#GET unread-count": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "NotificationController.ListNotifications#GET ": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "NotificationController.MarkAllAsRead#PUT read-all": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "NotificationController.MarkAsRead#PUT {notificationId:int}/read": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "OutlineController.Approve#POST versions/{versionNo:int}/approve": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "OutlineController.Edit#PUT versions/{versionNo:int}": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "OutlineController.GetCurrent#GET ": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "OutlineController.GetVersion#GET versions/{versionNo:int}": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "OutlineController.GetVersions#GET versions": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "OutlineController.Regenerate#POST versions/{versionNo:int}/regenerate": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "OutlineController.Reject#POST versions/{versionNo:int}/reject": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "OutlineController.RetryInitial#POST retry": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ParentAssistanceController.Answer#POST {taskId:int}/clarification-answer": [
+    "User"
+  ],
+  "ParentAssistanceController.Cancel#POST {taskId:int}/cancel": [
+    "User"
+  ],
+  "ParentAssistanceController.Close#POST {taskId:int}/close": [
+    "User"
+  ],
+  "ParentAssistanceController.Create#POST ": [
+    "User"
+  ],
+  "ParentAssistanceController.Direction#POST {taskId:int}/direction": [
+    "User"
+  ],
+  "ParentAssistanceController.Get#GET {taskId:int}": [
+    "User"
+  ],
+  "ParentAssistanceController.List#GET ": [
+    "User"
+  ],
+  "ParentAssistanceController.Steps#GET {taskId:int}/steps": [
+    "User"
+  ],
+  "ParentAssistanceController.Suggestions#POST {taskId:int}/suggestions": [
+    "User"
+  ],
+  "ParentAssistanceController.Trial#POST {taskId:int}/trials": [
+    "User"
+  ],
+  "ParentAuthoringController.Check#POST {storyId:int}/content/checks": [
+    "User"
+  ],
+  "ParentAuthoringController.ConfirmContent#POST {storyId:int}/content/confirm": [
+    "User"
+  ],
+  "ParentAuthoringController.ConfirmFamily#POST {storyId:int}/family-confirmations": [
+    "User"
+  ],
+  "ParentAuthoringController.ConfirmImport#POST {storyId:int}/imports/confirm": [
+    "User"
+  ],
+  "ParentAuthoringController.Create#POST manual": [
+    "User"
+  ],
+  "ParentAuthoringController.GenerateMedia#POST {storyId:int}/manual/media/generate": [
+    "User"
+  ],
+  "ParentAuthoringController.Get#GET {storyId:int}": [
+    "User"
+  ],
+  "ParentAuthoringController.Mine#GET ": [
+    "User"
+  ],
+  "ParentAuthoringController.Prepare#POST {storyId:int}/preparations": [
+    "User"
+  ],
+  "ParentAuthoringController.Preview#GET {storyId:int}/preparations/{preparationId:int}": [
+    "User"
+  ],
+  "ParentAuthoringController.PreviewFile#POST {storyId:int}/imports/preview-file": [
+    "User"
+  ],
+  "ParentAuthoringController.PreviewImport#POST {storyId:int}/imports/preview": [
+    "User"
+  ],
+  "ParentAuthoringController.Restore#POST {storyId:int}/content/restore": [
+    "User"
+  ],
+  "ParentAuthoringController.RevokeFamily#POST {storyId:int}/family-confirmations/revoke": [
+    "User"
+  ],
+  "ParentAuthoringController.Save#POST {storyId:int}/manual/versions": [
+    "User"
+  ],
+  "ParentAuthoringController.Setup#PATCH {storyId:int}/setup": [
+    "User"
+  ],
+  "ParentAuthoringController.Version#GET {storyId:int}/content/versions/{versionId:int}": [
+    "User"
+  ],
+  "ParentAuthoringController.Versions#GET {storyId:int}/content/versions": [
+    "User"
+  ],
+  "ParentAuthoringController.Workflow#GET {storyId:int}/workflow": [
+    "User"
+  ],
+  "ParentPackageAssetsController.Get#GET {assetId:int}": [
+    "User"
+  ],
+  "ParentReadingFeedbackController.DeleteReadAloudRecording#DELETE {childProfileId:int}/sessions/{sessionId:int}/read-aloud/{recordingId:int}": [
+    "User"
+  ],
+  "ParentReadingFeedbackController.DeleteReflectionNote#DELETE {childProfileId:int}/sessions/{sessionId:int}/reflection/note": [
+    "User"
+  ],
+  "ParentReadingFeedbackController.List#GET {childProfileId:int}": [
+    "User"
+  ],
+  "ParentReadingFeedbackController.Overview#GET {childProfileId:int}/overview": [
+    "User"
+  ],
+  "ParentReadingFeedbackController.Quiz#GET {childProfileId:int}/sessions/{sessionId:int}/quiz": [
+    "User"
+  ],
+  "ParentReadingFeedbackController.ReadAloudRecordings#GET {childProfileId:int}/sessions/{sessionId:int}/read-aloud": [
+    "User"
+  ],
+  "ParentReadingFeedbackController.Reflection#GET {childProfileId:int}/sessions/{sessionId:int}/reflection": [
+    "User"
+  ],
+  "ParentStoryPackagesController.Confirm#POST packages/{packageId:int}/confirm": [
+    "User"
+  ],
+  "ParentStoryPackagesController.Create#POST packages": [
+    "User"
+  ],
+  "ParentStoryPackagesController.Deliver#POST family-confirmations/batch": [
+    "User"
+  ],
+  "ParentStoryPackagesController.FinalizeContent#POST content/finalize": [
+    "User"
+  ],
+  "ParentStoryPackagesController.Generate#POST packages/{packageId:int}/generate": [
+    "User"
+  ],
+  "ParentStoryPackagesController.Get#GET packages/{packageId:int}": [
+    "User"
+  ],
+  "ParentStoryPackagesController.List#GET packages": [
+    "User"
+  ],
+  "ParentStoryPackagesController.Preview#GET packages/{packageId:int}/preview": [
+    "User"
+  ],
+  "ParentStoryPackagesController.Reopen#POST content/reopen": [
+    "User"
+  ],
+  "ParentStoryPackagesController.Retry#POST packages/{packageId:int}/retry": [
+    "User"
+  ],
+  "ParentStoryPackagesController.Revise#POST packages/{packageId:int}/revise": [
+    "User"
+  ],
+  "ParentStorySummaryController.Delete#DELETE {childProfileId:int}/{summaryId:int}": [
+    "User"
+  ],
+  "ParentStorySummaryController.List#GET {childProfileId:int}": [
+    "User"
+  ],
+  "ParentStorySummaryController.SetAnswered#PUT {childProfileId:int}/{summaryId:int}/questions/{questionId:int}/answered": [
+    "User"
+  ],
+  "ParentWishSuggestionsController.Get#GET {wishId:int}/suggestions": [
+    "User"
+  ],
+  "ParentWishesController.CreateStory#POST {wishId:int}/create-story": [
+    "User"
+  ],
+  "ParentWishesController.Decline#POST {wishId:int}/decline": [
+    "User"
+  ],
+  "ParentWishesController.Get#GET {wishId:int}": [
+    "User"
+  ],
+  "ParentWishesController.GetGenerationForm#GET {wishId:int}/generation-form": [
+    "User"
+  ],
+  "ParentWishesController.GetGenerationProgress#GET {wishId:int}/generation": [
+    "User"
+  ],
+  "ParentWishesController.List#GET ": [
+    "User"
+  ],
+  "ParentWishesController.UseExisting#POST {wishId:int}/use-existing": [
+    "User"
+  ],
+  "ParentalGateController.Verify#POST verify": [
+    "anonymous",
+    "child",
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "PaymentController.CreatePlan#POST admin/plans": [
+    "Administrator"
+  ],
+  "PaymentController.CreateTransaction#POST transactions": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "PaymentController.GetSettings#GET admin/settings": [
+    "Administrator"
+  ],
+  "PaymentController.ListActivePlans#GET plans": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "PaymentController.ListAllPlans#GET admin/plans": [
+    "Administrator"
+  ],
+  "PaymentController.ListAllTransactions#GET admin/transactions": [
+    "Administrator"
+  ],
+  "PaymentController.ListMismatched#GET mismatched": [
+    "Administrator"
+  ],
+  "PaymentController.ListMyTransactions#GET transactions/me": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "PaymentController.ListReconciliationExceptions#GET admin/reconciliation": [
+    "Administrator"
+  ],
+  "PaymentController.MarkPaidManually#POST transactions/{transactionId:int}/mark-paid": [
+    "Administrator"
+  ],
+  "PaymentController.ResolveReconciliationException#POST admin/reconciliation/{exceptionId:int}/resolve": [
+    "Administrator"
+  ],
+  "PaymentController.SePayWebhook#POST webhook/sepay": [
+    "anonymous",
+    "child",
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "PaymentController.UpdatePlan#PUT admin/plans/{planId:int}": [
+    "Administrator"
+  ],
+  "PaymentController.UpdateSettings#PUT admin/settings": [
+    "Administrator"
+  ],
+  "PublicStoryReviewController.Approve#POST {itemId:int}/approve": [
+    "Administrator",
+    "Moderator"
+  ],
+  "PublicStoryReviewController.Compare#GET {itemId:int}/compare": [
+    "Administrator",
+    "Moderator"
+  ],
+  "PublicStoryReviewController.GetPackage#GET {itemId:int}": [
+    "Administrator",
+    "Moderator"
+  ],
+  "PublicStoryReviewController.MarkViewed#POST {itemId:int}/views": [
+    "Administrator",
+    "Moderator"
+  ],
+  "PublicStoryReviewController.Reject#POST {itemId:int}/reject": [
+    "Administrator",
+    "Moderator"
+  ],
+  "PublicStoryReviewController.RequestChanges#POST {itemId:int}/request-changes": [
+    "Administrator",
+    "Moderator"
+  ],
+  "PublicStoryReviewController.ResolveFlag#POST {itemId:int}/flags/resolve": [
+    "Administrator",
+    "Moderator"
+  ],
+  "PublicStoryReviewController.SaveChecklist#PUT {itemId:int}/checklist": [
+    "Administrator",
+    "Moderator"
+  ],
+  "PublicStorySubmissionController.Submit#POST submit": [
+    "ContentCreator"
+  ],
+  "PublicStorySubmissionController.Withdraw#POST {itemId:int}/withdraw": [
+    "ContentCreator"
+  ],
+  "PublishedContentReviewController.CreateReviewItem#POST review-items": [
+    "Moderator"
+  ],
+  "PublishedContentReviewController.GetRoadmap#GET roadmaps/{roadmapId:int}": [
+    "Administrator",
+    "Moderator"
+  ],
+  "PublishedContentReviewController.GetStory#GET stories/{storyId:int}": [
+    "Administrator",
+    "Moderator"
+  ],
+  "PublishedContentReviewController.List#GET ": [
+    "Administrator",
+    "Moderator"
+  ],
+  "ReadingScheduleController.GetReadingSchedule#GET {childProfileId:int}": [
+    "User"
+  ],
+  "ReadingScheduleController.SetReadingSchedule#PUT {childProfileId:int}": [
+    "User"
+  ],
+  "ReviewController.ApplyProposal#POST proposals/{proposalId}/apply": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ReviewController.Approve#POST approve": [
+    "Administrator",
+    "User"
+  ],
+  "ReviewController.AutoPublishCheck#POST auto-publish-check": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ReviewController.CompleteListening#POST listening/complete": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ReviewController.CompleteQuiz#POST quiz/complete": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ReviewController.CompleteStory#POST story/complete": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ReviewController.CompleteVocabulary#POST vocabulary/complete": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ReviewController.ConfirmCreatorContent#POST /api/v1/creator/stories/{storyId:int}/generation/confirm-content": [
+    "ContentCreator"
+  ],
+  "ReviewController.DiscardProposal#POST proposals/{proposalId}/discard": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ReviewController.GenerateArtifacts#POST artifacts/generate": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ReviewController.GenerateArtifacts#POST ~/api/v1/stories/{storyId:int}/artifacts/generate": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ReviewController.GetListening#GET listening": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ReviewController.GetProposal#GET proposals/{proposalId}": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ReviewController.GetQuiz#GET quiz": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ReviewController.GetReviewPackage#GET ": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ReviewController.GetStory#GET story": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ReviewController.GetVocabulary#GET vocabulary": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ReviewController.PartialEdit#POST story/ai/partial-edit": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ReviewController.RegenerateListening#POST listening/{type}/ai/regenerate": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ReviewController.RegenerateQuiz#POST quiz/ai/regenerate": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ReviewController.RegenerateVocabulary#POST vocabulary/ai/regenerate": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ReviewController.Reject#POST reject": [
+    "Administrator",
+    "User"
+  ],
+  "ReviewController.UpdateListening#PUT listening/{interactionId:int}": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ReviewController.UpdateQuiz#PUT quiz": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ReviewController.UpdateStory#PUT story": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ReviewController.UpdateVocabulary#PUT vocabulary": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "ReviewController.Validate#GET validation": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "RoadmapLibraryController.Copy#POST {roadmapId:int}/copy": [
+    "User"
+  ],
+  "RoadmapLibraryController.Get#GET {roadmapId:int}": [
+    "User"
+  ],
+  "RoadmapLibraryController.List#GET ": [
+    "User"
+  ],
+  "RoadmapLibraryController.Preview#POST {roadmapId:int}/preview": [
+    "User"
+  ],
+  "RoadmapReviewController.Approve#POST {itemId:int}/approve": [
+    "Administrator",
+    "Moderator"
+  ],
+  "RoadmapReviewController.GetPackage#GET {itemId:int}": [
+    "Administrator",
+    "Moderator"
+  ],
+  "RoadmapReviewController.Reject#POST {itemId:int}/reject": [
+    "Administrator",
+    "Moderator"
+  ],
+  "RoadmapReviewController.RequestChanges#POST {itemId:int}/request-changes": [
+    "Administrator",
+    "Moderator"
+  ],
+  "RoadmapReviewController.SaveChecklist#PUT {itemId:int}/checklist": [
+    "Administrator",
+    "Moderator"
+  ],
+  "RoadmapTemplateController.Archive#POST {id:int}/archive": [
+    "Moderator"
+  ],
+  "RoadmapTemplateController.Clone#POST {id:int}/clone": [
+    "Moderator"
+  ],
+  "RoadmapTemplateController.Create#POST ": [
+    "Moderator"
+  ],
+  "RoadmapTemplateController.Get#GET {id:int}": [
+    "Administrator",
+    "Moderator"
+  ],
+  "RoadmapTemplateController.List#GET ": [
+    "Administrator",
+    "Moderator"
+  ],
+  "RoadmapTemplateController.ListCandidates#GET candidates": [
+    "Administrator",
+    "Moderator"
+  ],
+  "RoadmapTemplateController.SetItems#PUT {id:int}/items": [
+    "Moderator"
+  ],
+  "RoadmapTemplateController.Submit#POST {id:int}/submit": [
+    "Moderator"
+  ],
+  "RoadmapTemplateController.Update#PUT {id:int}": [
+    "Moderator"
+  ],
+  "RoadmapTemplateController.Withdraw#POST {id:int}/withdraw": [
+    "Moderator"
+  ],
+  "SafetyPolicyController.ApplyAgePreset#POST {childProfileId:int}/age-preset/apply": [
+    "User"
+  ],
+  "SafetyPolicyController.CreateSafetyPolicy#POST {childProfileId:int}": [
+    "User"
+  ],
+  "SafetyPolicyController.DeleteSafetyPolicy#DELETE {childProfileId:int}": [
+    "User"
+  ],
+  "SafetyPolicyController.GetAgePreset#GET {childProfileId:int}/age-preset": [
+    "User"
+  ],
+  "SafetyPolicyController.GetSafetyPolicy#GET {childProfileId:int}": [
+    "User"
+  ],
+  "SafetyPolicyController.Reconsent#POST {childProfileId:int}/reconsent": [
+    "User"
+  ],
+  "SafetyPolicyController.SetSafetyPolicy#PUT {childProfileId:int}": [
+    "User"
+  ],
+  "StaffAccountController.CancelInvite#POST {userId:int}/cancel-invite": [
+    "Administrator"
+  ],
+  "StaffAccountController.Deactivate#POST {userId:int}/deactivate": [
+    "Administrator"
+  ],
+  "StaffAccountController.Invite#POST invite": [
+    "Administrator"
+  ],
+  "StaffAccountController.List#GET ": [
+    "Administrator"
+  ],
+  "StaffAccountController.Reactivate#POST {userId:int}/reactivate": [
+    "Administrator"
+  ],
+  "StaffAccountController.ResendInvite#POST {userId:int}/resend-invite": [
+    "Administrator"
+  ],
+  "StoryCommunityController.GetMyPublishedStories#GET /api/v1/creator/stories/published": [
+    "ContentCreator"
+  ],
+  "StoryCommunityController.GetStories#GET ": [
+    "Administrator",
+    "ContentCreator",
+    "Moderator",
+    "User"
+  ],
+  "StoryCommunityController.GetStoryMedia#GET {id:int}/media": [
+    "Administrator",
+    "ContentCreator",
+    "Moderator",
+    "User"
+  ],
+  "StoryController.CreateStory#POST ": [
+    "User"
+  ],
+  "StoryController.DeleteStory#DELETE {id:int}": [
+    "User"
+  ],
+  "StoryController.GetStories#GET ": [
+    "anonymous",
+    "child",
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "StoryController.GetStoryById#GET {id:int}": [
+    "anonymous",
+    "child",
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "StoryController.PublishStory#PATCH {id:int}/publish": [
+    "User"
+  ],
+  "StoryController.UpdateStory#PUT {id:int}": [
+    "User"
+  ],
+  "StoryCoverController.SetCover#PUT ": [
+    "ContentCreator",
+    "User"
+  ],
+  "StoryPackageConfirmationController.Confirm#POST ": [
+    "Administrator",
+    "ContentCreator",
+    "User"
+  ],
+  "StoryRatingController.DeleteMine#DELETE story/{storyId:int}/me": [
+    "User"
+  ],
+  "StoryRatingController.GetForMyStory#GET /api/v1/creator/stories/{storyId:int}/ratings": [
+    "ContentCreator"
+  ],
+  "StoryRatingController.GetForStory#GET story/{storyId:int}": [
+    "User"
+  ],
+  "StoryRatingController.Report#POST {ratingId:int}/reports": [
+    "ContentCreator",
+    "User"
+  ],
+  "StoryRatingController.UpsertMine#PUT story/{storyId:int}/me": [
+    "User"
+  ],
+  "StoryRatingModerationController.Approve#POST {itemId:int}/approve": [
+    "Moderator"
+  ],
+  "StoryRatingModerationController.GetDetail#GET {itemId:int}": [
+    "Moderator"
+  ],
+  "StoryRatingModerationController.Hide#POST {itemId:int}/hide": [
+    "Moderator"
+  ],
+  "TokenQuotaController.Adjust#POST admin/adjustments": [
+    "Administrator"
+  ],
+  "TokenQuotaController.GetChildStatus#GET child/{childProfileId:int}": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "TokenQuotaController.GetCreatorQuota#GET creator/me": [
+    "ContentCreator"
+  ],
+  "TokenQuotaController.GetMyQuota#GET me": [
+    "User"
+  ],
+  "TokenQuotaController.GetUserQuota#GET admin/users/{userId:int}": [
+    "Administrator"
+  ],
+  "TokenQuotaController.ListAdjustments#GET admin/adjustments": [
+    "Administrator"
+  ],
+  "WishCardManagementController.Create#POST ": [
+    "Administrator",
+    "Moderator"
+  ],
+  "WishCardManagementController.Get#GET {id:int}": [
+    "Administrator",
+    "Moderator"
+  ],
+  "WishCardManagementController.List#GET ": [
+    "Administrator",
+    "Moderator"
+  ],
+  "WishCardManagementController.SetActive#PUT {id:int}/active": [
+    "Administrator",
+    "Moderator"
+  ],
+  "WishCardManagementController.Update#PUT {id:int}": [
+    "Administrator",
+    "Moderator"
+  ],
+  "WishCardMatchManagementController.Add#POST ": [
+    "Administrator",
+    "Moderator"
+  ],
+  "WishCardMatchManagementController.Coverage#GET coverage": [
+    "Administrator",
+    "Moderator"
+  ],
+  "WishCardMatchManagementController.List#GET ": [
+    "Administrator",
+    "Moderator"
+  ],
+  "WishCardMatchManagementController.MatchWithAi#POST ai-match": [
+    "Administrator",
+    "Moderator"
+  ],
+  "WishCardMatchManagementController.Remove#DELETE {wishCardId:int}": [
+    "Administrator",
+    "Moderator"
+  ]
+}

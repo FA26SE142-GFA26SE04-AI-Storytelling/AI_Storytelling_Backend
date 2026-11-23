@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
@@ -22,7 +24,7 @@ public class ChildAccessCredentialController : BaseApiController
     /// và dựng QR. Secret null với mã tạo trước khi lưu bản mã hóa; không bao giờ trả hash.
     /// </summary>
     [HttpGet("{childProfileId:int}")]
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.ChildProfileManage)]
     public async Task<ActionResult<ApiResponse<ChildAccessCredentialDto>>> GetCredential(
         int childProfileId, CancellationToken cancellationToken)
     {
@@ -35,7 +37,7 @@ public class ChildAccessCredentialController : BaseApiController
     /// Cần quyền manage_safety_settings (Owner luôn có).
     /// </summary>
     [HttpDelete("{childProfileId:int}")]
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.ChildProfileManage)]
     public async Task<ActionResult<ApiResponse<object?>>> RevokeCredential(
         int childProfileId, CancellationToken cancellationToken)
     {
@@ -48,7 +50,7 @@ public class ChildAccessCredentialController : BaseApiController
     /// Client dựng QR từ secret trả về; xem lại sau qua GET. Cần quyền manage_safety_settings (Owner luôn có).
     /// </summary>
     [HttpPost("{childProfileId:int}/easylogin")]
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.ChildProfileManage)]
     public async Task<ActionResult<ApiResponse<EasyLoginSecretDto>>> CreateOrRegenerateEasyLogin(
         int childProfileId, CancellationToken cancellationToken)
     {
@@ -62,7 +64,7 @@ public class ChildAccessCredentialController : BaseApiController
     /// phát sinh Child Session riêng, tách khỏi phiên Supervisor.
     /// </summary>
     [HttpPost("{childProfileId:int}/handover")]
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.ChildProfileManage)]
     public async Task<ActionResult<ApiResponse<ChildSessionDto>>> StartSupervisedSession(
         int childProfileId,
         [FromBody] StartSupervisedChildSessionRequestDto request,
@@ -78,7 +80,7 @@ public class ChildAccessCredentialController : BaseApiController
     /// kèm lý do cho phụ huynh và bé được gợi ý. Truyện không tồn tại thì mọi bé là story_unavailable.
     /// </summary>
     [HttpGet("story-handover")]
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.ChildProfileManage)]
     public async Task<ActionResult<ApiResponse<StoryHandoverOptionsDto>>> GetStoryHandoverOptions(
         [FromQuery] int storyId, CancellationToken cancellationToken)
     {
@@ -92,7 +94,7 @@ public class ChildAccessCredentialController : BaseApiController
     /// SupervisorPick gắn với phiên Supervisor; trẻ đọc bằng AccessToken trả về.
     /// </summary>
     [HttpPost("{childProfileId:int}/handover-story")]
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.ChildProfileManage)]
     public async Task<ActionResult<ApiResponse<ChildStoryHandoverDto>>> StartStoryHandover(
         int childProfileId,
         [FromBody] StartStoryHandoverRequestDto request,

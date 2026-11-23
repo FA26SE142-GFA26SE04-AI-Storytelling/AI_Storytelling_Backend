@@ -38,6 +38,11 @@ public class SafetyPolicyConfiguration : IEntityTypeConfiguration<SafetyPolicy>
             .HasDefaultValue(ChildCreationMode.ReviewFirst)
             .HasSentinel(ChildCreationMode.ReviewFirst);
         builder.Property(x => x.VoiceAnswersEnabled).HasDefaultValue(false);
+        builder.Property(x => x.QuizEnabled).HasDefaultValue(true);
+        builder.Property(x => x.NotebookEnabled).HasDefaultValue(true);
+        builder.Property(x => x.LibraryBrowseEnabled).HasDefaultValue(true);
+        builder.Property(x => x.ReflectionEnabled).HasDefaultValue(true);
+        builder.Property(x => x.RewardsEnabled).HasDefaultValue(true);
 
         builder.HasOne(x => x.ChildProfile)
             .WithMany()

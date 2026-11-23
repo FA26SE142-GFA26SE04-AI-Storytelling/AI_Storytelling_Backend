@@ -75,6 +75,46 @@ public class ChildStoryBrowseServiceTests
         Assert.Empty((await service.SearchAsync(ReadingHarness.Child, new ChildStoryQueryDto())).Items);
     }
 
+    private ChildStoryBrowseService WithLibraryBrowse(bool enabled)
+    {
+        var features = new Mock<StoryPlatform.Application.Features.ChildProfiles.Safety.Interfaces.IChildFeatureService>();
+        features.Setup(f => f.IsEnabledAsync(ReadingHarness.Child,
+                StoryPlatform.Application.Features.ChildProfiles.Safety.ChildFeatures.LibraryBrowse, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(enabled);
+        return new ChildStoryBrowseService(_h.UnitOfWork.Object, _eligibility.Object, childFeatures: features.Object);
+    }
+
+    [Fact]
+    public async Task SearchAsync_LibraryBrowseOff_StillListsTheChildsOwnStories()
+    {
+        AddCreatorStory(20, "Thư viện 20");
+        var service = WithLibraryBrowse(enabled: false);
+
+        var mine = await service.SearchAsync(ReadingHarness.Child, new ChildStoryQueryDto { Source = "mine" });
+        var both = await service.SearchAsync(ReadingHarness.Child, new ChildStoryQueryDto());
+
+        Assert.Equal(new[] { 10 }, mine.Items.Select(i => i.StoryId));
+        Assert.Equal(new[] { 10 }, both.Items.Select(i => i.StoryId));
+    }
+
+    [Fact]
+    public async Task SearchAsync_LibraryBrowseOff_RejectsLibrarySource()
+    {
+        var service = WithLibraryBrowse(enabled: false);
+
+        var ex = await Assert.ThrowsAsync<StoryPlatform.Application.Features.ChildProfiles.Safety.ChildFeatureDisabledException>(() =>
+            service.SearchAsync(ReadingHarness.Child, new ChildStoryQueryDto { Source = "Library" }));
+        Assert.Equal(403, ex.StatusCode);
+    }
+
+    [Fact]
+    public async Task SearchAsync_LibraryBrowseOn_ShowsLibrary()
+    {
+        AddCreatorStory(20, "Thư viện 20");
+        var page = await WithLibraryBrowse(enabled: true).SearchAsync(ReadingHarness.Child, new ChildStoryQueryDto { Source = "library" });
+        Assert.Equal(new[] { 20 }, page.Items.Select(i => i.StoryId));
+    }
+
     [Fact]
     public async Task SearchAsync_FiltersByTitleAndSource()
     {

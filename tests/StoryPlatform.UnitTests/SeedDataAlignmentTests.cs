@@ -167,7 +167,7 @@ public sealed class SeedDataAlignmentTests
         var inserts = ReadInserts();
         // Seeded once at application startup by AuthoringGuideCatalogSeeder, not by SQL seed files.
         string[] seededByCode = ["authoring_guide_catalog_versions", "authoring_guide_catalogs",
-            "authoring_guide_items", "authoring_guide_placeholders"];
+            "authoring_guide_items", "authoring_guide_placeholders", "roles", "permissions", "role_permissions"];
         // Khóa Data Protection do ứng dụng tự sinh lúc chạy; seed khóa vào SQL sẽ đưa khóa vào mã nguồn.
         // Read-aloud recordings require an actual child upload; SQL seed cannot create its storage object.
         // Thời gian & thói quen: mặc định tắt, dòng cấu hình chỉ sinh khi phụ huynh lưu lần đầu (không seed).

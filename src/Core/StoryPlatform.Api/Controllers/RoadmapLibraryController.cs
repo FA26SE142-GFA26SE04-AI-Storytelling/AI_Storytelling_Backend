@@ -3,11 +3,13 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.ChildRoadmaps;
 using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>Kho bộ truyện mẫu của phụ huynh và việc chép bộ vào lộ trình.</summary>
-[Authorize(Roles = "User")]
+[HasPermission(Permissions.Parent.ChildProfileManage)]
 public class RoadmapLibraryController : BaseApiController
 {
     private readonly IRoadmapLibraryService _libraryService;

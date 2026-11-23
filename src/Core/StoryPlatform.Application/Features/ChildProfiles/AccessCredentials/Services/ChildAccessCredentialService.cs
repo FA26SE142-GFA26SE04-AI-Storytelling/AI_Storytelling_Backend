@@ -42,6 +42,8 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
     private readonly IReadingSlotService? _readingSlots;
 
     /// <param name="readingSlots">Chặn hồ sơ đang chỉ xem khi vượt số hồ sơ của gói; null thì không chặn.</param>
+    private readonly StoryPlatform.Application.Features.ChildProfiles.Safety.Interfaces.IChildFeatureService? _childFeatures;
+
     public ChildAccessCredentialService(
         IUnitOfWork unitOfWork,
         IChildProfileAccessGuard accessGuard,
@@ -50,9 +52,11 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
         IAuditLogWriter auditLogWriter,
         IChildRoadmapEligibility eligibility,
         IEasyLoginSecretProtector secretProtector,
-        IReadingSlotService? readingSlots = null)
+        IReadingSlotService? readingSlots = null,
+        StoryPlatform.Application.Features.ChildProfiles.Safety.Interfaces.IChildFeatureService? childFeatures = null)
     {
         _readingSlots = readingSlots;
+        _childFeatures = childFeatures;
         _secretProtector = secretProtector;
         _unitOfWork = unitOfWork;
         _accessGuard = accessGuard;
@@ -323,7 +327,10 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
         {
             ChildProfileId = profile.Id,
             Nickname = profile.Nickname,
-            AgeBand = profile.AgeBand.ToString()
+            AgeBand = profile.AgeBand.ToString(),
+            DisabledFeatures = _childFeatures is null
+                ? new List<string>()
+                : (await _childFeatures.GetDisabledAsync(profile.Id, cancellationToken)).ToList()
         };
     }
 

@@ -5,12 +5,15 @@ using StoryPlatform.Api.Extensions;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.ReadingSessions;
 using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.ChildProfiles.Safety;
 
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>Sổ tay của em (từ đã lưu), phía trẻ.</summary>
 [ApiController]
 [Authorize(Policy = ServiceExtensions.ChildSessionPolicy)]
+[RequireChildFeature(ChildFeatures.Notebook)]
 [Route("api/v1/child/notebook")]
 public sealed class ChildNotebookController : ControllerBase
 {

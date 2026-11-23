@@ -79,6 +79,7 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
             CreatorAudience = new(request.AgeBand, request.ReadingLevel),
             ExistingStoryId = request.ExistingStoryId, IdempotencyKey = request.IdempotencyKey,
             OutputMode = request.OutputMode, Topic = request.Topic, Genre = request.Genre,
+            GenerationMode = request.GenerationMode, QuizQuestionCount = request.QuizQuestionCount,
             CharacterMode = request.CharacterMode, Characters = request.Characters,
             SettingMode = request.SettingMode, Setting = request.Setting, Lesson = request.Lesson,
             VocabularyLevel = request.VocabularyLevel, Language = request.Language, TargetLength = request.TargetLength
@@ -92,6 +93,12 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
     {
         if (request.CreatorAudience is null) ValidateDataAnnotations(request);
         var outputMode = StoryOutputModeContract.Parse(request.OutputMode);
+        if (request.GenerationMode is not ("standard" or "quick"))
+            throw new BadRequestException("GENERATION_MODE_INVALID");
+        var quick = request.GenerationMode == "quick";
+        if (request.QuizQuestionCount is int count &&
+            (!quick || outputMode != StoryOutputMode.Learning || count is < 3 or > 6))
+            throw new BadRequestException("QUIZ_QUESTION_COUNT_INVALID");
         var normalized = Normalize(request);
         ValidateCreativeInput(normalized);
         var creator = request.CreatorAudience is not null;
@@ -108,14 +115,16 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
             normalized.Language,
             cancellationToken);
         var profile = _learningOptions.Profile(context.AgeBand, normalized.TargetLength, context.ReadingLevel);
+        if (quick && outputMode == StoryOutputMode.Learning)
+            profile = profile with { QuizTarget = request.QuizQuestionCount ?? 3 };
         normalized = normalized with { VocabularyLevel = context.VocabularyLevel, Language = context.Language, TargetLength = profile.TargetWords };
-        var pinnedContext = context.Snapshot with { LearningProfile = profile };
+        var pinnedContext = context.Snapshot with { LearningProfile = profile, QuickGeneration = quick };
         context = context with { Snapshot = pinnedContext, Fingerprint = Fingerprint(pinnedContext) };
         ValidateAgainstContext(normalized, context);
 
         var inputFingerprint = creator
             ? Fingerprint(new { input = normalized, outputMode, context = context.Fingerprint })
-            : InputFingerprint(normalized, outputMode);
+            : InputFingerprint(normalized, outputMode, pinnedContext);
         var requestRepository = _unitOfWork.Repository<StoryGenerationRequest>();
         var existing = await requestRepository.FirstOrDefaultAsync(
             item => item.SubmittedByUserId == userId && item.IdempotencyKey == request.IdempotencyKey.Trim(),
@@ -297,8 +306,9 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
         var normalized = Normalize(retry);
         ValidateCreativeInput(normalized);
         var context = await ResolveStoryContextAsync(userId, story, normalized.VocabularyLevel, normalized.Language, cancellationToken);
-        var pinnedProfile = JsonSerializer.Deserialize<AIStoryInputContextSnapshot>(request.ContextSnapshotJson, JsonOptions)?.LearningProfile;
-        context = WithLearningProfile(context, pinnedProfile);
+        var pinned = JsonSerializer.Deserialize<AIStoryInputContextSnapshot>(request.ContextSnapshotJson, JsonOptions);
+        var pinnedProfile = pinned?.LearningProfile;
+        context = WithPinnedGenerationSettings(context, pinned);
         if (normalized.TargetLength == 0 && pinnedProfile is not null) normalized = normalized with { TargetLength = pinnedProfile.TargetWords };
         normalized = normalized with { VocabularyLevel = context.VocabularyLevel, Language = context.Language };
         ValidateAgainstContext(normalized, context);
@@ -320,7 +330,7 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
 
         var fingerprint = story.Scope == StoryScope.Creator
             ? Fingerprint(new { input = normalized, outputMode = story.OutputMode, context = context.Fingerprint })
-            : InputFingerprint(normalized, story.OutputMode);
+            : InputFingerprint(normalized, story.OutputMode, context.Snapshot);
         if (!string.Equals(fingerprint, request.InputFingerprint, StringComparison.Ordinal))
         {
             throw new ConflictException("INPUT_CHANGED: hãy tạo request mới trên cùng Story draft.");
@@ -431,7 +441,7 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
                         item.Status == StoryStatus.Draft,
                 cancellationToken);
 
-            currentContext = WithLearningProfile(currentContext, originalContext.Snapshot.LearningProfile);
+            currentContext = WithPinnedGenerationSettings(currentContext, originalContext.Snapshot);
             if (!validStory || !string.Equals(currentContext.Fingerprint, originalContext.Fingerprint, StringComparison.Ordinal))
             {
                 await FinalizeFailureAsync(generationRequest, attemptToken, "INPUT_CONTEXT_CHANGED", false, cancellationToken);
@@ -635,9 +645,9 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
         ? ResolveCreatorContextAsync(userId, new(story.AgeBand, story.ReadingLevel ?? 2), vocabulary, language, ct)
         : ResolveContextAsync(userId, ParentStoryContext.RequireChildId(story), vocabulary, language, ct);
 
-    private static EffectiveContext WithLearningProfile(EffectiveContext context, StoryPlatform.Contracts.AI.Models.LearningGenerationProfile? profile)
+    private static EffectiveContext WithPinnedGenerationSettings(EffectiveContext context, AIStoryInputContextSnapshot? original)
     {
-        var snapshot = context.Snapshot with { LearningProfile = profile };
+        var snapshot = context.Snapshot with { LearningProfile = original?.LearningProfile, QuickGeneration = original?.QuickGeneration == true };
         return context with { Snapshot = snapshot, Fingerprint = Fingerprint(snapshot) };
     }
 
@@ -916,8 +926,10 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
         return Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
     }
 
-    private static string InputFingerprint(AcceptedAIStoryInputSnapshot input, StoryOutputMode outputMode) =>
-        outputMode == StoryOutputMode.Learning
+    private static string InputFingerprint(AcceptedAIStoryInputSnapshot input, StoryOutputMode outputMode, AIStoryInputContextSnapshot context) =>
+        context.QuickGeneration
+            ? Fingerprint(new { input, outputMode, quick = true, quizQuestionCount = outputMode == StoryOutputMode.Learning ? context.LearningProfile?.QuizTarget : null })
+            : outputMode == StoryOutputMode.Learning
             ? Fingerprint(input) // Giữ tương thích fingerprint của request cũ.
             : Fingerprint(new { input, outputMode = StoryOutputModeContract.Format(outputMode) });
 

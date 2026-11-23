@@ -65,6 +65,8 @@ public class AIStoryCreativeInputDto
 public sealed class SubmitAIStoryInputRequestDto : AIStoryCreativeInputDto
 {
     public string OutputMode { get; init; } = "learning";
+    public string GenerationMode { get; init; } = "standard";
+    public int? QuizQuestionCount { get; init; }
     [Range(1, int.MaxValue)]
     public int ChildProfileId { get; init; }
 
@@ -89,6 +91,8 @@ public sealed class SubmitCreatorAIStoryInputRequestDto : AIStoryCreativeInputDt
     public string AgeBand { get; init; } = "6-8";
     [Range(1, 5)] public int ReadingLevel { get; init; } = 2;
     public string OutputMode { get; init; } = "reading_media_only";
+    public string GenerationMode { get; init; } = "standard";
+    public int? QuizQuestionCount { get; init; }
     public int? ExistingStoryId { get; init; }
     [Required, StringLength(100, MinimumLength = 8)] public string IdempotencyKey { get; init; } = string.Empty;
 }

@@ -194,7 +194,10 @@ def service_description(args, allow_missing=False):
     return json.loads(result.stdout)
 
 
-def require_private(args):
+def require_private(args, service):
+    annotations = service.get('metadata', {}).get('annotations', {})
+    if annotations.get('run.googleapis.com/invoker-iam-disabled', 'false') != 'false':
+        raise RuntimeError('Cloud Run Invoker IAM check is disabled or invalid; rollout stopped.')
     policy = json.loads(gcloud('run', 'services', 'get-iam-policy', args.service, '--region=' + args.region,
                               '--project=' + args.project, '--format=json'))
     if any(member in ('allUsers', 'allAuthenticatedUsers') for binding in policy.get('bindings', [])
@@ -223,8 +226,8 @@ def promote(args):
         raise RuntimeError('Candidate has no verified Vertex/model evidence; traffic unchanged.')
     if (args.project, args.service, args.region) != (state['project'], state['service'], state['region']):
         raise RuntimeError('Rollout state targets a different service.')
-    require_private(args)
     service = service_description(args)
+    require_private(args, service)
     if allocated_traffic(service) != state['previous_traffic']:
         raise RuntimeError('Serving traffic changed since deployment; refusing to overwrite it.')
     if validate_candidate(args, service, state['revision'], state['tag'], state['image']) != state['candidate_url']:
@@ -304,8 +307,8 @@ def deploy(args):
         path.write_text(manifest, encoding="utf-8")
         subprocess.run([GCLOUD, "run", "services", "replace", str(path), "--region=" + args.region,
                         "--project=" + args.project, "--quiet"], check=True)
-    require_private(args)
-    print("Cloud Run deployment completed; no public IAM binding")
+    require_private(args, service_description(args))
+    print("Cloud Run deployment completed; Invoker IAM required and no public IAM binding")
 
 
 def deploy_candidate(args, values):
@@ -316,7 +319,7 @@ def deploy_candidate(args, values):
     if len(revision) > 63 or revision.endswith('-') or tag.endswith('-'):
         raise RuntimeError('Invalid candidate revision or tag.')
     previous = service_description(args)
-    require_private(args)
+    require_private(args, previous)
     previous_traffic = allocated_traffic(previous)
     if sum(previous_traffic.values()) != 100:
         raise RuntimeError('Production must have an existing resolved traffic allocation; bootstrap first.')
@@ -341,7 +344,7 @@ def deploy_candidate(args, values):
                         '--liveness-probe=httpGet.path=/health,periodSeconds=30,timeoutSeconds=3,failureThreshold=3',
                         '--quiet'], check=True)
     current = service_description(args)
-    require_private(args)
+    require_private(args, current)
     if allocated_traffic(current) != previous_traffic:
         raise RuntimeError('Serving traffic changed unexpectedly; rollout stopped.')
     candidate_url = validate_candidate(args, current, revision, tag, args.image)

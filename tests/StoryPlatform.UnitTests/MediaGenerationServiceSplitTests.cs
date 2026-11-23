@@ -33,6 +33,35 @@ public sealed partial class MediaGenerationServiceTests
     }
 
     [Fact]
+    public async Task QuickGenerationPlansOneWholeSceneIllustrationAndKeepsNarration()
+    {
+        var store = Seed();
+        store.Items<Story>().Single().Source = StorySource.Ai;
+        store.Items<StoryGenerationJob>().Single().GenerationRequestId = 30;
+        store.Seed(new StoryGenerationRequest { Id = 30, StoryId = 1, ContextSnapshotJson = """{"quickGeneration":true}""" });
+        SeedPicturePrediction(store);
+        var planner = new Moq.Mock<IIllustrationBeatPlanner>();
+        var image = new SwitchableImage();
+        var service = Create(store, image: image, planner: planner.Object);
+
+        Assert.True((await service.RunPackageAsync()).Success);
+        planner.VerifyNoOtherCalls();
+        var scenes = store.Items<StoryScene>();
+        Assert.Equal(2, scenes.Count);
+        foreach (var scene in scenes)
+        {
+            var beat = Assert.Single(store.Items<IllustrationBeat>(), x => x.StorySceneId == scene.Id);
+            Assert.Equal((0, scene.SceneText.Length), (beat.StartOffset, beat.EndOffset));
+        }
+        Assert.Equal(scenes.Count, store.Items<MediaAsset>().Count(x => x.Type == MediaType.Illustration));
+        Assert.Equal(2, store.Items<MediaAsset>().Count(x => x.Type == MediaType.ListeningImage && x.Status == MediaStatus.Ready));
+        Assert.Equal(scenes.Count + 2, image.Calls);
+        var progress = await service.GetProgressAsync(1, 1);
+        Assert.Equal(scenes.Count, progress.ReadyAudio);
+        Assert.Equal(StoryStatus.MediaReview, store.Items<Story>().Single().Status);
+    }
+
+    [Fact]
     public async Task ImageBackoffDoesNotBlockAudioAndRetainsProviderRetryAfter()
     {
         var store = Seed();

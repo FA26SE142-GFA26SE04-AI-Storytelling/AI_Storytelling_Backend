@@ -103,6 +103,8 @@ public class ChildFeatureTests
     [
         "ChildAccessCredentialController.GetMySession",
         "ChildStorySummaryController.Ask",
+        // Dùng chung cho "Truyện của em" (source=mine) và thư viện: ChildStoryBrowseService tự chặn phần thư viện.
+        "ChildReadingController.SearchStories",
     ];
 
     private static readonly HashSet<string> CoreControllers =
@@ -110,7 +112,6 @@ public class ChildFeatureTests
 
     private static readonly Dictionary<string, string> Gated = new()
     {
-        ["ChildReadingController.SearchStories"] = ChildFeatures.LibraryBrowse,
         ["ChildReadingController.ReadAloud"] = ChildFeatures.Voice,
         ["ChildReadingController.ReadAloudPractice"] = ChildFeatures.Voice,
         ["ChildStorySummaryController.SendRecording"] = ChildFeatures.Voice,

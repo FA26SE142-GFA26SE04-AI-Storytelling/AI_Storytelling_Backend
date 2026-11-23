@@ -52,7 +52,7 @@ Phụ huynh quyết định **từng bé** được dùng những chức năng n
 |---|---|---|---|
 | `child.quiz` | Học tập | `QuizEnabled` (mới) | `ChildQuizController` (cả 3 action) |
 | `child.notebook` | Học tập | `NotebookEnabled` (mới) | `ChildNotebookController` (Collect, List, Remove) |
-| `child.library.browse` | Mở rộng | `LibraryBrowseEnabled` (mới) | `ChildReadingController.SearchStories` (`GET child-reading/stories`) |
+| `child.library.browse` | Mở rộng | `LibraryBrowseEnabled` (mới) | Phần thư viện của `GET child/reading/stories`: `source=library` → 403; để trống → chỉ trả truyện của em. `source=mine` (Truyện em đọc được) không bị chặn. Kiểm trong `ChildStoryBrowseService`, không dùng attribute (sửa 23/11/2026 sau khi test prod thấy tắt thư viện chặn luôn truyện của bé). |
 | `child.wishes` | Mở rộng | `StoryWishesEnabled` (có sẵn) | `ChildWishesController` (cả 5 action) |
 | `child.voice` | Mở rộng | `VoiceAnswersEnabled` (có sẵn) | `ChildReadingController.ReadAloud`, `ReadAloudPractice`; `ChildStorySummaryController.SendRecording` |
 | `child.reflection` | Mở rộng | `ReflectionEnabled` (mới) | `ChildStoryReflectionController` (cả 4 action) |

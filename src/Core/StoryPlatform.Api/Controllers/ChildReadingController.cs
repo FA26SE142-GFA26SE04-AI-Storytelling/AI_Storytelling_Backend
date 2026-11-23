@@ -64,7 +64,6 @@ public sealed class ChildReadingController : ControllerBase
         }
     }
 
-    [RequireChildFeature(ChildFeatures.LibraryBrowse)]
     [HttpGet("stories")]
     public async Task<ActionResult<ApiResponse<ChildStoryPageDto>>> SearchStories(
         [FromQuery] ChildStoryQueryDto query, CancellationToken ct)

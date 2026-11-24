@@ -1,6 +1,7 @@
 namespace StoryPlatform.Application.Features.AccessControl;
 
-public sealed record PermissionDefinition(string Code, string Group, string Description, bool IsStaffGrantable);
+public sealed record PermissionDefinition(
+    string Code, string Group, string Description, bool IsStaffGrantable, AccessScope Scope = AccessScope.Any);
 
 /// <summary>Danh mục permission duy nhất của hệ thống; seeder đồng bộ danh mục này vào bảng <c>permissions</c>.</summary>
 public static class PermissionCatalog
@@ -15,6 +16,10 @@ public static class PermissionCatalog
 
     private static PermissionDefinition P(string code, string group, string description) =>
         new(code, group, description, group is ModerationGroup or AdminGroup);
+
+    /// <summary>Quyền xử lý mục kiểm duyệt: chỉ trên mục đang do chính mình nhận (<see cref="AccessConditions.ClaimedBySelf"/>).</summary>
+    private static PermissionDefinition Assigned(string code, string description) =>
+        P(code, ModerationGroup, description) with { Scope = AccessScope.Assigned };
 
     public static readonly IReadOnlyList<PermissionDefinition> All =
     [
@@ -40,17 +45,17 @@ public static class PermissionCatalog
         P(Permissions.Creator.PayoutViewOwn, CreatorGroup, "Xem thu nhập và cập nhật tài khoản nhận tiền"),
         P(Permissions.Creator.QuotaView, CreatorGroup, "Xem lượt của nhà sáng tạo"),
 
-        P(Permissions.Moderation.QueueProcess, ModerationGroup, "Nhận và xử lý hàng đợi kiểm duyệt"),
+        Assigned(Permissions.Moderation.QueueProcess, "Nhận và xử lý hàng đợi kiểm duyệt"),
         P(Permissions.Moderation.StatisticsView, ModerationGroup, "Xem thống kê kiểm duyệt của mình"),
         P(Permissions.Moderation.PublishedView, ModerationGroup, "Xem truyện và lộ trình đang công khai"),
         P(Permissions.Moderation.PublishedReview, ModerationGroup, "Mở hồ sơ rà soát nội dung đang công khai"),
-        P(Permissions.Moderation.ReportReview, ModerationGroup, "Xử lý báo cáo vi phạm nội dung"),
-        P(Permissions.Moderation.RatingModerate, ModerationGroup, "Duyệt hoặc ẩn nhận xét truyện"),
+        Assigned(Permissions.Moderation.ReportReview, "Xử lý báo cáo vi phạm nội dung"),
+        Assigned(Permissions.Moderation.RatingModerate, "Duyệt hoặc ẩn nhận xét truyện"),
         P(Permissions.Moderation.CategoryManage, ModerationGroup, "Thêm, sửa, xóa danh mục nội dung"),
-        P(Permissions.Review.PublicStory, ModerationGroup, "Duyệt truyện nhà sáng tạo nộp công khai"),
-        P(Permissions.Review.GrayZone, ModerationGroup, "Duyệt nội dung vùng xám"),
-        P(Permissions.Review.Roadmap, ModerationGroup, "Duyệt lộ trình mẫu"),
-        P(Permissions.Review.CreatorPublication, ModerationGroup, "Quyết định yêu cầu gỡ truyện của nhà sáng tạo"),
+        Assigned(Permissions.Review.PublicStory, "Duyệt truyện nhà sáng tạo nộp công khai"),
+        Assigned(Permissions.Review.GrayZone, "Duyệt nội dung vùng xám"),
+        Assigned(Permissions.Review.Roadmap, "Duyệt lộ trình mẫu"),
+        Assigned(Permissions.Review.CreatorPublication, "Quyết định yêu cầu gỡ truyện của nhà sáng tạo"),
         P(Permissions.Review.RoadmapTemplateView, ModerationGroup, "Xem lộ trình mẫu"),
         P(Permissions.Review.RoadmapTemplateAuthor, ModerationGroup, "Soạn và gửi duyệt lộ trình mẫu"),
         P(Permissions.Review.RubricManage, ModerationGroup, "Quản lý bộ tiêu chí vùng xám"),

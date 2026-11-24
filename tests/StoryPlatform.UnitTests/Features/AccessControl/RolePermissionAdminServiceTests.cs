@@ -121,6 +121,24 @@ public sealed class RolePermissionAdminServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Permissions_report_scope_and_role_permissions_report_conditions()
+    {
+        var permissions = await Service().ListPermissionsAsync();
+        Assert.Equal("Assigned", permissions.Single(p => p.Code == Permissions.Review.GrayZone).Scope);
+        Assert.Equal("Any", permissions.Single(p => p.Code == Permissions.Review.GuideManage).Scope);
+
+        var admin = await Service().GetRolePermissionsAsync(RoleCodes.Administrator);
+        Assert.Equal(
+            [AccessConditions.Describe(AccessConditions.NotOwnContent), AccessConditions.Describe(AccessConditions.AdminFallback)],
+            admin.Conditions[Permissions.Moderation.QueueProcess]);
+        Assert.Equal([AccessConditions.Describe(AccessConditions.NoActiveModerator)], admin.Conditions[Permissions.Review.GuideManage]);
+        Assert.False(admin.Conditions.ContainsKey(Permissions.Admin.AuditView));
+
+        var moderator = await Service().GetRolePermissionsAsync(RoleCodes.Moderator);
+        Assert.False(moderator.Conditions.ContainsKey(Permissions.Review.GuideManage));
+    }
+
+    [Fact]
     public async Task Role_permissions_report_assignable_codes()
     {
         var result = await Service().GetRolePermissionsAsync(RoleCodes.Moderator);

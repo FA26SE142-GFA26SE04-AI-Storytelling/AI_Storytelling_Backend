@@ -3,6 +3,9 @@ using StoryPlatform.Application.Features.AuthoringGuideManagement.DTOs;
 using StoryPlatform.Application.Features.ParentAuthoring;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Application.Features.AccessControl.Services;
 
 namespace StoryPlatform.Application.Features.AuthoringGuideManagement.Services;
 
@@ -10,7 +13,7 @@ public sealed partial class AuthoringGuideManagementService
 {
     public async Task<GuideDraftChangeDto> CreateDraftAsync(int actorUserId, CreateGuideDraftRequest request, CancellationToken ct = default)
     {
-        var actor = await RequireActorAsync(actorUserId, ct);
+        var actor = await RequireActorAsync(actorUserId, AccessMode.Write, ct);
         return await InTransactionAsync(async () =>
         {
             var catalog = await LoadCatalogTrackedAsync(ct);
@@ -50,7 +53,7 @@ public sealed partial class AuthoringGuideManagementService
     /// <summary>Hủy bản nháp bằng xóa mềm (IsDeleted = true): kiểm token → ẩn bản nháp → xóa con trỏ → đổi token → audit.</summary>
     public async Task<GuideDraftDiscardDto> DiscardDraftAsync(int actorUserId, string? revisionToken, CancellationToken ct = default)
     {
-        var actor = await RequireActorAsync(actorUserId, ct);
+        var actor = await RequireActorAsync(actorUserId, AccessMode.Write, ct);
         return await InTransactionAsync(async () =>
         {
             var catalog = await LoadCatalogTrackedAsync(ct);
@@ -99,7 +102,7 @@ public sealed partial class AuthoringGuideManagementService
     private async Task<GuideDraftChangeDto> MutateDraftAsync(int actorUserId, string? revisionToken, string action, Action validate,
         Func<AuthoringGuideCatalog, AuthoringGuideCatalogVersion, Task<(object? Before, object? After)>> change, CancellationToken ct)
     {
-        var actor = await RequireActorAsync(actorUserId, ct);
+        var actor = await RequireActorAsync(actorUserId, AccessMode.Write, ct);
         return await InTransactionAsync(async () =>
         {
             var catalog = await LoadCatalogTrackedAsync(ct);

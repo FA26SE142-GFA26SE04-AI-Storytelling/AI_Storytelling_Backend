@@ -3,6 +3,9 @@ using StoryPlatform.Application.Features.AuthoringGuideManagement.DTOs;
 using StoryPlatform.Application.Features.ParentAuthoring;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Application.Features.AccessControl.Services;
 
 namespace StoryPlatform.Application.Features.AuthoringGuideManagement.Services;
 
@@ -10,7 +13,7 @@ public sealed partial class AuthoringGuideManagementService
 {
     public async Task<GuideDraftPreviewDto> PreviewAsync(int actorUserId, PreviewGuideDraftRequest request, CancellationToken ct = default)
     {
-        await RequireActorAsync(actorUserId, ct);
+        await RequireActorAsync(actorUserId, AccessMode.Read, ct);
         var catalog = await LoadCatalogTrackedAsync(ct);
         RequireToken(catalog, request.RevisionToken);
         var draft = await LoadDraftTrackedAsync(catalog, ct);
@@ -32,7 +35,7 @@ public sealed partial class AuthoringGuideManagementService
 
     public async Task<GuidePublishResultDto> PublishAsync(int actorUserId, PublishGuideDraftRequest request, CancellationToken ct = default)
     {
-        var actor = await RequireActorAsync(actorUserId, ct);
+        var actor = await RequireActorAsync(actorUserId, AccessMode.Write, ct);
         return await InTransactionAsync(async () =>
         {
             var catalog = await LoadCatalogTrackedAsync(ct);

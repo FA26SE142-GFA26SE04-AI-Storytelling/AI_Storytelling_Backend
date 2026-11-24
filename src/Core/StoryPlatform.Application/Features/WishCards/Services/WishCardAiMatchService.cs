@@ -5,11 +5,14 @@ using StoryPlatform.Application.Features.WishCards.Interfaces;
 using StoryPlatform.Contracts.AI.WishCards;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Application.Features.AccessControl.Services;
 
 namespace StoryPlatform.Application.Features.WishCards.Services;
 
 public sealed class WishCardAiMatchService(IUnitOfWork uow, IWishCardMatchingAiClient ai, IAuditLogWriter audit,
-    IWishCardMappingChangeReader changes)
+    IWishCardMappingChangeReader changes, IAccessPolicy? accessPolicy = null)
 {
     public async Task<StoryWishCardAiMatchResult> MatchAsync(int actorId, int storyId, int versionId, CancellationToken ct)
     {
@@ -85,13 +88,9 @@ public sealed class WishCardAiMatchService(IUnitOfWork uow, IWishCardMatchingAiC
         }
     }
 
-    private async Task AuthorizeAsync(int actorId, CancellationToken ct)
-    {
-        var now = DateTime.UtcNow;
-        if (!await uow.Repository<UserAccount>().ExistsAsync(x => x.Id == actorId && !x.IsDeleted &&
-            x.Status == AccountStatus.Active && (x.Role == UserRole.Moderator || x.Role == UserRole.Administrator) &&
-            (x.LockedUntil == null || x.LockedUntil <= now), ct)) throw new ForbiddenException();
-    }
+    /// <summary>Ghép thẻ bằng AI ghi bản ghép: Moderator; Administrator chỉ khi không còn Moderator hoạt động (Luồng 5).</summary>
+    private Task AuthorizeAsync(int actorId, CancellationToken ct) =>
+        (accessPolicy ?? AccessPolicy.Default(uow)).EnsureAsync(actorId, Permissions.Review.WishCardManage, cancellationToken: ct);
 
     private async Task<MatchWishCardsRequest> SnapshotAsync(int storyId, int versionId, CancellationToken ct)
     {

@@ -1489,12 +1489,15 @@
     "Moderator"
   ],
   "RoadmapTemplateController.Archive#POST {id:int}/archive": [
+    "Administrator",
     "Moderator"
   ],
   "RoadmapTemplateController.Clone#POST {id:int}/clone": [
+    "Administrator",
     "Moderator"
   ],
   "RoadmapTemplateController.Create#POST ": [
+    "Administrator",
     "Moderator"
   ],
   "RoadmapTemplateController.Get#GET {id:int}": [
@@ -1510,15 +1513,19 @@
     "Moderator"
   ],
   "RoadmapTemplateController.SetItems#PUT {id:int}/items": [
+    "Administrator",
     "Moderator"
   ],
   "RoadmapTemplateController.Submit#POST {id:int}/submit": [
+    "Administrator",
     "Moderator"
   ],
   "RoadmapTemplateController.Update#PUT {id:int}": [
+    "Administrator",
     "Moderator"
   ],
   "RoadmapTemplateController.Withdraw#POST {id:int}/withdraw": [
+    "Administrator",
     "Moderator"
   ],
   "SafetyPolicyController.ApplyAgePreset#POST {childProfileId:int}/age-preset/apply": [

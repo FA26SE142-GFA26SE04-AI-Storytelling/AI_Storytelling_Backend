@@ -73,8 +73,53 @@ public static class DefaultRolePermissions
                 Permissions.Admin.PaymentManage,
                 Permissions.Admin.BusinessReportView,
                 Permissions.Admin.AuditView,
-                Permissions.Admin.PermissionManage]),
+                Permissions.Admin.PermissionManage,
+                // Luồng 5: soạn bộ truyện mẫu khi không còn kiểm duyệt viên (điều kiện NoActiveModerator).
+                Permissions.Review.RoadmapTemplateAuthor]),
         };
+
+    private static readonly string[] ClaimablePermissions =
+    [
+        Permissions.Moderation.QueueProcess,
+        Permissions.Review.PublicStory,
+        Permissions.Review.GrayZone,
+        Permissions.Review.Roadmap,
+        Permissions.Review.CreatorPublication,
+    ];
+
+    private static readonly string[] ModerationConfigPermissions =
+    [
+        Permissions.Review.RubricManage,
+        Permissions.Review.GuideManage,
+        Permissions.Review.WishCardManage,
+        Permissions.Review.RoadmapTemplateAuthor,
+    ];
+
+    /// <summary>
+    /// Điều kiện gắn với từng lần cấp quyền (role, permission), theo luật Luồng 5 – Phần I. <see cref="AccessConditions.ActiveAccount"/>
+    /// luôn áp nên không khai báo ở đây.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<(string Role, string Permission), IReadOnlyList<string>> GrantConditions =
+        BuildGrantConditions();
+
+    public static IReadOnlyList<string> ConditionsFor(string roleCode, string permission) =>
+        GrantConditions.TryGetValue((roleCode, permission), out var conditions) ? conditions : [];
+
+    private static Dictionary<(string, string), IReadOnlyList<string>> BuildGrantConditions()
+    {
+        var map = new Dictionary<(string, string), IReadOnlyList<string>>();
+        foreach (var permission in ClaimablePermissions)
+        {
+            map[(RoleCodes.Moderator, permission)] = [AccessConditions.NotOwnContent];
+            map[(RoleCodes.Administrator, permission)] = [AccessConditions.NotOwnContent, AccessConditions.AdminFallback];
+        }
+
+        map[(RoleCodes.Moderator, Permissions.Moderation.ReportReview)] = [AccessConditions.NotOwnContent];
+        map[(RoleCodes.Moderator, Permissions.Moderation.RatingModerate)] = [AccessConditions.NotOwnContent];
+        foreach (var permission in ModerationConfigPermissions)
+            map[(RoleCodes.Administrator, permission)] = [AccessConditions.NoActiveModerator];
+        return map;
+    }
 
     private static IReadOnlySet<string> Set(params string[] codes) => new HashSet<string>(codes, StringComparer.Ordinal);
 }

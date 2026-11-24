@@ -4,6 +4,9 @@ using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.WishCards.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Application.Features.AccessControl.Services;
 
 namespace StoryPlatform.Application.Features.WishCards.Services;
 
@@ -11,9 +14,11 @@ public class WishCardMatchService : IWishCardMatchService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditLogWriter _auditLogWriter;
+    private readonly IAccessPolicy _accessPolicy;
 
-    public WishCardMatchService(IUnitOfWork unitOfWork, IAuditLogWriter auditLogWriter)
+    public WishCardMatchService(IUnitOfWork unitOfWork, IAuditLogWriter auditLogWriter, IAccessPolicy? accessPolicy = null)
     {
+        _accessPolicy = accessPolicy ?? AccessPolicy.Default(unitOfWork);
         _unitOfWork = unitOfWork;
         _auditLogWriter = auditLogWriter;
     }
@@ -61,8 +66,11 @@ public class WishCardMatchService : IWishCardMatchService
         };
     }
 
-    public Task<WishCardMatchDto> AddAsync(int actorUserId, int storyId, int wishCardId, CancellationToken ct = default) =>
-        WithStoryLockAsync(storyId, () => AddLockedAsync(actorUserId, storyId, wishCardId, ct), ct);
+    public async Task<WishCardMatchDto> AddAsync(int actorUserId, int storyId, int wishCardId, CancellationToken ct = default)
+    {
+        await RequireEditorAsync(actorUserId, ct);
+        return await WithStoryLockAsync(storyId, () => AddLockedAsync(actorUserId, storyId, wishCardId, ct), ct);
+    }
 
     private async Task<WishCardMatchDto> AddLockedAsync(int actorUserId, int storyId, int wishCardId, CancellationToken ct)
     {
@@ -102,8 +110,11 @@ public class WishCardMatchService : IWishCardMatchService
         return ToDto(created, card);
     }
 
-    public Task RemoveAsync(int actorUserId, int storyId, int wishCardId, CancellationToken ct = default) =>
-        WithStoryLockAsync(storyId, async () => { await RemoveLockedAsync(actorUserId, storyId, wishCardId, ct); return true; }, ct);
+    public async Task RemoveAsync(int actorUserId, int storyId, int wishCardId, CancellationToken ct = default)
+    {
+        await RequireEditorAsync(actorUserId, ct);
+        await WithStoryLockAsync(storyId, async () => { await RemoveLockedAsync(actorUserId, storyId, wishCardId, ct); return true; }, ct);
+    }
 
     private async Task RemoveLockedAsync(int actorUserId, int storyId, int wishCardId, CancellationToken ct)
     {
@@ -120,6 +131,10 @@ public class WishCardMatchService : IWishCardMatchService
         await _auditLogWriter.LogAsync(actorUserId, WishCardMappingAudit.Action, WishCardMappingAudit.EntityType, storyId,
             null, new { operation = "Remove", wishCardIds = new[] { wishCardId } }, ct);
     }
+
+    /// <summary>Ghép thẻ điều ước: Moderator; Administrator chỉ khi không còn Moderator hoạt động (Luồng 5).</summary>
+    private Task<UserAccount> RequireEditorAsync(int actorUserId, CancellationToken ct) =>
+        _accessPolicy.EnsureAsync(actorUserId, Permissions.Review.WishCardManage, deniedMessage: "Chỉ kiểm duyệt viên hoặc quản trị viên đang hoạt động mới quản lý được thẻ điều ước.", cancellationToken: ct);
 
     private async Task RequireStoryAsync(int storyId, CancellationToken ct)
     {

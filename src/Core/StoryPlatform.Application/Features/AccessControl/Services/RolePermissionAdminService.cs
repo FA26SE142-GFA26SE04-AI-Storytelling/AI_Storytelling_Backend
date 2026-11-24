@@ -29,7 +29,8 @@ public class RolePermissionAdminService(IUnitOfWork uow, IAuditLogWriter audit, 
         var all = await uow.Repository<Permission>().FindAsync(p => !p.IsDeleted, cancellationToken: cancellationToken);
         return all
             .OrderBy(p => GroupIndex(p.Group)).ThenBy(p => p.Code, StringComparer.Ordinal)
-            .Select(p => new PermissionDto(p.Code, p.Group, p.Description, p.IsStaffGrantable))
+            .Select(p => new PermissionDto(p.Code, p.Group, p.Description, p.IsStaffGrantable,
+                (PermissionCatalog.Find(p.Code)?.Scope ?? AccessScope.Any).ToString()))
             .ToList();
     }
 
@@ -47,7 +48,17 @@ public class RolePermissionAdminService(IUnitOfWork uow, IAuditLogWriter audit, 
         var role = await FindRoleAsync(roleCode, cancellationToken);
         var links = await LinksAsync(role.Id, cancellationToken);
         var codes = Codes(links);
-        return new RolePermissionsDto(role.Code, codes, Assignable(role.Code, codes));
+        return Dto(role.Code, codes);
+    }
+
+    private static RolePermissionsDto Dto(string roleCode, List<string> codes)
+    {
+        var assignable = Assignable(roleCode, codes);
+        var conditions = assignable
+            .Select(code => (code, list: DefaultRolePermissions.ConditionsFor(roleCode, code)))
+            .Where(x => x.list.Count > 0)
+            .ToDictionary(x => x.code, x => (IReadOnlyList<string>)x.list.Select(AccessConditions.Describe).ToList(), StringComparer.Ordinal);
+        return new RolePermissionsDto(roleCode, codes, assignable, conditions);
     }
 
     /// <summary>
@@ -101,7 +112,7 @@ public class RolePermissionAdminService(IUnitOfWork uow, IAuditLogWriter audit, 
         await audit.LogAsync(actorUserId, AuditAction, "Role", role.Id, before, after, cancellationToken);
         await permissions.InvalidateAsync(role.Code, cancellationToken);
 
-        return new RolePermissionsDto(role.Code, after, Assignable(role.Code, after));
+        return Dto(role.Code, after);
     }
 
     private async Task EnsureReviewersRemainAsync(Role target, IReadOnlyCollection<string> targetAfter, CancellationToken ct)

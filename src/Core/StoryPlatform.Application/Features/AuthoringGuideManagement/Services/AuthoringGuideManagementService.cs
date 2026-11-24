@@ -7,16 +7,20 @@ using StoryPlatform.Application.Features.AuthoringGuideManagement.Interfaces;
 using StoryPlatform.Application.Features.ParentAuthoring;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Application.Features.AccessControl.Services;
 
 namespace StoryPlatform.Application.Features.AuthoringGuideManagement.Services;
 
-public sealed partial class AuthoringGuideManagementService(IUnitOfWork uow, IAuditLogWriter audit) : IAuthoringGuideManagementService
+public sealed partial class AuthoringGuideManagementService(IUnitOfWork uow, IAuditLogWriter audit, IAccessPolicy? accessPolicy = null)
+    : IAuthoringGuideManagementService
 {
     private readonly AuthoringGuideItemStore _items = new(uow);
 
     public async Task<GuideManagementOverviewDto> GetOverviewAsync(int actorUserId, CancellationToken ct = default)
     {
-        await RequireActorAsync(actorUserId, ct);
+        await RequireActorAsync(actorUserId, AccessMode.Read, ct);
         var catalog = await LoadCatalogAsync(ct);
         return new(catalog.Locale, catalog.AudienceRole, catalog.RevisionToken,
             await LoadDetailAsync(catalog.PublishedVersionId, catalog.AudienceRole, ct),
@@ -26,7 +30,7 @@ public sealed partial class AuthoringGuideManagementService(IUnitOfWork uow, IAu
     public async Task<PagedResult<GuideVersionSummaryDto>> ListVersionsAsync(int actorUserId, int pageIndex, int pageSize,
         CancellationToken ct = default)
     {
-        await RequireActorAsync(actorUserId, ct);
+        await RequireActorAsync(actorUserId, AccessMode.Read, ct);
         if (pageIndex < 1 || pageSize is < 1 or > 100) throw new BadRequestException("PAGINATION_INVALID");
         var catalog = await LoadCatalogAsync(ct);
         var (rows, total) = await uow.Repository<AuthoringGuideCatalogVersion>().GetPagedAsync(pageIndex, pageSize,
@@ -38,7 +42,7 @@ public sealed partial class AuthoringGuideManagementService(IUnitOfWork uow, IAu
 
     public async Task<GuideVersionDetailDto> GetVersionAsync(int actorUserId, int versionId, CancellationToken ct = default)
     {
-        await RequireActorAsync(actorUserId, ct);
+        await RequireActorAsync(actorUserId, AccessMode.Read, ct);
         var catalog = await LoadCatalogAsync(ct);
         var version = await uow.Repository<AuthoringGuideCatalogVersion>().FirstOrDefaultAsync(
             x => x.Id == versionId && x.CatalogId == catalog.Id && !x.IsDeleted, cancellationToken: ct)
@@ -48,14 +52,12 @@ public sealed partial class AuthoringGuideManagementService(IUnitOfWork uow, IAu
 
     // ---- dùng chung cho các phần partial ----
 
-    private async Task<UserAccount> RequireActorAsync(int userId, CancellationToken ct)
-    {
-        var actor = await uow.Repository<UserAccount>().GetByIdAsync(userId, ct);
-        if (actor is null || actor.IsDeleted || actor.Status != AccountStatus.Active
-            || actor.Role is not (UserRole.Moderator or UserRole.Administrator))
-            throw new ForbiddenException("Chỉ kiểm duyệt viên hoặc quản trị viên đang hoạt động mới quản lý được hướng dẫn sáng tác.");
-        return actor;
-    }
+    /// <summary>Xem: Moderator và Administrator. Sửa: Administrator chỉ khi không còn Moderator hoạt động (Luồng 5).</summary>
+    private Task<UserAccount> RequireActorAsync(int userId, AccessMode mode, CancellationToken ct) =>
+        (accessPolicy ?? AccessPolicy.Default(uow)).EnsureAsync(
+            userId, Permissions.Review.GuideManage, mode: mode,
+            deniedMessage: "Chỉ kiểm duyệt viên hoặc quản trị viên đang hoạt động mới quản lý được hướng dẫn sáng tác.",
+            cancellationToken: ct);
 
     /// <summary>Bản không theo dõi, chỉ để đọc.</summary>
     private async Task<AuthoringGuideCatalog> LoadCatalogAsync(CancellationToken ct) =>

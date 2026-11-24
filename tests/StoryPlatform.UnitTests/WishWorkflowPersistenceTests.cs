@@ -89,11 +89,11 @@ public sealed class WishWorkflowPersistenceTests
         Assert.Equal(0, watermark);
         var empty = WishCardMappingAudit.Fingerprint(Array.Empty<StoryWishCardMatch>());
         var manual = new WishCardMatchService(uow, new AuditLogWriter(uow));
-        await manual.AddAsync(7, 20, 1);
+        await manual.AddAsync(9, 20, 1);
         var afterAdd = await reader.ReadWatermarkAsync(default);
-        await manual.AddAsync(7, 20, 1); // no-op must not advance the watermark
+        await manual.AddAsync(9, 20, 1); // no-op must not advance the watermark
         Assert.Equal(afterAdd, await reader.ReadWatermarkAsync(default));
-        await manual.RemoveAsync(7, 20, 1);
+        await manual.RemoveAsync(9, 20, 1);
         Assert.Empty(await db.Set<StoryWishCardMatch>().ToListAsync());
         Assert.Equal(empty, WishCardMappingAudit.Fingerprint(await db.Set<StoryWishCardMatch>().ToListAsync()));
         Assert.True(await reader.HasChangesAfterAsync(20, watermark, default));
@@ -117,7 +117,7 @@ public sealed class WishWorkflowPersistenceTests
                 action == WishCardMappingAudit.Action ? Task.FromException(new InvalidOperationException("simulated marker failure")) :
                 writer.LogAsync(actor, action, entity, id, before, after, ct));
         var manual = new WishCardMatchService(uow, audit.Object);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => manual.AddAsync(7, 20, 1));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => manual.AddAsync(9, 20, 1));
         db.ChangeTracker.Clear();
         Assert.Empty(await db.Set<StoryWishCardMatch>().ToListAsync());
         Assert.Empty(await db.Set<AuditLog>().ToListAsync());
@@ -127,6 +127,7 @@ public sealed class WishWorkflowPersistenceTests
     {
         await db.Database.EnsureCreatedAsync();
         db.Set<UserAccount>().Add(new() { Id = 7, Role = UserRole.User, Status = AccountStatus.Active });
+        db.Set<UserAccount>().Add(new() { Id = 9, Role = UserRole.Moderator, Status = AccountStatus.Active });
         db.Set<ChildProfile>().Add(new() { Id = 1, OwnerUserId = 7, Status = ChildProfileStatus.Active });
         db.Set<StoryWish>().Add(new() { Id = 1, ChildProfileId = 1, Status = StoryWishStatus.Pending,
             PendingSince = DateTime.UtcNow.AddDays(-6.2), SubmittedAt = DateTime.UtcNow.AddDays(-6.2) });

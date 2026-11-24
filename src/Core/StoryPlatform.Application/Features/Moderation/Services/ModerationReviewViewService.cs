@@ -5,6 +5,9 @@ using StoryPlatform.Application.Features.Moderation.DTOs;
 using StoryPlatform.Application.Features.Moderation.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Application.Features.AccessControl.Services;
 
 namespace StoryPlatform.Application.Features.Moderation.Services;
 
@@ -15,9 +18,11 @@ public class ModerationReviewViewService : IModerationReviewViewService
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditLogWriter _auditLogWriter;
+    private readonly IAccessPolicy _accessPolicy;
 
-    public ModerationReviewViewService(IUnitOfWork unitOfWork, IAuditLogWriter auditLogWriter)
+    public ModerationReviewViewService(IUnitOfWork unitOfWork, IAuditLogWriter auditLogWriter, IAccessPolicy? accessPolicy = null)
     {
+        _accessPolicy = accessPolicy ?? AccessPolicy.Default(unitOfWork);
         _unitOfWork = unitOfWork;
         _auditLogWriter = auditLogWriter;
     }
@@ -25,13 +30,10 @@ public class ModerationReviewViewService : IModerationReviewViewService
     public async Task<ModerationReviewViewDto> GrantAsync(
         int actorUserId, GrantReviewViewRequestDto request, CancellationToken cancellationToken = default)
     {
-        var actor = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(actorUserId, cancellationToken);
-        if (actor == null
-            || actor.Status != AccountStatus.Active
-            || actor.Role is not (UserRole.Moderator or UserRole.Administrator))
-        {
-            throw new ForbiddenException("Chỉ kiểm duyệt viên hoặc quản trị viên đang hoạt động mới được xem để rà soát.");
-        }
+        await _accessPolicy.EnsureAsync(
+            actorUserId, ViewPermission(request.ReadingRoadmapId.HasValue), mode: AccessMode.Read,
+            deniedMessage: "Chỉ kiểm duyệt viên hoặc quản trị viên đang hoạt động mới được xem để rà soát.",
+            cancellationToken: cancellationToken);
 
         await ValidateTargetAsync(request, cancellationToken);
 
@@ -91,6 +93,10 @@ public class ModerationReviewViewService : IModerationReviewViewService
         };
     }
 
+    /// <summary>Xem để rà soát bộ truyện mẫu cần quyền xem lộ trình mẫu; truyện đang công khai cần quyền xem nội dung công khai.</summary>
+    private static string ViewPermission(bool roadmap) =>
+        roadmap ? Permissions.Review.RoadmapTemplateView : Permissions.Moderation.PublishedView;
+
     public async Task<bool> HasActiveViewAsync(
         int actorUserId, int? storyId, int? readingRoadmapId, CancellationToken cancellationToken = default)
     {
@@ -100,9 +106,13 @@ public class ModerationReviewViewService : IModerationReviewViewService
             return false;
         }
 
-        var actor = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(actorUserId, cancellationToken);
-        if (actor == null || actor.IsDeleted || actor.Status != AccountStatus.Active
-            || actor.Role is not (UserRole.Moderator or UserRole.Administrator))
+        try
+        {
+            await _accessPolicy.EnsureAsync(
+                actorUserId, ViewPermission(readingRoadmapId.HasValue), mode: AccessMode.Read,
+                cancellationToken: cancellationToken);
+        }
+        catch (ForbiddenException)
         {
             return false;
         }

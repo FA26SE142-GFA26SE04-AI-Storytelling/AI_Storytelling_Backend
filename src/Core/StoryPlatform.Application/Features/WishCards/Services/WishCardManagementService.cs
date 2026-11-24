@@ -6,6 +6,9 @@ using StoryPlatform.Application.Features.RoadmapTemplates;
 using StoryPlatform.Application.Features.WishCards.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Application.Features.AccessControl.Services;
 
 namespace StoryPlatform.Application.Features.WishCards.Services;
 
@@ -15,9 +18,11 @@ public class WishCardManagementService : IWishCardManagementService
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditLogWriter _auditLogWriter;
+    private readonly IAccessPolicy _accessPolicy;
 
-    public WishCardManagementService(IUnitOfWork unitOfWork, IAuditLogWriter auditLogWriter)
+    public WishCardManagementService(IUnitOfWork unitOfWork, IAuditLogWriter auditLogWriter, IAccessPolicy? accessPolicy = null)
     {
+        _accessPolicy = accessPolicy ?? AccessPolicy.Default(unitOfWork);
         _unitOfWork = unitOfWork;
         _auditLogWriter = auditLogWriter;
     }
@@ -51,6 +56,7 @@ public class WishCardManagementService : IWishCardManagementService
     public async Task<WishCardDto> CreateAsync(
         int actorUserId, CreateWishCardRequestDto request, CancellationToken ct = default)
     {
+        await RequireEditorAsync(actorUserId, ct);
         if (!WishCardRules.TryParseGroup(request.Group, out var group))
         {
             throw new BadRequestException("Nhóm thẻ không hợp lệ.");
@@ -80,6 +86,7 @@ public class WishCardManagementService : IWishCardManagementService
     public async Task<WishCardDto> UpdateAsync(
         int actorUserId, int id, UpdateWishCardRequestDto request, CancellationToken ct = default)
     {
+        await RequireEditorAsync(actorUserId, ct);
         var card = await RequireAsync(id, ct);
         var fields = await ValidateAsync(request.Label, request.ImageUrl, request.AudioUrl, request.AgeBand,
             request.ContentCategoryId, ct);
@@ -102,6 +109,7 @@ public class WishCardManagementService : IWishCardManagementService
     public async Task<WishCardDto> SetActiveAsync(
         int actorUserId, int id, bool isActive, CancellationToken ct = default)
     {
+        await RequireEditorAsync(actorUserId, ct);
         var card = await RequireAsync(id, ct);
         if (card.IsActive == isActive)
         {
@@ -117,6 +125,10 @@ public class WishCardManagementService : IWishCardManagementService
             actorUserId, "WishCardVisibilityChanged", nameof(WishCard), card.Id, before, Snapshot(card), ct);
         return ToDto(card);
     }
+
+    /// <summary>Sửa thẻ điều ước: Moderator; Administrator chỉ khi không còn Moderator hoạt động (Luồng 5).</summary>
+    private Task<UserAccount> RequireEditorAsync(int actorUserId, CancellationToken ct) =>
+        _accessPolicy.EnsureAsync(actorUserId, Permissions.Review.WishCardManage, deniedMessage: "Chỉ kiểm duyệt viên hoặc quản trị viên đang hoạt động mới quản lý được thẻ điều ước.", cancellationToken: ct);
 
     private async Task<WishCard> RequireAsync(int id, CancellationToken ct)
     {

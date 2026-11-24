@@ -8,6 +8,9 @@ using StoryPlatform.Application.Features.RoadmapTemplates.DTOs;
 using StoryPlatform.Application.Features.RoadmapTemplates.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Application.Features.AccessControl.Services;
 
 namespace StoryPlatform.Application.Features.RoadmapTemplates.Services;
 
@@ -17,13 +20,16 @@ public partial class RoadmapReviewService : IRoadmapReviewService
     private readonly IRoadmapSubmissionChecker _checker;
     private readonly IAuditLogWriter _auditLogWriter;
     private readonly INotificationService _notificationService;
+    private readonly IAccessPolicy _accessPolicy;
 
     public RoadmapReviewService(
         IUnitOfWork unitOfWork,
         IRoadmapSubmissionChecker checker,
         IAuditLogWriter auditLogWriter,
-        INotificationService notificationService)
+        INotificationService notificationService,
+        IAccessPolicy? accessPolicy = null)
     {
+        _accessPolicy = accessPolicy ?? AccessPolicy.Default(unitOfWork);
         _unitOfWork = unitOfWork;
         _checker = checker;
         _auditLogWriter = auditLogWriter;
@@ -152,13 +158,10 @@ public partial class RoadmapReviewService : IRoadmapReviewService
     private async Task<ReviewContext> LoadClaimedContextAsync(
         int actorUserId, int itemId, CancellationToken cancellationToken)
     {
-        var actor = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(actorUserId, cancellationToken);
-        if (actor == null || actor.IsDeleted || actor.Status != AccountStatus.Active
-            || actor.Role is not (UserRole.Moderator or UserRole.Administrator))
-        {
-            throw new ForbiddenException(
-                "Chỉ kiểm duyệt viên hoặc quản trị viên đang hoạt động mới duyệt được bộ truyện mẫu.");
-        }
+        var actor = await _accessPolicy.EnsureAsync(
+            actorUserId, Permissions.Review.Roadmap, mode: AccessMode.Read,
+            deniedMessage: "Chỉ kiểm duyệt viên hoặc quản trị viên đang hoạt động mới duyệt được bộ truyện mẫu.",
+            cancellationToken: cancellationToken);
 
         var item = await _unitOfWork.Repository<ModerationItem>().GetByIdAsync(itemId, cancellationToken)
                    ?? throw new NotFoundException("Mục kiểm duyệt", itemId);

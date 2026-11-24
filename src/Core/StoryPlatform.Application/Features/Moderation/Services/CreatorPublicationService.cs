@@ -10,12 +10,16 @@ using StoryPlatform.Application.Features.Moderation.Interfaces;
 using StoryPlatform.Application.Features.Moderation;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Application.Features.AccessControl.Services;
 
 namespace StoryPlatform.Application.Features.Moderation.Services;
 
 public sealed class CreatorPublicationService(IUnitOfWork uow, IModerationQueueService queue, IAuditLogWriter audit,
     IGrayZoneEvaluator? moderation = null, INotificationService? notifications = null,
-    INotificationRealtimePublisher? publisher = null, ILogger<CreatorPublicationService>? logger = null) : ICreatorPublicationService
+    INotificationRealtimePublisher? publisher = null, ILogger<CreatorPublicationService>? logger = null,
+    IAccessPolicy? accessPolicy = null) : ICreatorPublicationService
 {
     public async Task<CreatorPublicationStatus> GetStatusAsync(int userId, int storyId, CancellationToken ct = default)
     {
@@ -83,10 +87,9 @@ public sealed class CreatorPublicationService(IUnitOfWork uow, IModerationQueueS
         {
             var item = await uow.Repository<ModerationItem>().FirstOrDefaultAsync(x => x.Id == itemId, cancellationToken: ct)
                 ?? throw new NotFoundException("ModerationItem", itemId);
-            var actor = await uow.Repository<UserAccount>().FirstOrDefaultAsync(x => x.Id == userId, cancellationToken: ct);
-            if (actor == null || actor.IsDeleted || actor.Status != AccountStatus.Active || actor.LockedUntil > DateTime.UtcNow ||
-                actor.Role is not (UserRole.Moderator or UserRole.Administrator) || item.CreatedByUserId == userId)
-                throw new ForbiddenException();
+            // Tài khoản, quyền và NotOwnContent; AdminFallback không xét vì mục đã được nhận hợp lệ.
+            await (accessPolicy ?? AccessPolicy.Default(uow)).EnsureAsync(
+                userId, Permissions.Review.CreatorPublication, item, cancellationToken: ct);
             if (item.Status != ModerationItemStatus.Claimed || item.ClaimedByUserId != userId ||
                 item.ClaimedAt == null || item.ClaimedAt.Value.Add(ModerationQueuePolicy.ClaimTimeout) <= DateTime.UtcNow ||
                 item.RowVersion != input.RowVersion) throw new ConflictException("STALE_REMOVAL_DECISION");

@@ -8,6 +8,9 @@ using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Application.Features.TokenQuota.Services;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Application.Features.AccessControl.Services;
 
 namespace StoryPlatform.Application.Features.Moderation.Services;
 
@@ -17,7 +20,8 @@ public sealed record GrayZoneReviewDto(int ItemId, int StoryVersionId, int Versi
     string Content, string AgeBand, int? ReadingLevel, string? Flags, int RowVersion);
 
 /// <summary>Uses existing version/item jsonb columns. Never starts generation or calls a provider under a lock.</summary>
-public sealed class GrayZoneWorkflowService(IUnitOfWork uow, IAuditLogWriter audit, INotificationService? notifications = null)
+public sealed class GrayZoneWorkflowService(IUnitOfWork uow, IAuditLogWriter audit, INotificationService? notifications = null,
+    IAccessPolicy? accessPolicy = null)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -140,9 +144,8 @@ public sealed class GrayZoneWorkflowService(IUnitOfWork uow, IAuditLogWriter aud
 
     private async Task<ModerationItem> RequireClaimAsync(int userId, int id, CancellationToken ct)
     {
-        var user = await uow.Repository<UserAccount>().FirstOrDefaultAsync(x => x.Id == userId, cancellationToken: ct);
-        if (user is null || user.IsDeleted || user.Status != AccountStatus.Active
-            || user.Role is not (UserRole.Moderator or UserRole.Administrator)) throw new ForbiddenException("MODERATOR_REQUIRED");
+        await (accessPolicy ?? AccessPolicy.Default(uow)).EnsureAsync(
+            userId, Permissions.Review.GrayZone, mode: AccessMode.Read, deniedMessage: "MODERATOR_REQUIRED", cancellationToken: ct);
         var item = await uow.Repository<ModerationItem>().FirstOrDefaultAsync(x => x.Id == id, cancellationToken: ct)
             ?? throw new NotFoundException("ModerationItem", id);
         if (item.ItemType != ModerationItemType.GrayZoneStory || item.Status != ModerationItemStatus.Claimed

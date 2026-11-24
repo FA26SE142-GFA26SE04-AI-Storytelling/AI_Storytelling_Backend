@@ -325,6 +325,32 @@ public class ModerationQueueServiceTests
     }
 
     [Fact]
+    public async Task ClaimAsync_AdministratorClaimsEscalatedItem_WhileModeratorIsAvailable()
+    {
+        var item = PendingItem();
+        item.ItemType = ModerationItemType.GrayZoneStory;
+        item.EscalatedAt = DateTime.UtcNow.AddMinutes(-5);
+        ReturnItem(item);
+        SetEligibleModeratorCount(1);
+
+        var result = await _sut.ClaimAsync(_admin.Id, item.Id);
+
+        Assert.Equal(_admin.Id, result.ClaimedByUserId);
+    }
+
+    [Fact]
+    public void ClaimPermission_MapsEachItemTypeToItsReviewPermission()
+    {
+        Assert.Equal("moderation.report.review", ModerationQueuePolicy.ClaimPermission(ModerationItemType.ContentReport));
+        Assert.Equal("moderation.rating.moderate", ModerationQueuePolicy.ClaimPermission(ModerationItemType.StoryRating));
+        Assert.Equal("review.gray_zone", ModerationQueuePolicy.ClaimPermission(ModerationItemType.GrayZoneStory));
+        Assert.Equal("review.public_story", ModerationQueuePolicy.ClaimPermission(ModerationItemType.PublicStoryReview));
+        Assert.Equal("review.roadmap", ModerationQueuePolicy.ClaimPermission(ModerationItemType.RoadmapTemplateReview));
+        Assert.Equal("review.creator_publication", ModerationQueuePolicy.ClaimPermission(ModerationItemType.PublicStoryRemoval));
+        Assert.Equal("moderation.queue.process", ModerationQueuePolicy.ClaimPermission(ModerationItemType.CommunitySubmission));
+    }
+
+    [Fact]
     public async Task ClaimAsync_AdministratorWhenNoEligibleModerator_Succeeds()
     {
         var item = PendingItem(createdBy: _moderatorA.Id);

@@ -21,6 +21,7 @@ public class WishCardMatchServiceTests
 
     public WishCardMatchServiceTests()
     {
+        _h.AddUser(Moderator).Role = UserRole.Moderator;
         _cat = _h.AddCard(WishCardGroup.Character, "Chú mèo");
         _forest = _h.AddCard(WishCardGroup.Place, "Khu rừng");
         _h.AddLibraryStory(20, "Mèo con lạc trong rừng");

@@ -9,6 +9,9 @@ using StoryPlatform.Application.Features.CreatorStatistics.Interfaces;
 using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Application.Features.AccessControl.Services;
 
 namespace StoryPlatform.Application.Features.CreatorPayouts.Services;
 
@@ -30,10 +33,14 @@ public class CreatorPayoutService : ICreatorPayoutService
     private readonly IAuditLogWriter _auditLogWriter;
     private readonly INotificationService _notificationService;
 
+    private readonly IAccessPolicy _accessPolicy;
+
     public CreatorPayoutService(
         IUnitOfWork unitOfWork, ICreatorStatisticsService statistics, IAuditLogWriter auditLogWriter,
-        INotificationService notificationService)
+        INotificationService notificationService,
+        IAccessPolicy? accessPolicy = null)
     {
+        _accessPolicy = accessPolicy ?? AccessPolicy.Default(unitOfWork);
         _unitOfWork = unitOfWork;
         _statistics = statistics;
         _auditLogWriter = auditLogWriter;
@@ -436,14 +443,11 @@ public class CreatorPayoutService : ICreatorPayoutService
         return payout;
     }
 
-    private async Task RequireActiveAdminAsync(int adminUserId, CancellationToken cancellationToken)
-    {
-        var admin = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(adminUserId, cancellationToken);
-        if (admin is not { Role: UserRole.Administrator, Status: AccountStatus.Active } || admin.IsDeleted)
-        {
-            throw new ForbiddenException("Chỉ quản trị viên đang hoạt động mới ghi nhận được chi trả cho nhà sáng tạo.");
-        }
-    }
+    private Task RequireActiveAdminAsync(int adminUserId, CancellationToken cancellationToken) =>
+        _accessPolicy.EnsureAsync(
+            adminUserId, Permissions.Admin.CreatorPayoutManage,
+            deniedMessage: "Chỉ quản trị viên đang hoạt động mới ghi nhận được chi trả cho nhà sáng tạo.",
+            cancellationToken: cancellationToken);
 
     private async Task<UserAccount> RequireCreatorAsync(int creatorUserId, CancellationToken cancellationToken)
     {

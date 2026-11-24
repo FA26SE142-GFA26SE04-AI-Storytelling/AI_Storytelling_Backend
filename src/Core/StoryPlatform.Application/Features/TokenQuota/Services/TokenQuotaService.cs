@@ -10,6 +10,9 @@ using StoryPlatform.Application.Features.TokenQuota.DTOs;
 using StoryPlatform.Application.Features.TokenQuota.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Application.Features.AccessControl.Services;
 
 namespace StoryPlatform.Application.Features.TokenQuota.Services;
 
@@ -34,11 +37,15 @@ public partial class TokenQuotaService : ITokenQuotaService
     /// <param name="planSettings">Lượt dùng thử và hạn mức tháng Creator do Admin cấu hình; null thì dùng mặc định.</param>
     /// <param name="planBenefits">Quyền lợi hiển thị kèm lượt; null thì không trả quyền lợi.</param>
     /// <param name="creatorTiers">Xét cấp đối tác trước khi cấp hạn mức tháng; null thì dùng cấp đang lưu.</param>
+    private readonly IAccessPolicy _accessPolicy;
+
     public TokenQuotaService(
         IUnitOfWork unitOfWork, IAuditLogWriter? auditLogWriter = null, IPlanSettingsProvider? planSettings = null,
         IPlanBenefitService? planBenefits = null, IPlanUsageService? planUsage = null,
-        ICreatorTierService? creatorTiers = null, INotificationService? notifications = null)
+        ICreatorTierService? creatorTiers = null, INotificationService? notifications = null,
+        IAccessPolicy? accessPolicy = null)
     {
+        _accessPolicy = accessPolicy ?? AccessPolicy.Default(unitOfWork);
         _notifications = notifications;
         _creatorTiers = creatorTiers;
         _planBenefits = planBenefits;
@@ -345,7 +352,8 @@ public partial class TokenQuotaService : ITokenQuotaService
         var child = await GetChildAsync(childProfileId, cancellationToken);
 
         var requester = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(requestingUserId, cancellationToken);
-        var isAdministrator = requester?.Role == UserRole.Administrator;
+        var isAdministrator = requester?.Role == UserRole.Administrator
+                              && await CanManageQuotaAsync(requestingUserId, cancellationToken);
         if (!isAdministrator && (child.IsDeleted || child.Status == ChildProfileStatus.Deleted || child.OwnerUserId != requestingUserId))
         {
             throw new ForbiddenException("Bạn không có quyền xem quota của hồ sơ trẻ này.");
@@ -379,9 +387,25 @@ public partial class TokenQuotaService : ITokenQuotaService
         return await BuildQuotaAsync(userId, cancellationToken);
     }
 
+    /// <summary>Admin xem lượt của hồ sơ bất kỳ khi còn hoạt động và giữ quyền quota.manage.</summary>
+    private async Task<bool> CanManageQuotaAsync(int userId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _accessPolicy.EnsureAsync(userId, Permissions.Admin.QuotaManage, mode: AccessMode.Read,
+                cancellationToken: cancellationToken);
+            return true;
+        }
+        catch (ForbiddenException)
+        {
+            return false;
+        }
+    }
+
     public async Task<CreditAdjustmentDto> AdjustAsync(
         int adminUserId, AdjustCreditsRequestDto request, CancellationToken cancellationToken = default)
     {
+        await _accessPolicy.EnsureAsync(adminUserId, Permissions.Admin.QuotaManage, deniedMessage: "Chỉ quản trị viên đang hoạt động mới thực hiện được thao tác này.", cancellationToken: cancellationToken);
         var reason = request.Reason?.Trim() ?? string.Empty;
         if (reason.Length == 0)
         {

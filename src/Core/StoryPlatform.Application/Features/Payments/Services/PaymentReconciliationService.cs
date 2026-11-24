@@ -6,6 +6,9 @@ using StoryPlatform.Application.Features.Payments.DTOs;
 using StoryPlatform.Application.Features.Payments.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Application.Features.AccessControl.Services;
 
 namespace StoryPlatform.Application.Features.Payments.Services;
 
@@ -20,9 +23,13 @@ public class PaymentReconciliationService : IPaymentReconciliationService
     private readonly ISubscriptionService _subscriptionService;
     private readonly IAuditLogWriter _auditLogWriter;
 
+    private readonly IAccessPolicy _accessPolicy;
+
     public PaymentReconciliationService(
-        IUnitOfWork unitOfWork, ISubscriptionService subscriptionService, IAuditLogWriter auditLogWriter)
+        IUnitOfWork unitOfWork, ISubscriptionService subscriptionService, IAuditLogWriter auditLogWriter,
+        IAccessPolicy? accessPolicy = null)
     {
+        _accessPolicy = accessPolicy ?? AccessPolicy.Default(unitOfWork);
         _unitOfWork = unitOfWork;
         _subscriptionService = subscriptionService;
         _auditLogWriter = auditLogWriter;
@@ -114,6 +121,7 @@ public class PaymentReconciliationService : IPaymentReconciliationService
     public async Task<ReconciliationExceptionDto> ResolveAsync(
         int adminUserId, int exceptionId, CancellationToken cancellationToken = default)
     {
+        await _accessPolicy.EnsureAsync(adminUserId, Permissions.Admin.PaymentManage, deniedMessage: "Chỉ quản trị viên đang hoạt động mới thực hiện được thao tác này.", cancellationToken: cancellationToken);
         var repo = _unitOfWork.Repository<PaymentReconciliationException>();
         var exception = await repo.GetByIdAsync(exceptionId, cancellationToken)
                         ?? throw new NotFoundException("Ngoại lệ đối soát", exceptionId);

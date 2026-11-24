@@ -4,13 +4,17 @@ using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.PlanBenefits.DTOs;
 using StoryPlatform.Application.Features.PlanBenefits.Interfaces;
 using StoryPlatform.Domain.Entities;
+using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Application.Features.AccessControl.Services;
 
 namespace StoryPlatform.Application.Features.PlanBenefits.Services;
 
 /// <summary>
 /// Admin xem và sửa cấu hình chung (Luồng 5, 5a). Các dịch vụ khác chỉ đọc qua <see cref="IPlanSettingsProvider"/>.
 /// </summary>
-public class PlanSettingsService(IUnitOfWork unitOfWork, IPlanSettingsProvider provider, IAuditLogWriter auditLogWriter)
+public class PlanSettingsService(IUnitOfWork unitOfWork, IPlanSettingsProvider provider, IAuditLogWriter auditLogWriter,
+    IAccessPolicy? accessPolicy = null)
     : IPlanSettingsService
 {
     public async Task<PlanSettingsDto> GetAsync(CancellationToken cancellationToken = default) =>
@@ -19,6 +23,8 @@ public class PlanSettingsService(IUnitOfWork unitOfWork, IPlanSettingsProvider p
     public async Task<PlanSettingsDto> UpdateAsync(
         int adminUserId, UpdatePlanSettingsRequestDto request, CancellationToken cancellationToken = default)
     {
+        await (accessPolicy ?? AccessPolicy.Default(unitOfWork)).EnsureAsync(
+            adminUserId, Permissions.Admin.PaymentManage, deniedMessage: "Chỉ quản trị viên đang hoạt động mới thực hiện được thao tác này.", cancellationToken: cancellationToken);
         Validate(request);
 
         var repository = unitOfWork.Repository<PlanSettings>();

@@ -39,6 +39,7 @@ public class PaymentServiceTests
     public PaymentServiceTests()
     {
         _store.Seed(new UserAccount { Id = ParentId, Role = UserRole.User, Status = AccountStatus.Active, Email = "p1@x.com", Username = "parent_one", FullName = "Phụ huynh Một" });
+        _store.Seed(new UserAccount { Id = AdminId, Role = UserRole.Administrator, Status = AccountStatus.Active, Username = "admin_demo" });
         _store.Seed(new UserAccount { Id = OtherParentId, Role = UserRole.User, Status = AccountStatus.Active, Email = "p2@x.com", Username = "parent_two", FullName = "Phụ huynh Hai" });
         _store.Seed(new UserAccount { Id = AdminId, Role = UserRole.Administrator, Email = "admin@x.com", Username = "admin", FullName = "Quản trị" });
         _store.Seed(new UserAccount { Id = CreatorId, Role = UserRole.ContentCreator, Status = AccountStatus.Active, Email = "c@x.com", Username = "creator", FullName = "Tác giả" });

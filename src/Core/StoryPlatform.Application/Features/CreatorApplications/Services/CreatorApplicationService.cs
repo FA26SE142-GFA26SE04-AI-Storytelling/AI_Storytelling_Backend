@@ -9,6 +9,9 @@ using StoryPlatform.Application.Features.CreatorApplications.Interfaces;
 using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Application.Features.AccessControl.Services;
 
 namespace StoryPlatform.Application.Features.CreatorApplications.Services;
 
@@ -23,10 +26,14 @@ public class CreatorApplicationService : ICreatorApplicationService
     private readonly INotificationService _notificationService;
     private readonly IEmailSender _emailSender;
 
+    private readonly IAccessPolicy _accessPolicy;
+
     public CreatorApplicationService(
         IUnitOfWork unitOfWork, IAuditLogWriter auditLogWriter, INotificationService notificationService,
-        IEmailSender emailSender)
+        IEmailSender emailSender,
+        IAccessPolicy? accessPolicy = null)
     {
+        _accessPolicy = accessPolicy ?? AccessPolicy.Default(unitOfWork);
         _unitOfWork = unitOfWork;
         _auditLogWriter = auditLogWriter;
         _notificationService = notificationService;
@@ -149,11 +156,10 @@ public class CreatorApplicationService : ICreatorApplicationService
         int adminUserId, int applicationId, string? rejectionReason, CancellationToken cancellationToken)
     {
         var users = _unitOfWork.Repository<UserAccount>();
-        var admin = await users.GetByIdAsync(adminUserId, cancellationToken);
-        if (admin is not { Role: UserRole.Administrator, Status: AccountStatus.Active } || admin.IsDeleted)
-        {
-            throw new ForbiddenException("Chỉ quản trị viên đang hoạt động mới xử lý được đơn đăng ký nhà sáng tạo nội dung.");
-        }
+        var admin = await _accessPolicy.EnsureAsync(
+            adminUserId, Permissions.Admin.CreatorApplicationReview,
+            deniedMessage: "Chỉ quản trị viên đang hoạt động mới xử lý được đơn đăng ký nhà sáng tạo nội dung.",
+            cancellationToken: cancellationToken);
 
         var applications = _unitOfWork.Repository<CreatorApplication>();
         var found = await applications.GetByIdAsync(applicationId, cancellationToken)

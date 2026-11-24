@@ -9,6 +9,9 @@ using StoryPlatform.Application.Features.Payments.DTOs;
 using StoryPlatform.Application.Features.Payments.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Application.Features.AccessControl.Services;
 
 namespace StoryPlatform.Application.Features.Payments.Services;
 
@@ -25,14 +28,18 @@ public class PaymentService : IPaymentService
     private readonly ISePayWebhookAuthenticator _webhookAuthenticator;
     private readonly ISubscriptionService _subscriptionService;
 
+    private readonly IAccessPolicy _accessPolicy;
+
     public PaymentService(
         IUnitOfWork unitOfWork,
         IAuditLogWriter auditLogWriter,
         INotificationService notificationService,
         ISePayQrUrlBuilder qrUrlBuilder,
         ISePayWebhookAuthenticator webhookAuthenticator,
-        ISubscriptionService subscriptionService)
+        ISubscriptionService subscriptionService,
+        IAccessPolicy? accessPolicy = null)
     {
+        _accessPolicy = accessPolicy ?? AccessPolicy.Default(unitOfWork);
         _unitOfWork = unitOfWork;
         _auditLogWriter = auditLogWriter;
         _notificationService = notificationService;
@@ -285,6 +292,7 @@ public class PaymentService : IPaymentService
     public async Task<AdminSubscriptionPlanDto> CreatePlanAsync(
         int adminUserId, CreateSubscriptionPlanRequestDto request, CancellationToken cancellationToken = default)
     {
+        await _accessPolicy.EnsureAsync(adminUserId, Permissions.Admin.PaymentManage, deniedMessage: "Chỉ quản trị viên đang hoạt động mới thực hiện được thao tác này.", cancellationToken: cancellationToken);
         var name = ValidatePlanName(request.Name);
         if (!Enum.TryParse<PlanAudience>(request.Audience?.Trim(), ignoreCase: true, out var audience) || !Enum.IsDefined(audience)
             || !Enum.TryParse<PlanType>(request.PlanType?.Trim(), ignoreCase: true, out var planType) || !Enum.IsDefined(planType))
@@ -397,6 +405,7 @@ public class PaymentService : IPaymentService
     public async Task<AdminSubscriptionPlanDto> UpdatePlanAsync(
         int adminUserId, int planId, UpdateSubscriptionPlanRequestDto request, CancellationToken cancellationToken = default)
     {
+        await _accessPolicy.EnsureAsync(adminUserId, Permissions.Admin.PaymentManage, deniedMessage: "Chỉ quản trị viên đang hoạt động mới thực hiện được thao tác này.", cancellationToken: cancellationToken);
         var repo = _unitOfWork.Repository<SubscriptionPlan>();
         var plan = await repo.FirstOrDefaultAsync(item => item.Id == planId, cancellationToken: cancellationToken)
                    ?? throw new NotFoundException("Gói Subscription", planId);
@@ -437,6 +446,7 @@ public class PaymentService : IPaymentService
     public async Task<PaymentTransactionDto> MarkPaidManuallyAsync(
         int adminUserId, int transactionId, CancellationToken cancellationToken = default)
     {
+        await _accessPolicy.EnsureAsync(adminUserId, Permissions.Admin.PaymentManage, deniedMessage: "Chỉ quản trị viên đang hoạt động mới thực hiện được thao tác này.", cancellationToken: cancellationToken);
         var transaction = await _unitOfWork.Repository<PaymentTransaction>().GetByIdAsync(transactionId, cancellationToken)
                            ?? throw new NotFoundException("Giao dịch thanh toán", transactionId);
         if (transaction.Status == PaymentStatus.Paid)

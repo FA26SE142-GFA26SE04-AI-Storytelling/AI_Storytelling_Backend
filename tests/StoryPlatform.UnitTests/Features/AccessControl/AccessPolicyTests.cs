@@ -180,5 +180,8 @@ public sealed class AccessPolicyTests
     {
         Assert.Equal(AccessScope.Assigned, PermissionCatalog.Find(Permissions.Review.GrayZone)!.Scope);
         Assert.Equal(AccessScope.Any, PermissionCatalog.Find(Permissions.Review.GuideManage)!.Scope);
+        Assert.Equal(AccessScope.Own, PermissionCatalog.Find(Permissions.Creator.PayoutViewOwn)!.Scope);
+        Assert.Equal(AccessScope.Own, PermissionCatalog.Find(Permissions.Parent.QuotaView)!.Scope);
+        Assert.Equal(AccessScope.Any, PermissionCatalog.Find(Permissions.Admin.PaymentManage)!.Scope);
     }
 }

@@ -18,18 +18,22 @@ public static class PermissionCatalog
         new(code, group, description, group is ModerationGroup or AdminGroup);
 
     /// <summary>Quyền xử lý mục kiểm duyệt: chỉ trên mục đang do chính mình nhận (<see cref="AccessConditions.ClaimedBySelf"/>).</summary>
+    /// <summary>Quyền chỉ xem hoặc sửa dữ liệu của chính tài khoản gọi (id lấy từ token đăng nhập).</summary>
+    private static PermissionDefinition Own(string code, string group, string description) =>
+        P(code, group, description) with { Scope = AccessScope.Own };
+
     private static PermissionDefinition Assigned(string code, string description) =>
         P(code, ModerationGroup, description) with { Scope = AccessScope.Assigned };
 
     public static readonly IReadOnlyList<PermissionDefinition> All =
     [
-        P(Permissions.Parent.AccountSelfManage, ParentGroup, "Đổi email, xem trước và xóa tài khoản của mình"),
+        Own(Permissions.Parent.AccountSelfManage, ParentGroup, "Đổi email, xem trước và xóa tài khoản của mình"),
         P(Permissions.Parent.ChildProfileManage, ParentGroup, "Quản lý hồ sơ trẻ, hồ sơ học tập, lộ trình và đăng nhập của trẻ"),
         P(Permissions.Parent.StoryAuthor, ParentGroup, "Tạo, sửa và duyệt truyện cho con"),
         P(Permissions.Parent.FeedbackManage, ParentGroup, "Xem phản hồi đọc, tóm tắt và điều ước của trẻ"),
         P(Permissions.Parent.ContentReportSubmit, ParentGroup, "Gửi báo cáo vi phạm nội dung"),
         P(Permissions.Parent.StoryRatingWrite, ParentGroup, "Chấm sao và nhận xét truyện cộng đồng"),
-        P(Permissions.Parent.QuotaView, ParentGroup, "Xem gói và lượt của mình"),
+        Own(Permissions.Parent.QuotaView, ParentGroup, "Xem gói và lượt của mình"),
 
         P(Permissions.Shared.MediaGenerate, SharedGroup, "Sinh tranh, âm thanh và ảnh bìa cho truyện"),
         P(Permissions.Shared.StoryRatingReport, SharedGroup, "Báo cáo một nhận xét truyện"),
@@ -38,12 +42,12 @@ public static class PermissionCatalog
         P(Permissions.Shared.CommunityView, SharedGroup, "Xem thư viện cộng đồng"),
 
         P(Permissions.Creator.ApplicationSubmit, CreatorGroup, "Gửi lại đơn đăng ký nhà sáng tạo"),
-        P(Permissions.Creator.ApplicationViewOwn, CreatorGroup, "Xem đơn đăng ký nhà sáng tạo của mình"),
+        Own(Permissions.Creator.ApplicationViewOwn, CreatorGroup, "Xem đơn đăng ký nhà sáng tạo của mình"),
         P(Permissions.Creator.Studio, CreatorGroup, "Viết, kiểm tra, nộp và theo dõi truyện của nhà sáng tạo"),
-        P(Permissions.Creator.RatingViewOwn, CreatorGroup, "Xem đánh giá truyện của mình"),
-        P(Permissions.Creator.CommunityManage, CreatorGroup, "Xem truyện công khai của mình"),
-        P(Permissions.Creator.PayoutViewOwn, CreatorGroup, "Xem thu nhập và cập nhật tài khoản nhận tiền"),
-        P(Permissions.Creator.QuotaView, CreatorGroup, "Xem lượt của nhà sáng tạo"),
+        Own(Permissions.Creator.RatingViewOwn, CreatorGroup, "Xem đánh giá truyện của mình"),
+        Own(Permissions.Creator.CommunityManage, CreatorGroup, "Xem truyện công khai của mình"),
+        Own(Permissions.Creator.PayoutViewOwn, CreatorGroup, "Xem thu nhập và cập nhật tài khoản nhận tiền"),
+        Own(Permissions.Creator.QuotaView, CreatorGroup, "Xem lượt của nhà sáng tạo"),
 
         Assigned(Permissions.Moderation.QueueProcess, "Nhận và xử lý hàng đợi kiểm duyệt"),
         P(Permissions.Moderation.StatisticsView, ModerationGroup, "Xem thống kê kiểm duyệt của mình"),

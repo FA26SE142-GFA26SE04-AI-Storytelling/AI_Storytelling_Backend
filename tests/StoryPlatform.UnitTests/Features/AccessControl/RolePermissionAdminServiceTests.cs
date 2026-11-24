@@ -156,6 +156,27 @@ public sealed class RolePermissionAdminServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Role_permissions_report_defaults_role_scopes_and_condition_codes()
+    {
+        var roles = await Service().ListRolesAsync();
+        Assert.All(roles, r => Assert.True(r.Id > 0));
+
+        var parent = await Service().GetRolePermissionsAsync(RoleCodes.User);
+        Assert.Equal(Defaults(RoleCodes.User).Order(StringComparer.Ordinal), parent.DefaultCodes);
+        // Phạm vi theo role: quyền của phụ huynh chỉ trên hồ sơ của mình.
+        Assert.Equal("Own", parent.Scopes[Permissions.Parent.ChildProfileManage]);
+        Assert.Equal("Any", parent.Scopes[Permissions.Parent.ContentReportSubmit]);
+        Assert.Equal([AccessConditions.OwnChildProfile, AccessConditions.PlanLimits, AccessConditions.ParentalGate],
+            parent.ConditionCodes[Permissions.Parent.ChildProfileManage]);
+
+        var admin = await Service().GetRolePermissionsAsync(RoleCodes.Administrator);
+        Assert.Equal("Assigned", admin.Scopes[Permissions.Review.GrayZone]);
+        Assert.Equal([AccessConditions.NotOwnContent, AccessConditions.AdminFallback],
+            admin.ConditionCodes[Permissions.Review.GrayZone]);
+        Assert.Equal(admin.AssignableCodes.Order(StringComparer.Ordinal), admin.Scopes.Keys.Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
     public async Task Role_permissions_report_assignable_codes()
     {
         var result = await Service().GetRolePermissionsAsync(RoleCodes.Moderator);

@@ -39,7 +39,7 @@ public class RolePermissionAdminService(IUnitOfWork uow, IAuditLogWriter audit, 
         var roles = await uow.Repository<Role>().FindAsync(r => !r.IsDeleted, cancellationToken: cancellationToken);
         return roles
             .OrderBy(r => RoleIndex(r.Code)).ThenBy(r => r.Code, StringComparer.Ordinal)
-            .Select(r => new RoleDto(r.Code, r.Name, r.IsStaff))
+            .Select(r => new RoleDto(r.Id, r.Code, r.Name, r.IsStaff))
             .ToList();
     }
 
@@ -54,11 +54,25 @@ public class RolePermissionAdminService(IUnitOfWork uow, IAuditLogWriter audit, 
     private static RolePermissionsDto Dto(string roleCode, List<string> codes)
     {
         var assignable = Assignable(roleCode, codes);
-        var conditions = assignable
+        var conditionCodes = assignable
             .Select(code => (code, list: DefaultRolePermissions.ConditionsFor(roleCode, code)))
             .Where(x => x.list.Count > 0)
-            .ToDictionary(x => x.code, x => (IReadOnlyList<string>)x.list.Select(AccessConditions.Describe).ToList(), StringComparer.Ordinal);
-        return new RolePermissionsDto(roleCode, codes, assignable, conditions);
+            .ToDictionary(x => x.code, x => x.list, StringComparer.Ordinal);
+        var conditions = conditionCodes.ToDictionary(
+            x => x.Key, x => (IReadOnlyList<string>)x.Value.Select(AccessConditions.Describe).ToList(), StringComparer.Ordinal);
+        var scopes = assignable.ToDictionary(code => code, code => RoleScope(roleCode, code).ToString(), StringComparer.Ordinal);
+        var defaults = (DefaultRolePermissions.Map.TryGetValue(roleCode, out var map) ? map : new HashSet<string>())
+            .Order(StringComparer.Ordinal).ToList();
+        return new RolePermissionsDto(roleCode, codes, assignable, conditions, defaults, scopes, conditionCodes);
+    }
+
+    /// <summary>Quyền gắn điều kiện "của chính mình" thì phạm vi theo role là Own, còn lại theo danh mục.</summary>
+    private static AccessScope RoleScope(string roleCode, string code)
+    {
+        var conditions = DefaultRolePermissions.ConditionsFor(roleCode, code);
+        if (conditions.Contains(AccessConditions.OwnChildProfile) || conditions.Contains(AccessConditions.OwnCreatorStory))
+            return AccessScope.Own;
+        return PermissionCatalog.Find(code)?.Scope ?? AccessScope.Any;
     }
 
     /// <summary>

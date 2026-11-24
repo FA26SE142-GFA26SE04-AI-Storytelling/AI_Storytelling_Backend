@@ -113,6 +113,7 @@ public static class DependencyInjection
         services.AddScoped<IReadingScheduleService>(provider => provider.GetRequiredService<ReadingScheduleService>());
         services.AddScoped<IReadingTimeGate>(provider => provider.GetRequiredService<ReadingScheduleService>());
         services.AddScoped<IScreenTimeRecorder>(provider => provider.GetRequiredService<ReadingScheduleService>());
+        services.AddScoped<IReadingHabitService, ReadingHabitService>();
         services.AddScoped<IChildAccessCredentialService, ChildAccessCredentialService>();
         services.AddScoped<IChildSessionRevoker, ChildSessionRevoker>();
         services.AddScoped<IParentalGateService, ParentalGateService>();

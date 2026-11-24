@@ -218,4 +218,102 @@ public sealed class ReadingScheduleApiTests(ReadingTimeApiFactory factory) : ICl
             await factory.CreateClient().PostAsJsonAsync(EasyLoginUrl, new { secret = "qr-screen-limit" }),
             ReadingSchedulePolicy.ChildScreenLimitMessage, ReadingSchedulePolicy.ScreenLimitErrorCode);
     }
+
+    private static object HabitBody(
+        bool habitEnabled, string? reminderWeekday, string? reminderWeekend, int? goal, string? bedtime = "20:30") => new
+    {
+        enabled = false,
+        bedtimeWeekday = bedtime,
+        bedtimeWeekend = bedtime,
+        breakEnabled = false,
+        breakAfterMinutes = 20,
+        breakDurationMinutes = 5,
+        breakRemindEyes = true,
+        breakRemindWater = true,
+        breakRemindMove = true,
+        screenLimitEnabled = false,
+        screenLimitWeekdayMinutes = 60,
+        screenLimitWeekendMinutes = 120,
+        habitEnabled,
+        readingReminderWeekday = reminderWeekday,
+        readingReminderWeekend = reminderWeekend,
+        weeklyGoalDays = goal,
+        windows = Array.Empty<object>()
+    };
+
+    [Fact]
+    public async Task Put_habit_settings_round_trip_with_progress_block()
+    {
+        var parent = await factory.AddUserAsync(UserRole.User);
+        var child = await ApiSeed.ChildAsync(factory, parent.Id);
+        var client = factory.ClientFor(parent);
+
+        var suggested = (await client.GetFromJsonAsync<JsonElement>(Url(child.Id))).GetProperty("data");
+        Assert.Equal("19:00", suggested.GetProperty("readingReminderWeekday").GetString());
+        Assert.Equal(3, suggested.GetProperty("weeklyGoalDays").GetInt32());
+        Assert.Equal(JsonValueKind.Null, suggested.GetProperty("habit").ValueKind);
+
+        var put = await client.PutAsJsonAsync(Url(child.Id), HabitBody(true, "19:00", "09:30", 5));
+        Assert.Equal(HttpStatusCode.OK, put.StatusCode);
+
+        var saved = (await client.GetFromJsonAsync<JsonElement>(Url(child.Id))).GetProperty("data");
+        Assert.True(saved.GetProperty("habitEnabled").GetBoolean());
+        Assert.Equal("09:30", saved.GetProperty("readingReminderWeekend").GetString());
+        Assert.Equal(5, saved.GetProperty("weeklyGoalDays").GetInt32());
+        var habit = saved.GetProperty("habit");
+        Assert.Equal(0, habit.GetProperty("streakDays").GetInt32());
+        Assert.Equal(0, habit.GetProperty("daysReadThisWeek").GetInt32());
+        Assert.False(habit.GetProperty("goalMetThisWeek").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Put_invalid_habit_values_return_400_with_message()
+    {
+        var parent = await factory.AddUserAsync(UserRole.User);
+        var child = await ApiSeed.ChildAsync(factory, parent.Id);
+        var client = factory.ClientFor(parent);
+
+        var afterBedtime = await client.PutAsJsonAsync(Url(child.Id), HabitBody(true, "20:45", null, null));
+        var tooEarly = await client.PutAsJsonAsync(Url(child.Id), HabitBody(true, "05:30", null, null));
+        var badGoal = await client.PutAsJsonAsync(Url(child.Id), HabitBody(true, null, null, 9));
+
+        Assert.Equal(HttpStatusCode.BadRequest, afterBedtime.StatusCode);
+        Assert.Equal("Giờ nhắc đọc phải trước giờ đi ngủ.",
+            (await afterBedtime.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("message").GetString());
+        Assert.Equal("Giờ nhắc đọc phải từ 06:00.",
+            (await tooEarly.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("message").GetString());
+        Assert.Equal("Mục tiêu từ 1 đến 7 ngày mỗi tuần.",
+            (await badGoal.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("message").GetString());
+    }
+
+    [Fact]
+    public async Task Me_returns_reminders_and_quiet_periods_when_habit_is_on_and_none_when_off()
+    {
+        var (_, child, parentClient) = await ChildWithQrAsync("qr-habit");
+        Assert.Equal(HttpStatusCode.OK,
+            (await parentClient.PutAsJsonAsync(Url(child.Id), HabitBody(true, "19:00", "19:00", 4))).StatusCode);
+        var login = await factory.CreateClient().PostAsJsonAsync(EasyLoginUrl, new { secret = "qr-habit" });
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+        var token = (await login.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("data").GetProperty("accessToken").GetString();
+        var childClient = factory.CreateClient();
+        childClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var on = (await childClient.GetFromJsonAsync<JsonElement>("/api/v1/ChildAccessCredential/me"))
+            .GetProperty("data").GetProperty("habit");
+        Assert.True(on.GetProperty("enabled").GetBoolean());
+        Assert.Equal(4, on.GetProperty("weeklyGoalDays").GetInt32());
+        // Đồng hồ ứng dụng đứng ở 12:00 giờ Việt Nam: 19:00 của cả 7 ngày đều ở tương lai.
+        Assert.Equal(7, on.GetProperty("reminders").GetArrayLength());
+        Assert.Equal(7, on.GetProperty("quietPeriods").GetArrayLength());
+        Assert.Equal("Đến giờ đọc truyện rồi, bé vào đọc nhé!",
+            on.GetProperty("reminders")[0].GetProperty("message").GetString());
+
+        Assert.Equal(HttpStatusCode.OK,
+            (await parentClient.PutAsJsonAsync(Url(child.Id), HabitBody(false, "19:00", "19:00", 4))).StatusCode);
+        var off = (await childClient.GetFromJsonAsync<JsonElement>("/api/v1/ChildAccessCredential/me"))
+            .GetProperty("data").GetProperty("habit");
+        Assert.False(off.GetProperty("enabled").GetBoolean());
+        Assert.Equal(0, off.GetProperty("reminders").GetArrayLength());
+        Assert.Equal(0, off.GetProperty("quietPeriods").GetArrayLength());
+    }
 }

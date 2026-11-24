@@ -30,6 +30,16 @@ public class ReadingSchedule : BaseEntity
     public int ScreenLimitWeekdayMinutes { get; set; } = 60;
     public int ScreenLimitWeekendMinutes { get; set; } = 120;
 
+    // Thói quen đọc (đợt 2): nhắc giờ đọc và mục tiêu số ngày đọc mỗi tuần. Công tắc riêng, độc lập với Enabled.
+    public bool HabitEnabled { get; set; }
+
+    // Giờ nhắc đọc mỗi ngày (giờ Việt Nam); null = không nhắc loại ngày đó.
+    public TimeOnly? ReadingReminderWeekday { get; set; }
+    public TimeOnly? ReadingReminderWeekend { get; set; }
+
+    // Mục tiêu: số ngày bé hoàn thành ≥ 1 truyện trong tuần (1–7); null = không đặt mục tiêu.
+    public int? WeeklyGoalDays { get; set; }
+
     // Trạng thái lúc chạy do backend ghi (UTC); xóa mỗi lần phụ huynh lưu cấu hình.
     public DateTime? ContinuousReadingSince { get; set; }
     public DateTime? LastReadingSeenAt { get; set; }

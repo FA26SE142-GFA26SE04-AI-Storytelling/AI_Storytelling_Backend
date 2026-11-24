@@ -52,6 +52,9 @@ public sealed record ReadingTimeStatus
 
 public readonly record struct ScheduleWindowInput(ScheduleDayType DayType, TimeOnly Start, TimeOnly End);
 
+/// <summary>Khoảng giờ yên lặng (giờ ngủ): app của bé không gửi thông báo trong khoảng này. Mốc là UTC.</summary>
+public readonly record struct QuietPeriod(DateTime FromUtc, DateTime ToUtc);
+
 public sealed record ScheduleSettingsInput(
     bool BreakEnabled,
     int BreakAfterMinutes,
@@ -63,7 +66,10 @@ public sealed record ScheduleSettingsInput(
     int ScreenLimitWeekendMinutes,
     TimeOnly? BedtimeWeekday,
     TimeOnly? BedtimeWeekend,
-    IReadOnlyCollection<ScheduleWindowInput> Windows);
+    IReadOnlyCollection<ScheduleWindowInput> Windows,
+    TimeOnly? ReminderWeekday = null,
+    TimeOnly? ReminderWeekend = null,
+    int? WeeklyGoalDays = null);
 
 /// <summary>
 /// Luật "Thời gian &amp; thói quen" của hồ sơ trẻ (giờ Việt Nam): khung giờ, giờ ngủ, giới hạn màn hình,
@@ -92,6 +98,9 @@ public static class ReadingSchedulePolicy
     public const int MaxBreakDurationMinutes = 15;
     public const int MinScreenLimitMinutes = 10;
     public const int MaxScreenLimitMinutes = 240;
+    public const int MinWeeklyGoalDays = 1;
+    public const int MaxWeeklyGoalDays = 7;
+    public const int ReminderHorizonDays = 7;
 
     public const string BreakErrorCode = "READING_TIME_BREAK";
     public const string BedtimeErrorCode = "READING_TIME_BEDTIME";
@@ -114,6 +123,11 @@ public static class ReadingSchedulePolicy
     public const string BreakActivityRequiredMessage = "Hãy chọn ít nhất một lời nhắc khi nghỉ (mắt, uống nước, vận động).";
     public const string ScreenLimitMessage = "Giới hạn màn hình từ 10 đến 240 phút mỗi ngày.";
     public const string BedtimeRangeMessage = "Giờ đi ngủ phải từ 18:00 đến 23:30.";
+    public const string ReminderEarliestMessage = "Giờ nhắc đọc phải từ 06:00.";
+    public const string ReminderBeforeBedtimeMessage = "Giờ nhắc đọc phải trước giờ đi ngủ.";
+    public const string ReminderInWindowMessage = "Giờ nhắc đọc phải nằm trong khung giờ được dùng.";
+    public const string WeeklyGoalMessage = "Mục tiêu từ 1 đến 7 ngày mỗi tuần.";
+    public const string ReadingReminderMessage = "Đến giờ đọc truyện rồi, bé vào đọc nhé!";
 
     public static string OverlapMessage(ScheduleDayType dayType) =>
         $"Hai khung giờ {(dayType == ScheduleDayType.Weekday ? "ngày thường" : "cuối tuần")} đang chồng nhau.";
@@ -374,7 +388,109 @@ public static class ReadingSchedulePolicy
             }
         }
 
+        if (input.WeeklyGoalDays is { } goal && (goal < MinWeeklyGoalDays || goal > MaxWeeklyGoalDays))
+        {
+            return WeeklyGoalMessage;
+        }
+
+        var reminders = new[]
+        {
+            (DayType: ScheduleDayType.Weekday, Reminder: input.ReminderWeekday, Bedtime: input.BedtimeWeekday),
+            (DayType: ScheduleDayType.Weekend, Reminder: input.ReminderWeekend, Bedtime: input.BedtimeWeekend)
+        };
+        foreach (var (dayType, reminder, bedtime) in reminders)
+        {
+            if (reminder is not { } time)
+            {
+                continue;
+            }
+
+            if (time < DefaultWakeTime)
+            {
+                return ReminderEarliestMessage;
+            }
+
+            if (bedtime is { } bedtimeValue && time >= bedtimeValue)
+            {
+                return ReminderBeforeBedtimeMessage;
+            }
+
+            var dayWindows = input.Windows.Where(window => window.DayType == dayType).ToList();
+            if (dayWindows.Count > 0 && !dayWindows.Any(window => time >= window.Start && time < window.End))
+            {
+                return ReminderInWindowMessage;
+            }
+        }
+
         return null;
+    }
+
+    /// <summary>
+    /// Các thời điểm nhắc đọc trong 7 ngày kể từ hôm nay (giờ Việt Nam). Bỏ thời điểm đã qua và, nếu hôm nay bé
+    /// đã hoàn thành truyện, bỏ lần nhắc hôm nay. Rỗng khi chưa bật thói quen.
+    /// </summary>
+    public static IReadOnlyList<DateTime> BuildReminders(ReadingSchedule schedule, DateTime nowUtc, bool readToday)
+    {
+        var reminders = new List<DateTime>();
+        if (!schedule.HabitEnabled)
+        {
+            return reminders;
+        }
+
+        var today = VietnamTime.LocalDate(nowUtc);
+        for (var offset = 0; offset < ReminderHorizonDays; offset++)
+        {
+            var day = today.AddDays(offset);
+            var reminder = DayTypeOf(day) == ScheduleDayType.Weekday
+                ? schedule.ReadingReminderWeekday
+                : schedule.ReadingReminderWeekend;
+            if (reminder is not { } time)
+            {
+                continue;
+            }
+
+            var at = ToUtc(day, time);
+            if (at <= nowUtc || (offset == 0 && readToday))
+            {
+                continue;
+            }
+
+            reminders.Add(at);
+        }
+
+        return reminders;
+    }
+
+    /// <summary>
+    /// Các khoảng giờ ngủ (từ giờ ngủ ngày D đến giờ thức ngày D+1) chưa kết thúc, D từ hôm qua đến hôm nay + 6.
+    /// Rỗng khi chưa bật thói quen.
+    /// </summary>
+    public static IReadOnlyList<QuietPeriod> BuildQuietPeriods(
+        ReadingSchedule schedule, IReadOnlyCollection<ReadingScheduleWindow> windows, DateTime nowUtc)
+    {
+        var periods = new List<QuietPeriod>();
+        if (!schedule.HabitEnabled)
+        {
+            return periods;
+        }
+
+        var today = VietnamTime.LocalDate(nowUtc);
+        for (var offset = -1; offset < ReminderHorizonDays; offset++)
+        {
+            var day = today.AddDays(offset);
+            if (BedtimeOf(schedule, day) is not { } bedtime)
+            {
+                continue;
+            }
+
+            var end = WakeUtc(windows, day.AddDays(1));
+            if (end > nowUtc)
+            {
+                periods.Add(new QuietPeriod(ToUtc(day, bedtime), end));
+            }
+        }
+
+        return periods;
     }
 
     /// <summary>Lời nhắc của lượt nghỉ: xoay vòng trong các loại đã bật, cố định trong cùng một lượt nghỉ.</summary>

@@ -3556,11 +3556,20 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<bool>("Enabled")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("HabitEnabled")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
                     b.Property<DateTime?>("LastReadingSeenAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<TimeOnly?>("ReadingReminderWeekday")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<TimeOnly?>("ReadingReminderWeekend")
+                        .HasColumnType("time without time zone");
 
                     b.Property<bool>("ScreenLimitEnabled")
                         .HasColumnType("boolean");
@@ -3578,6 +3587,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasColumnType("date");
 
                     b.Property<int>("UsageSeconds")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("WeeklyGoalDays")
                         .HasColumnType("integer");
 
                     b.HasKey("Id");

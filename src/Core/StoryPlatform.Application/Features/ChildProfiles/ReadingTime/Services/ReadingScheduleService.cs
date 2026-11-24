@@ -18,17 +18,20 @@ public class ReadingScheduleService : IReadingScheduleService, IReadingTimeGate,
     private readonly IChildProfileAccessGuard _accessGuard;
     private readonly IAuditLogWriter _auditLogWriter;
     private readonly TimeProvider _clock;
+    private readonly IReadingHabitService? _habit;
 
     public ReadingScheduleService(
         IUnitOfWork unitOfWork,
         IChildProfileAccessGuard accessGuard,
         IAuditLogWriter auditLogWriter,
-        TimeProvider clock)
+        TimeProvider clock,
+        IReadingHabitService? habit = null)
     {
         _unitOfWork = unitOfWork;
         _accessGuard = accessGuard;
         _auditLogWriter = auditLogWriter;
         _clock = clock;
+        _habit = habit;
     }
 
     private DateTime UtcNow => _clock.GetUtcNow().UtcDateTime;
@@ -40,7 +43,9 @@ public class ReadingScheduleService : IReadingScheduleService, IReadingTimeGate,
         var (schedule, windows) = await LoadAsync(childProfileId, cancellationToken);
         if (schedule != null)
         {
-            return ToDto(childProfileId, schedule, windows, isSuggested: false);
+            var dto = ToDto(childProfileId, schedule, windows, isSuggested: false);
+            dto.Habit = await HabitProgressAsync(childProfileId, schedule, cancellationToken);
+            return dto;
         }
 
         var child = await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(childProfileId, cancellationToken)
@@ -56,11 +61,14 @@ public class ReadingScheduleService : IReadingScheduleService, IReadingTimeGate,
         var windowsInput = ParseWindows(request.Windows ?? []);
         var bedtimeWeekday = ParseOptionalTime(request.BedtimeWeekday);
         var bedtimeWeekend = ParseOptionalTime(request.BedtimeWeekend);
+        var reminderWeekday = ParseOptionalTime(request.ReadingReminderWeekday);
+        var reminderWeekend = ParseOptionalTime(request.ReadingReminderWeekend);
         var error = ReadingSchedulePolicy.Validate(new ScheduleSettingsInput(
             request.BreakEnabled, request.BreakAfterMinutes, request.BreakDurationMinutes,
             request.BreakRemindEyes, request.BreakRemindWater, request.BreakRemindMove,
             request.ScreenLimitWeekdayMinutes, request.ScreenLimitWeekendMinutes,
-            bedtimeWeekday, bedtimeWeekend, windowsInput));
+            bedtimeWeekday, bedtimeWeekend, windowsInput,
+            reminderWeekday, reminderWeekend, request.WeeklyGoalDays));
         if (error != null)
         {
             throw new BadRequestException(error);
@@ -97,6 +105,10 @@ public class ReadingScheduleService : IReadingScheduleService, IReadingTimeGate,
         schedule.ScreenLimitEnabled = request.ScreenLimitEnabled;
         schedule.ScreenLimitWeekdayMinutes = request.ScreenLimitWeekdayMinutes;
         schedule.ScreenLimitWeekendMinutes = request.ScreenLimitWeekendMinutes;
+        schedule.HabitEnabled = request.HabitEnabled;
+        schedule.ReadingReminderWeekday = reminderWeekday;
+        schedule.ReadingReminderWeekend = reminderWeekend;
+        schedule.WeeklyGoalDays = request.WeeklyGoalDays;
         // Trạng thái nghỉ mắt bắt đầu lại; thời gian màn hình đã dùng hôm nay được giữ.
         schedule.ContinuousReadingSince = null;
         schedule.LastReadingSeenAt = null;
@@ -127,7 +139,9 @@ public class ReadingScheduleService : IReadingScheduleService, IReadingTimeGate,
             currentUserId, "SET_READING_SCHEDULE", nameof(ReadingSchedule), schedule.Id,
             beforeState, Snapshot(schedule, windows), cancellationToken);
 
-        return ToDto(childProfileId, schedule, windows, isSuggested: false);
+        var result = ToDto(childProfileId, schedule, windows, isSuggested: false);
+        result.Habit = await HabitProgressAsync(childProfileId, schedule, cancellationToken);
+        return result;
     }
 
     public async Task EnsureCanStartAsync(
@@ -198,6 +212,10 @@ public class ReadingScheduleService : IReadingScheduleService, IReadingTimeGate,
         }
     }
 
+    private async Task<ReadingHabitProgressDto?> HabitProgressAsync(
+        int childProfileId, ReadingSchedule schedule, CancellationToken cancellationToken) =>
+        _habit == null ? null : await _habit.GetProgressAsync(childProfileId, schedule.WeeklyGoalDays, cancellationToken);
+
     private async Task<(ReadingSchedule? Schedule, IReadOnlyList<ReadingScheduleWindow> Windows)> LoadAsync(
         int childProfileId, CancellationToken cancellationToken)
     {
@@ -266,7 +284,11 @@ public class ReadingScheduleService : IReadingScheduleService, IReadingTimeGate,
             BreakRemindMove = true,
             ScreenLimitEnabled = true,
             ScreenLimitWeekdayMinutes = young ? 45 : 60,
-            ScreenLimitWeekendMinutes = young ? 90 : 120
+            ScreenLimitWeekendMinutes = young ? 90 : 120,
+            HabitEnabled = false,
+            ReadingReminderWeekday = new TimeOnly(19, 0),
+            ReadingReminderWeekend = new TimeOnly(9, 0),
+            WeeklyGoalDays = young ? 3 : 4
         };
         var windows = young
             ? new[]
@@ -303,6 +325,10 @@ public class ReadingScheduleService : IReadingScheduleService, IReadingTimeGate,
         ScreenLimitEnabled = schedule.ScreenLimitEnabled,
         ScreenLimitWeekdayMinutes = schedule.ScreenLimitWeekdayMinutes,
         ScreenLimitWeekendMinutes = schedule.ScreenLimitWeekendMinutes,
+        HabitEnabled = schedule.HabitEnabled,
+        ReadingReminderWeekday = FormatOptional(schedule.ReadingReminderWeekday),
+        ReadingReminderWeekend = FormatOptional(schedule.ReadingReminderWeekend),
+        WeeklyGoalDays = schedule.WeeklyGoalDays,
         IsSuggested = isSuggested,
         Windows = windows
             .OrderBy(window => window.DayType)
@@ -347,6 +373,10 @@ public class ReadingScheduleService : IReadingScheduleService, IReadingTimeGate,
         schedule.ScreenLimitEnabled,
         schedule.ScreenLimitWeekdayMinutes,
         schedule.ScreenLimitWeekendMinutes,
+        schedule.HabitEnabled,
+        ReadingReminderWeekday = FormatOptional(schedule.ReadingReminderWeekday),
+        ReadingReminderWeekend = FormatOptional(schedule.ReadingReminderWeekend),
+        schedule.WeeklyGoalDays,
         Windows = windows
             .OrderBy(window => window.DayType)
             .ThenBy(window => window.StartTime)

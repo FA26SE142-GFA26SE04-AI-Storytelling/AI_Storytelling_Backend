@@ -5,6 +5,7 @@ using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.ReadingTime;
 using StoryPlatform.Application.Features.ChildProfiles.ReadingTime.DTOs;
+using StoryPlatform.Application.Features.ChildProfiles.ReadingTime.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.ReadingTime.Services;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -359,5 +360,162 @@ public sealed class ReadingScheduleServiceTests
         await _sut.RecordActivityAsync(ChildId, Now.AddSeconds(-70), Now);
 
         Assert.Empty(_uow.Items<ReadingSchedule>());
+    }
+
+    // ---------- Thói quen đọc (đợt 2) ----------
+
+    [Fact]
+    public async Task Get_NoSchedule_SuggestsHabitByAge()
+    {
+        var young = await _sut.GetAsync(ChildId, OwnerId);
+        _child.AgeBand = AgeBand.Age_9_10;
+        var older = await _sut.GetAsync(ChildId, OwnerId);
+
+        Assert.False(young.HabitEnabled);
+        Assert.Equal("19:00", young.ReadingReminderWeekday);
+        Assert.Equal("09:00", young.ReadingReminderWeekend);
+        Assert.Equal(3, young.WeeklyGoalDays);
+        Assert.Equal(4, older.WeeklyGoalDays);
+        Assert.Null(young.Habit);
+    }
+
+    [Fact]
+    public async Task Set_SavesHabitFieldsAndGetReturnsThem()
+    {
+        var request = Request();
+        request.HabitEnabled = true;
+        request.ReadingReminderWeekday = "19:00";
+        request.ReadingReminderWeekend = "09:30";
+        request.WeeklyGoalDays = 5;
+
+        var saved = await _sut.SetAsync(ChildId, OwnerId, request);
+        var read = await _sut.GetAsync(ChildId, OwnerId);
+
+        Assert.True(saved.HabitEnabled);
+        Assert.Equal("19:00", read.ReadingReminderWeekday);
+        Assert.Equal("09:30", read.ReadingReminderWeekend);
+        Assert.Equal(5, read.WeeklyGoalDays);
+        var schedule = Assert.Single(_uow.Items<ReadingSchedule>());
+        Assert.True(schedule.HabitEnabled);
+        Assert.Equal(T("09:30"), schedule.ReadingReminderWeekend);
+        Assert.Equal(5, schedule.WeeklyGoalDays);
+    }
+
+    [Fact]
+    public async Task Set_EmptyReminder_IsStoredAsNull()
+    {
+        var request = Request();
+        request.ReadingReminderWeekday = "";
+        request.ReadingReminderWeekend = null;
+
+        var dto = await _sut.SetAsync(ChildId, OwnerId, request);
+
+        Assert.Null(dto.ReadingReminderWeekday);
+        Assert.Null(dto.ReadingReminderWeekend);
+        Assert.Null(dto.WeeklyGoalDays);
+    }
+
+    [Fact]
+    public async Task Set_BadReminderFormat_IsRejected()
+    {
+        var request = Request();
+        request.ReadingReminderWeekday = "7pm";
+
+        var error = await Assert.ThrowsAsync<BadRequestException>(() => _sut.SetAsync(ChildId, OwnerId, request));
+
+        Assert.Equal(ReadingSchedulePolicy.InvalidTimeMessage, error.Message);
+        Assert.Empty(_uow.Items<ReadingSchedule>());
+    }
+
+    [Fact]
+    public async Task Set_ReminderAfterBedtime_IsRejected()
+    {
+        var request = Request(); // giờ ngủ ngày thường 20:30
+        request.ReadingReminderWeekday = "20:45";
+
+        var error = await Assert.ThrowsAsync<BadRequestException>(() => _sut.SetAsync(ChildId, OwnerId, request));
+
+        Assert.Equal(ReadingSchedulePolicy.ReminderBeforeBedtimeMessage, error.Message);
+    }
+
+    [Fact]
+    public async Task Set_GoalOutOfRange_IsRejected()
+    {
+        var request = Request();
+        request.WeeklyGoalDays = 8;
+
+        var error = await Assert.ThrowsAsync<BadRequestException>(() => _sut.SetAsync(ChildId, OwnerId, request));
+
+        Assert.Equal(ReadingSchedulePolicy.WeeklyGoalMessage, error.Message);
+    }
+
+    [Fact]
+    public async Task Set_Existing_ReplacesHabitFields()
+    {
+        var schedule = SeedSchedule(false);
+        schedule.HabitEnabled = true;
+        schedule.ReadingReminderWeekday = T("19:00");
+        schedule.WeeklyGoalDays = 3;
+
+        var request = Request();
+        request.HabitEnabled = false;
+        request.ReadingReminderWeekday = null;
+        request.WeeklyGoalDays = null;
+        var dto = await _sut.SetAsync(ChildId, OwnerId, request);
+
+        Assert.False(dto.HabitEnabled);
+        Assert.Null(schedule.ReadingReminderWeekday);
+        Assert.Null(schedule.WeeklyGoalDays);
+    }
+
+    private ReadingScheduleService SutWithHabit(Mock<IReadingHabitService> habit) =>
+        new(_uow, _guard.Object, _audit.Object, _clock, habit.Object);
+
+    [Fact]
+    public async Task Get_Existing_IncludesHabitProgress()
+    {
+        var schedule = SeedSchedule(false);
+        schedule.WeeklyGoalDays = 4;
+        var habit = new Mock<IReadingHabitService>();
+        habit.Setup(service => service.GetProgressAsync(ChildId, 4, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ReadingHabitProgressDto { StreakDays = 3, DaysReadThisWeek = 2, GoalMetThisWeek = false });
+
+        var dto = await SutWithHabit(habit).GetAsync(ChildId, OwnerId);
+
+        Assert.Equal(3, dto.Habit!.StreakDays);
+        Assert.Equal(2, dto.Habit.DaysReadThisWeek);
+    }
+
+    [Fact]
+    public async Task Get_NoSchedule_HasNoHabitProgress()
+    {
+        var habit = new Mock<IReadingHabitService>();
+
+        var dto = await SutWithHabit(habit).GetAsync(ChildId, OwnerId);
+
+        Assert.Null(dto.Habit);
+        habit.Verify(service => service.GetProgressAsync(It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Set_ReturnsHabitProgressWithSavedGoal()
+    {
+        var habit = new Mock<IReadingHabitService>();
+        habit.Setup(service => service.GetProgressAsync(ChildId, 5, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ReadingHabitProgressDto { StreakDays = 1, DaysReadThisWeek = 1, GoalMetThisWeek = false });
+        var request = Request();
+        request.WeeklyGoalDays = 5;
+
+        var dto = await SutWithHabit(habit).SetAsync(ChildId, OwnerId, request);
+
+        Assert.Equal(1, dto.Habit!.StreakDays);
+    }
+
+    [Fact]
+    public async Task Get_WithoutHabitService_LeavesHabitNull()
+    {
+        SeedSchedule(false);
+
+        Assert.Null((await _sut.GetAsync(ChildId, OwnerId)).Habit);
     }
 }

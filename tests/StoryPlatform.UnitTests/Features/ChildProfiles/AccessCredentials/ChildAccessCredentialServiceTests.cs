@@ -1061,4 +1061,36 @@ public class ChildAccessCredentialServiceTests
 
         Assert.Null((await _sut.GetMySessionProfileAsync(1)).ReadingTime);
     }
+
+    // ---------- Thói quen đọc (đợt 2) ----------
+
+    private readonly Mock<IReadingHabitService> _readingHabit = new();
+
+    private ChildAccessCredentialService SutWithHabit() => new(
+        _unitOfWork.Object, _guard.Object, _jwtTokenGenerator.Object, _limiter.Object,
+        _auditLogWriter.Object, _eligibility.Object, _protector, readingHabit: _readingHabit.Object);
+
+    [Fact]
+    public async Task GetMySessionProfileAsync_WithHabitService_ReturnsHabit()
+    {
+        _profileRepo.Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChildProfile { Id = 1, Nickname = "Bé An", AgeBand = AgeBand.Age_6_8 });
+        _readingHabit.Setup(service => service.GetChildHabitAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChildHabitDto { Enabled = true, StreakDays = 2, DaysReadThisWeek = 1, WeeklyGoalDays = 3 });
+
+        var result = await SutWithHabit().GetMySessionProfileAsync(1);
+
+        Assert.True(result.Habit!.Enabled);
+        Assert.Equal(2, result.Habit.StreakDays);
+        Assert.Equal(3, result.Habit.WeeklyGoalDays);
+    }
+
+    [Fact]
+    public async Task GetMySessionProfileAsync_WithoutHabitService_HasNoHabit()
+    {
+        _profileRepo.Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChildProfile { Id = 1, Nickname = "Bé An", AgeBand = AgeBand.Age_6_8 });
+
+        Assert.Null((await _sut.GetMySessionProfileAsync(1)).Habit);
+    }
 }

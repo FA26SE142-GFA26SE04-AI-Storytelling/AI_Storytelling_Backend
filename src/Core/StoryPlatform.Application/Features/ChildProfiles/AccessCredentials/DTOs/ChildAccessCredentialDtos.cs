@@ -36,6 +36,9 @@ public class ChildSessionProfileDto
     /// <summary>Trạng thái "Thời gian &amp; thói quen" (null khi không bật cổng kiểm tra). App gọi /me mỗi ≤ 60 giây khi ở ngoài truyện.</summary>
     public ReadingTimeStatusDto? ReadingTime { get; set; }
 
+    /// <summary>Thói quen đọc: tiến độ, lịch nhắc, giờ yên lặng (null khi không bật dịch vụ thói quen).</summary>
+    public StoryPlatform.Application.Features.ChildProfiles.ReadingTime.DTOs.ChildHabitDto? Habit { get; set; }
+
     /// <summary>Mã chức năng bố mẹ đang tắt cho bé (quyền của bé), để giao diện ẩn trước.</summary>
     public List<string> DisabledFeatures { get; set; } = new();
 }

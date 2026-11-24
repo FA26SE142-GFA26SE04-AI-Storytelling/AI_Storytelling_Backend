@@ -69,6 +69,7 @@ public sealed class AccessPolicy(IUnitOfWork uow, IPermissionService permissions
                     user => user.Role == UserRole.Moderator && user.Status == AccountStatus.Active && !user.IsDeleted, ct);
                 return active > 0 ? NoActiveModeratorMessage : null;
 
+            // Điều kiện Luồng 1, 3, 4 (OwnChildProfile, PlanLimits...) do code sẵn có kiểm; ở đây chỉ để mô tả.
             default:
                 return null;
         }

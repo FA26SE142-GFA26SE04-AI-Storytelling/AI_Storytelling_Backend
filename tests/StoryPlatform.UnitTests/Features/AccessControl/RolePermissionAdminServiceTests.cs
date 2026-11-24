@@ -139,6 +139,23 @@ public sealed class RolePermissionAdminServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Parent_and_creator_permissions_report_ownership_and_plan_rules()
+    {
+        var parent = await Service().GetRolePermissionsAsync(RoleCodes.User);
+        Assert.Contains(AccessConditions.Describe(AccessConditions.OwnChildProfile), parent.Conditions[Permissions.Parent.ChildProfileManage]);
+        Assert.Contains(AccessConditions.Describe(AccessConditions.ParentalGate), parent.Conditions[Permissions.Parent.ChildProfileManage]);
+        Assert.Contains(AccessConditions.Describe(AccessConditions.PlanLimits), parent.Conditions[Permissions.Parent.StoryAuthor]);
+        Assert.Equal([AccessConditions.Describe(AccessConditions.DelegatedApproval)], parent.Conditions[Permissions.Shared.StoryReviewApprove]);
+
+        var creator = await Service().GetRolePermissionsAsync(RoleCodes.ContentCreator);
+        Assert.Contains(AccessConditions.Describe(AccessConditions.OwnCreatorStory), creator.Conditions[Permissions.Creator.Studio]);
+
+        // Administrator giữ story.review.approve nhưng không phải qua ủy quyền của phụ huynh.
+        var admin = await Service().GetRolePermissionsAsync(RoleCodes.Administrator);
+        Assert.False(admin.Conditions.ContainsKey(Permissions.Shared.StoryReviewApprove));
+    }
+
+    [Fact]
     public async Task Role_permissions_report_assignable_codes()
     {
         var result = await Service().GetRolePermissionsAsync(RoleCodes.Moderator);

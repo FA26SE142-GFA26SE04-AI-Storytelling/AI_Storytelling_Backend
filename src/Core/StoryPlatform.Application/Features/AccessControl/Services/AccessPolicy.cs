@@ -35,7 +35,7 @@ public sealed class AccessPolicy(IUnitOfWork uow, IPermissionService permissions
 
         foreach (var condition in DefaultRolePermissions.ConditionsFor(roleCode, permission))
         {
-            var failure = await EvaluateAsync(condition, actor, resource, cancellationToken);
+            var failure = await EvaluateAsync(condition, actor, permission, resource, cancellationToken);
             if (failure is not null) throw new ForbiddenException(failure);
         }
 
@@ -43,7 +43,8 @@ public sealed class AccessPolicy(IUnitOfWork uow, IPermissionService permissions
     }
 
     /// <returns>Message khi điều kiện không đạt; null khi đạt.</returns>
-    private async Task<string?> EvaluateAsync(string condition, UserAccount actor, object? resource, CancellationToken ct)
+    private async Task<string?> EvaluateAsync(string condition, UserAccount actor, string permission, object? resource,
+        CancellationToken ct)
     {
         switch (condition)
         {
@@ -54,7 +55,8 @@ public sealed class AccessPolicy(IUnitOfWork uow, IPermissionService permissions
                 // Chỉ xét lúc nhận mục: mục đã nhận hợp lệ thì làm tiếp được dù có kiểm duyệt viên mới hoạt động.
                 if (actor.Role != UserRole.Administrator
                     || resource is not ModerationItem { Status: ModerationItemStatus.Pending } item
-                    || item.EscalatedAt != null)
+                    || item.EscalatedAt != null
+                    || !await ModeratorsHoldAsync(permission, ct))
                     return null;
                 var creatorId = item.CreatedByUserId ?? 0;
                 var eligible = await uow.Repository<UserAccount>().CountAsync(
@@ -62,7 +64,7 @@ public sealed class AccessPolicy(IUnitOfWork uow, IPermissionService permissions
                 return eligible > 0 ? AdminFallbackMessage : null;
 
             case AccessConditions.NoActiveModerator:
-                if (actor.Role != UserRole.Administrator) return null;
+                if (actor.Role != UserRole.Administrator || !await ModeratorsHoldAsync(permission, ct)) return null;
                 var active = await uow.Repository<UserAccount>().CountAsync(
                     user => user.Role == UserRole.Moderator && user.Status == AccountStatus.Active && !user.IsDeleted, ct);
                 return active > 0 ? NoActiveModeratorMessage : null;
@@ -71,4 +73,11 @@ public sealed class AccessPolicy(IUnitOfWork uow, IPermissionService permissions
                 return null;
         }
     }
+
+    /// <summary>
+    /// Moderator chỉ được tính là "còn người xử lý" khi role Moderator đang giữ đúng quyền này; nếu Administrator đã thu
+    /// quyền khỏi Moderator thì Administrator là người xử lý còn lại.
+    /// </summary>
+    private Task<bool> ModeratorsHoldAsync(string permission, CancellationToken ct) =>
+        permissions.RoleHasAsync(RoleCodes.Moderator, permission, ct);
 }

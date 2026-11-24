@@ -104,6 +104,20 @@ public sealed class AccessPolicyTests
     }
 
     [Fact]
+    public async Task Admin_NotBlocked_WhenModeratorRoleNoLongerHoldsThePermission()
+    {
+        var permissions = new Mock<IPermissionService>();
+        permissions.Setup(p => p.RoleHasAsync(RoleCodes.Administrator, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        permissions.Setup(p => p.RoleHasAsync(RoleCodes.Moderator, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        var policy = Policy(permissions.Object);
+
+        Assert.Equal(AdminId, (await policy.EnsureAsync(AdminId, Permissions.Review.GrayZone, Pending())).Id);
+        Assert.Equal(AdminId, (await policy.EnsureAsync(AdminId, Permissions.Review.GuideManage)).Id);
+    }
+
+    [Fact]
     public async Task Admin_ClaimEscalatedItem_AllowedWhileModeratorActive()
     {
         var actor = await Policy().EnsureAsync(AdminId, Permissions.Review.GrayZone, Pending(escalatedAt: DateTime.UtcNow));

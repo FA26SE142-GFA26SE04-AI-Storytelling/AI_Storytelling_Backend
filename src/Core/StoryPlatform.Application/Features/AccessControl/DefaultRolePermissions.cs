@@ -118,6 +118,18 @@ public static class DefaultRolePermissions
         map[(RoleCodes.Moderator, Permissions.Moderation.RatingModerate)] = [AccessConditions.NotOwnContent];
         foreach (var permission in ModerationConfigPermissions)
             map[(RoleCodes.Administrator, permission)] = [AccessConditions.NoActiveModerator];
+
+        // Luồng 1, 3, 4: chỉ mô tả, kiểm ở code sẵn có (xem AccessConditions).
+        map[(RoleCodes.User, Permissions.Parent.ChildProfileManage)] =
+            [AccessConditions.OwnChildProfile, AccessConditions.PlanLimits, AccessConditions.ParentalGate];
+        map[(RoleCodes.User, Permissions.Parent.StoryAuthor)] = [AccessConditions.OwnChildProfile, AccessConditions.PlanLimits];
+        map[(RoleCodes.User, Permissions.Parent.FeedbackManage)] = [AccessConditions.OwnChildProfile];
+        map[(RoleCodes.User, Permissions.Shared.MediaGenerate)] = [AccessConditions.OwnChildProfile];
+        map[(RoleCodes.User, Permissions.Shared.StoryReviewApprove)] = [AccessConditions.DelegatedApproval];
+        map[(RoleCodes.User, Permissions.Shared.StoryPackageConfirm)] = [AccessConditions.OwnChildProfile];
+        map[(RoleCodes.ContentCreator, Permissions.Creator.Studio)] = [AccessConditions.OwnCreatorStory, AccessConditions.PlanLimits];
+        map[(RoleCodes.ContentCreator, Permissions.Shared.MediaGenerate)] = [AccessConditions.OwnCreatorStory];
+        map[(RoleCodes.ContentCreator, Permissions.Shared.StoryPackageConfirm)] = [AccessConditions.OwnCreatorStory];
         return map;
     }
 

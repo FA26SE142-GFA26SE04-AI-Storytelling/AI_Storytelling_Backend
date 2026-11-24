@@ -3509,6 +3509,139 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.ToTable("reading_roadmap_items", (string)null);
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.ReadingSchedule", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<TimeOnly?>("BedtimeWeekday")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<TimeOnly?>("BedtimeWeekend")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<int>("BreakAfterMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("BreakDurationMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("BreakEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("BreakRemindEyes")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("BreakRemindMove")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("BreakRemindWater")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("BreakUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("ChildProfileId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("ContinuousReadingSince")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("HabitEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("LastReadingSeenAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<TimeOnly?>("ReadingReminderWeekday")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<TimeOnly?>("ReadingReminderWeekend")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<bool>("ScreenLimitEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("ScreenLimitWeekdayMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ScreenLimitWeekendMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly?>("UsageDate")
+                        .HasColumnType("date");
+
+                    b.Property<int>("UsageSeconds")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("WeeklyGoalDays")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChildProfileId")
+                        .IsUnique();
+
+                    b.ToTable("reading_schedules", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.ReadingScheduleWindow", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DayType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<TimeOnly>("EndTime")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("ReadingScheduleId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Slot")
+                        .HasColumnType("integer");
+
+                    b.Property<TimeOnly>("StartTime")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReadingScheduleId", "DayType", "Slot")
+                        .IsUnique();
+
+                    b.ToTable("reading_schedule_windows", (string)null);
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ReadingSession", b =>
                 {
                     b.Property<int>("Id")
@@ -6959,6 +7092,28 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("ReadingRoadmap");
 
                     b.Navigation("Story");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.ReadingSchedule", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", "ChildProfile")
+                        .WithMany()
+                        .HasForeignKey("ChildProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ChildProfile");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.ReadingScheduleWindow", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.ReadingSchedule", "ReadingSchedule")
+                        .WithMany()
+                        .HasForeignKey("ReadingScheduleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ReadingSchedule");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ReadingSession", b =>

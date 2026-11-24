@@ -1271,6 +1271,12 @@
     "Administrator",
     "Moderator"
   ],
+  "ReadingScheduleController.GetReadingSchedule#GET {childProfileId:int}": [
+    "User"
+  ],
+  "ReadingScheduleController.SetReadingSchedule#PUT {childProfileId:int}": [
+    "User"
+  ],
   "ReviewController.ApplyProposal#POST proposals/{proposalId}/apply": [
     "Administrator",
     "ContentCreator",

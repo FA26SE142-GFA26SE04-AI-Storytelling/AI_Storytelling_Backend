@@ -13,6 +13,7 @@ using StoryPlatform.Application.Features.AccessControl.Interfaces;
 using StoryPlatform.Application.Features.AccessControl.Services;
 using Microsoft.OpenApi.Models;
 using StoryPlatform.Application.Abstractions.Persistence;
+using StoryPlatform.Application.Features.ChildProfiles.ReadingTime.Interfaces;
 using StoryPlatform.Application.Features.CreatorApplications.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -188,6 +189,14 @@ public static class ServiceExtensions
 
                         if (session.ShouldRecordActivity(now))
                         {
+                            // Thời gian màn hình: cộng khoảng cách tới lần ghi trước (≤ 2 phút) vào ngày hôm nay.
+                            var screenTime = context.HttpContext.RequestServices.GetService<IScreenTimeRecorder>();
+                            if (screenTime != null)
+                            {
+                                await screenTime.RecordActivityAsync(
+                                    childProfileId, session.LastActivityAt, now, context.HttpContext.RequestAborted);
+                            }
+
                             session.LastActivityAt = now;
                             session.UpdatedAt = now;
                             sessionRepository.Update(session);

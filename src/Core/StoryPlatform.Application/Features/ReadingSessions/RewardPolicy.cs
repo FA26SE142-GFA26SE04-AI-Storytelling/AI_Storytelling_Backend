@@ -1,3 +1,5 @@
+using StoryPlatform.Domain.Entities;
+
 namespace StoryPlatform.Application.Features.ReadingSessions;
 
 public static class RewardPolicy
@@ -16,4 +18,15 @@ public static class RewardPolicy
 
     public static DateOnly LocalToday(TimeProvider clock) =>
         DateOnly.FromDateTime((clock.GetUtcNow() + LocalOffset).DateTime);
+
+    /// <summary>
+    /// Chuỗi ngày đọc còn hiệu lực: giữ nguyên nếu lần đọc cuối là hôm nay hoặc hôm qua, ngược lại là 0.
+    /// Dùng chung cho màn thưởng và màn thói quen để hai nơi luôn cho cùng một con số.
+    /// </summary>
+    public static int LiveStreakDays(Achievement? achievement, DateOnly today)
+    {
+        var last = achievement?.LastStreakDate;
+        var alive = last.HasValue && (last.Value == today || last.Value == today.AddDays(-1));
+        return alive ? achievement!.StreakDays : 0;
+    }
 }

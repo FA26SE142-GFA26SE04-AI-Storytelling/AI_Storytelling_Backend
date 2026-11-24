@@ -103,14 +103,12 @@ public class ChildRewardService : IChildRewardService
             .ToDictionary(group => group.Key, group => group.Min(badge => badge.EarnedAt));
 
         var today = RewardPolicy.LocalToday(_clock);
-        var last = achievement?.LastStreakDate;
-        var alive = last.HasValue && (last.Value == today || last.Value == today.AddDays(-1));
         var tree = await FindTreeAsync(childProfileId, ct) ?? new KnowledgeTree { ChildProfileId = childProfileId };
 
         return new ChildRewardsDto
         {
             ExpTotal = achievement?.ExpTotal ?? 0,
-            StreakDays = alive ? achievement!.StreakDays : 0,
+            StreakDays = RewardPolicy.LiveStreakDays(achievement, today),
             KnowledgeTree = ToTreeDto(tree, achievement?.ExpTotal ?? 0),
             Badges = BadgeCatalog.All.Select(info => new ChildBadgeDto
             {

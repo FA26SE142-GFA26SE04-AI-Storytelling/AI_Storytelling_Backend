@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using StoryPlatform.Application.Features.ChildProfiles.ReadingTime.DTOs;
 
 namespace StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.DTOs;
 
@@ -31,6 +32,12 @@ public class ChildSessionProfileDto
     public int ChildProfileId { get; set; }
     public string Nickname { get; set; } = string.Empty;
     public string AgeBand { get; set; } = string.Empty;
+
+    /// <summary>Trạng thái "Thời gian &amp; thói quen" (null khi không bật cổng kiểm tra). App gọi /me mỗi ≤ 60 giây khi ở ngoài truyện.</summary>
+    public ReadingTimeStatusDto? ReadingTime { get; set; }
+
+    /// <summary>Thói quen đọc: tiến độ, lịch nhắc, giờ yên lặng (null khi không bật dịch vụ thói quen).</summary>
+    public StoryPlatform.Application.Features.ChildProfiles.ReadingTime.DTOs.ChildHabitDto? Habit { get; set; }
 
     /// <summary>Mã chức năng bố mẹ đang tắt cho bé (quyền của bé), để giao diện ẩn trước.</summary>
     public List<string> DisabledFeatures { get; set; } = new();

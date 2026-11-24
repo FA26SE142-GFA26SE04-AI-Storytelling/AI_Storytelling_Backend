@@ -192,7 +192,7 @@ function Assert-EfModelSeedCoverage {
     # Khoa Data Protection do ung dung tu sinh; khong dua khoa vao file seed SQL.
     # Ghi am va cam nhan duoc tao khi tre su dung ung dung; khong seed file am thanh gia.
     # Giu dong bo voi SeedDataAlignmentTests.generatedAtRuntime.
-    $generatedAtRuntime = @('data_protection_keys', 'read_aloud_recordings', 'story_reflections')
+    $generatedAtRuntime = @('data_protection_keys', 'read_aloud_recordings', 'reading_schedule_windows', 'reading_schedules', 'story_reflections')
 
     $snapshot = [System.IO.File]::ReadAllText($SnapshotPath)
     $mappedTables = @([regex]::Matches($snapshot, '\.ToTable\("(?<table>[a-z][a-z0-9_]*)"') |

@@ -68,7 +68,8 @@ public class UnauthorizedException : AppException
 
 public class ForbiddenException : AppException
 {
-    public ForbiddenException(string message = "Bạn không có quyền truy cập tài nguyên này.") : base(message, 403)
+    public ForbiddenException(string message = "Bạn không có quyền truy cập tài nguyên này.", string? errorCode = null)
+        : base(message, 403, errorCode)
     {
     }
 }

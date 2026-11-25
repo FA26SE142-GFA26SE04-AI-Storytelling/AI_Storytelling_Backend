@@ -718,4 +718,143 @@ public class ModerationQueueServiceTests
         Assert.Equal(_creator.Id, result.CreatedByUserId);
         Assert.Equal("Le Van Tac Gia", result.CreatedByName);
     }
+
+    private (ModerationQueueService Service, CountingModerationRepo Repo) CreateEventModeQueueHarness(DateTime now)
+    {
+        var store = new StoryPlatform.UnitTests.Features.TokenQuota.InMemoryUnitOfWork();
+        store.Seed(_moderatorA);
+        store.Seed(new Event { Id = 1, Title = "Sự kiện 1", Status = EventStatus.Published, ConfigVersion = EventConfigVersion.ActivityBased, AssignedModeratorId = _moderatorA.Id });
+        store.Seed(new Event { Id = 2, Title = "Sự kiện 2", Status = EventStatus.Published, ConfigVersion = EventConfigVersion.ActivityBased, AssignedModeratorId = _moderatorA.Id });
+        store.Seed(new Event { Id = 3, Title = "Sự kiện 3", Status = EventStatus.Published, ConfigVersion = EventConfigVersion.ActivityBased, AssignedModeratorId = _moderatorA.Id });
+        store.Seed(new EventActivity { Id = 1, EventId = 1, ActivityType = EventActivityType.Submission, ReviewCutoffAt = now.AddHours(3) });
+        store.Seed(new EventActivity { Id = 2, EventId = 2, ActivityType = EventActivityType.Submission, ReviewCutoffAt = now.AddHours(1) });
+        store.Seed(new EventActivity { Id = 3, EventId = 3, ActivityType = EventActivityType.Submission, ReviewCutoffAt = now.AddHours(2) });
+
+        for (var i = 101; i <= 115; i++)
+        {
+            store.Seed(new Story { Id = i, Title = $"Truyện {i}" });
+            store.Seed(new StoryVersion { Id = i, StoryId = i, VersionNo = 1, IsCurrent = true });
+        }
+
+        store.Seed(new EventSubmission { Id = 1, EventId = 1, StoryId = 101, CurrentStoryVersionId = 101, Status = EventSubmissionStatus.PendingReview });
+        store.Seed(new EventSubmission { Id = 2, EventId = 2, StoryId = 102, CurrentStoryVersionId = 102, Status = EventSubmissionStatus.PendingReview });
+        store.Seed(new EventSubmission { Id = 3, EventId = 3, StoryId = 103, CurrentStoryVersionId = 103, Status = EventSubmissionStatus.PendingReview });
+
+        var prev = new ModerationItem { Id = 90, DecidedByUserId = _moderatorA.Id, Status = ModerationItemStatus.Rejected };
+        store.Seed(prev);
+
+        var items = new[]
+        {
+            new ModerationItem { Id = 101, ItemType = ModerationItemType.PublicStoryReview, Status = ModerationItemStatus.Pending, StoryId = 101, StoryVersionId = 101, Priority = ModerationPriority.Low, CreatedAt = now.AddHours(-2), SlaDueAt = now.AddHours(20) },
+            new ModerationItem { Id = 102, ItemType = ModerationItemType.PublicStoryReview, Status = ModerationItemStatus.Pending, StoryId = 102, StoryVersionId = 102, Priority = ModerationPriority.Low, CreatedAt = now.AddHours(-2), SlaDueAt = now.AddHours(20) },
+            new ModerationItem { Id = 103, ItemType = ModerationItemType.PublicStoryReview, Status = ModerationItemStatus.Pending, StoryId = 103, StoryVersionId = 103, Priority = ModerationPriority.Low, CreatedAt = now.AddHours(-2), SlaDueAt = now.AddHours(20) },
+            new ModerationItem { Id = 104, ItemType = ModerationItemType.PublicStoryReview, Status = ModerationItemStatus.Pending, StoryId = 104, StoryVersionId = 104, Priority = ModerationPriority.Low, IsResubmission = true, PreviousItemId = 90, PreviousItem = prev, CreatedAt = now.AddMinutes(-10), SlaDueAt = now.AddHours(20) },
+            new ModerationItem { Id = 105, ItemType = ModerationItemType.PublicStoryReview, Status = ModerationItemStatus.Pending, StoryId = 105, StoryVersionId = 105, Priority = ModerationPriority.High, CreatedAt = now.AddHours(-2), SlaDueAt = now.AddHours(10) },
+            new ModerationItem { Id = 106, ItemType = ModerationItemType.PublicStoryReview, Status = ModerationItemStatus.Pending, StoryId = 106, StoryVersionId = 106, Priority = ModerationPriority.High, CreatedAt = now.AddHours(-2), SlaDueAt = now.AddHours(5) },
+            new ModerationItem { Id = 107, ItemType = ModerationItemType.PublicStoryReview, Status = ModerationItemStatus.Pending, StoryId = 107, StoryVersionId = 107, Priority = ModerationPriority.High, CreatedAt = now.AddHours(-2), SlaDueAt = now.AddHours(20) },
+            new ModerationItem { Id = 108, ItemType = ModerationItemType.PublicStoryReview, Status = ModerationItemStatus.Pending, StoryId = 108, StoryVersionId = 108, Priority = ModerationPriority.Medium, CreatedAt = now.AddHours(-2), SlaDueAt = now.AddHours(8) },
+            new ModerationItem { Id = 109, ItemType = ModerationItemType.PublicStoryReview, Status = ModerationItemStatus.Pending, StoryId = 109, StoryVersionId = 109, Priority = ModerationPriority.Medium, CreatedAt = now.AddHours(-2), SlaDueAt = now.AddHours(4) },
+            new ModerationItem { Id = 110, ItemType = ModerationItemType.PublicStoryReview, Status = ModerationItemStatus.Pending, StoryId = 110, StoryVersionId = 110, Priority = ModerationPriority.Medium, CreatedAt = now.AddHours(-2), SlaDueAt = now.AddHours(12) },
+            new ModerationItem { Id = 111, ItemType = ModerationItemType.PublicStoryReview, Status = ModerationItemStatus.Pending, StoryId = 111, StoryVersionId = 111, Priority = ModerationPriority.Medium, CreatedAt = now.AddHours(-2), SlaDueAt = now.AddHours(1) },
+            new ModerationItem { Id = 112, ItemType = ModerationItemType.PublicStoryReview, Status = ModerationItemStatus.Pending, StoryId = 112, StoryVersionId = 112, Priority = ModerationPriority.Low, CreatedAt = now.AddHours(-2), SlaDueAt = now.AddHours(30) },
+            new ModerationItem { Id = 113, ItemType = ModerationItemType.PublicStoryReview, Status = ModerationItemStatus.Pending, StoryId = 113, StoryVersionId = 113, Priority = ModerationPriority.Low, CreatedAt = now.AddHours(-2), SlaDueAt = now.AddHours(30) },
+            new ModerationItem { Id = 114, ItemType = ModerationItemType.PublicStoryReview, Status = ModerationItemStatus.Pending, StoryId = 114, StoryVersionId = 114, Priority = ModerationPriority.Low, CreatedAt = now.AddHours(-2), SlaDueAt = now.AddHours(30) },
+            new ModerationItem { Id = 115, ItemType = ModerationItemType.PublicStoryReview, Status = ModerationItemStatus.Pending, StoryId = 115, StoryVersionId = 115, Priority = ModerationPriority.Low, CreatedAt = now.AddHours(-2), SlaDueAt = now.AddHours(30) }
+        };
+        foreach (var it in items) store.Seed(it);
+
+        var countingRepo = new CountingModerationRepo(store.Repository<ModerationItem>());
+        var uowProxy = new Mock<IUnitOfWork>();
+        uowProxy.Setup(u => u.Repository<ModerationItem>()).Returns(countingRepo);
+        uowProxy.Setup(u => u.Repository<UserAccount>()).Returns(store.Repository<UserAccount>());
+        uowProxy.Setup(u => u.Repository<Event>()).Returns(store.Repository<Event>());
+        uowProxy.Setup(u => u.Repository<EventActivity>()).Returns(store.Repository<EventActivity>());
+        uowProxy.Setup(u => u.Repository<EventTrack>()).Returns(store.Repository<EventTrack>());
+        uowProxy.Setup(u => u.Repository<EventSubmission>()).Returns(store.Repository<EventSubmission>());
+        uowProxy.Setup(u => u.Repository<EventModeratorAssignment>()).Returns(store.Repository<EventModeratorAssignment>());
+
+        return (new ModerationQueueService(uowProxy.Object, _auditLogWriterMock.Object), countingRepo);
+    }
+
+    [Fact]
+    public async Task Queue_EventMode_PagesWithSameOrderAndTotal()
+    {
+        var (service, _) = CreateEventModeQueueHarness(DateTime.UtcNow);
+
+        var p1 = await service.ListAsync(_moderatorA.Id, new ModerationQueueQueryDto { PageIndex = 1, PageSize = 6 });
+        var p2 = await service.ListAsync(_moderatorA.Id, new ModerationQueueQueryDto { PageIndex = 2, PageSize = 6 });
+        var p3 = await service.ListAsync(_moderatorA.Id, new ModerationQueueQueryDto { PageIndex = 3, PageSize = 6 });
+
+        Assert.Equal(15, p1.TotalCount);
+        Assert.Equal(15, p2.TotalCount);
+        Assert.Equal(15, p3.TotalCount);
+        Assert.Equal(new[] { 102, 103, 101, 104, 106, 105 }, p1.Items.Select(x => x.Id));
+        Assert.Equal(new[] { 107, 111, 109, 108, 110, 112 }, p2.Items.Select(x => x.Id));
+        Assert.Equal(new[] { 113, 114, 115 }, p3.Items.Select(x => x.Id));
+    }
+
+    [Fact]
+    public async Task Queue_EventMode_LoadsIncludesOnlyForPageItems()
+    {
+        var (service, repo) = CreateEventModeQueueHarness(DateTime.UtcNow);
+
+        await service.ListAsync(_moderatorA.Id, new ModerationQueueQueryDto { PageIndex = 1, PageSize = 6 });
+
+        Assert.True(repo.LoadedWithIncludesCount <= 6, $"Expected <= 6 entities loaded with includes, got {repo.LoadedWithIncludesCount}.");
+    }
+
+    [Fact]
+    public async Task HistoryQueue_ModeratorAssignedToOneOfTwoEvents_HidesItem()
+    {
+        var store = new StoryPlatform.UnitTests.Features.TokenQuota.InMemoryUnitOfWork();
+        store.Seed(_moderatorA);
+        store.Seed(_moderatorB);
+        store.Seed(new Event { Id = 1, Title = "Sự kiện 1", Status = EventStatus.Published, ConfigVersion = EventConfigVersion.ActivityBased, AssignedModeratorId = _moderatorA.Id });
+        store.Seed(new Event { Id = 2, Title = "Sự kiện 2", Status = EventStatus.Published, ConfigVersion = EventConfigVersion.ActivityBased, AssignedModeratorId = _moderatorB.Id });
+        store.Seed(new Story { Id = 101, Title = "Truyện 101" });
+        store.Seed(new StoryVersion { Id = 101, StoryId = 101, VersionNo = 1, IsCurrent = true });
+        store.Seed(new EventSubmission { Id = 1, EventId = 1, StoryId = 101, CurrentStoryVersionId = 101, Status = EventSubmissionStatus.Approved });
+        store.Seed(new EventSubmission { Id = 2, EventId = 2, StoryId = 101, CurrentStoryVersionId = 101, Status = EventSubmissionStatus.Approved });
+        store.Seed(new ModerationItem
+        {
+            Id = 101,
+            ItemType = ModerationItemType.PublicStoryReview,
+            Status = ModerationItemStatus.Approved,
+            StoryId = 101,
+            StoryVersionId = 101
+        });
+
+        var service = new ModerationQueueService(store, _auditLogWriterMock.Object);
+        var result = await service.ListAsync(_moderatorA.Id, new ModerationQueueQueryDto
+        {
+            Status = ModerationItemStatus.Approved,
+            OnlyMyEventSubmissions = true
+        });
+
+        Assert.Equal(0, result.TotalCount);
+        Assert.Empty(result.Items);
+    }
+
+    private sealed class CountingModerationRepo(IGenericRepository<ModerationItem> inner) : IGenericRepository<ModerationItem>
+    {
+        public int LoadedWithIncludesCount { get; private set; }
+        public Task<ModerationItem?> GetByIdAsync(object id, CancellationToken cancellationToken = default) => inner.GetByIdAsync(id, cancellationToken);
+        public Task<IReadOnlyList<ModerationItem>> GetAllAsync(CancellationToken cancellationToken = default) => inner.GetAllAsync(cancellationToken);
+        public async Task<IReadOnlyList<ModerationItem>> FindAsync(Expression<Func<ModerationItem, bool>> predicate, string? includeProperties = null, CancellationToken cancellationToken = default)
+        {
+            var res = await inner.FindAsync(predicate, includeProperties, cancellationToken);
+            if (!string.IsNullOrWhiteSpace(includeProperties)) LoadedWithIncludesCount += res.Count;
+            return res;
+        }
+        public Task<ModerationItem?> FirstOrDefaultAsync(Expression<Func<ModerationItem, bool>> predicate, string? includeProperties = null, CancellationToken cancellationToken = default) => inner.FirstOrDefaultAsync(predicate, includeProperties, cancellationToken);
+        public Task<(IReadOnlyList<ModerationItem> Items, int TotalCount)> GetPagedAsync(int pageIndex, int pageSize, Expression<Func<ModerationItem, bool>>? filter = null, Func<IQueryable<ModerationItem>, IOrderedQueryable<ModerationItem>>? orderBy = null, string? includeProperties = null, CancellationToken cancellationToken = default) => inner.GetPagedAsync(pageIndex, pageSize, filter, orderBy, includeProperties, cancellationToken);
+        public Task<ModerationItem> AddAsync(ModerationItem entity, CancellationToken cancellationToken = default) => inner.AddAsync(entity, cancellationToken);
+        public Task AddRangeAsync(IEnumerable<ModerationItem> entities, CancellationToken cancellationToken = default) => inner.AddRangeAsync(entities, cancellationToken);
+        public void Update(ModerationItem entity) => inner.Update(entity);
+        public void Delete(ModerationItem entity) => inner.Delete(entity);
+        public void DeleteRange(IEnumerable<ModerationItem> entities) => inner.DeleteRange(entities);
+        public Task<int> CountAsync(Expression<Func<ModerationItem, bool>>? predicate = null, CancellationToken cancellationToken = default) => inner.CountAsync(predicate, cancellationToken);
+        public Task<bool> ExistsAsync(Expression<Func<ModerationItem, bool>> predicate, CancellationToken cancellationToken = default) => inner.ExistsAsync(predicate, cancellationToken);
+        public IQueryable<ModerationItem> Query() => inner.Query();
+    }
 }

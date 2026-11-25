@@ -119,7 +119,7 @@ public partial class PublicStoryReviewService
                 "Chưa thể Approve: " + string.Join(" ", blockers.Select(blocker => blocker.Message)));
         }
 
-        return await DecideAsync(
+        var result = await DecideAsync(
             context,
             ModerationItemStatus.Approved,
             VersionReviewStatus.Approved,
@@ -129,6 +129,8 @@ public partial class PublicStoryReviewService
             publish: true,
             auditAction: "PublicStoryReviewApproved",
             cancellationToken);
+
+        return result;
     }
 
     public async Task<PublicReviewDecisionResultDto> RequestChangesAsync(
@@ -274,10 +276,47 @@ public partial class PublicStoryReviewService
         var now = DateTime.UtcNow;
         List<int>? labelsBefore = null;
         List<int>? labelsAfter = null;
+        var hasEventRepos = _unitOfWork.Repository<EventSubmission>() != null && _unitOfWork.Repository<Event>() != null;
+        var releasedDueToAccessChange = false;
 
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
+            if (hasEventRepos)
+            {
+                await EventSubmissionModerationAccess.AcquireEventAndStoryLocksAsync(
+                    _unitOfWork, story.Id, version.Id, now, cancellationToken, includeExpired: true);
+                var fresh = await _unitOfWork.Repository<ModerationItem>()
+                    .FirstOrDefaultAsync(x => x.Id == item.Id, cancellationToken: cancellationToken)
+                    ?? throw new NotFoundException("Mục kiểm duyệt", item.Id);
+                if (fresh.Status != ModerationItemStatus.Claimed || fresh.ClaimedByUserId != context.Actor.Id)
+                {
+                    throw new ForbiddenException("Bạn chỉ được xử lý mục đang do chính mình nhận.");
+                }
+
+                if (fresh.ClaimedAt == null || fresh.ClaimedAt.Value.Add(ModerationQueuePolicy.ClaimTimeout) <= now)
+                {
+                    throw new ConflictException(
+                        "Mục đã quá 2 giờ kể từ lúc nhận và sẽ được trả về hàng đợi. Vui lòng nhận lại.");
+                }
+
+                if (fresh.RowVersion != item.RowVersion)
+                {
+                    throw new ConflictException("Mục kiểm duyệt vừa thay đổi; hãy tải lại trước khi quyết định.");
+                }
+
+                var access = await EventSubmissionModerationAccess.CheckActorAccessAsync(
+                    _unitOfWork, context.Actor, item, now, cancellationToken);
+                if (!access.IsAllowed)
+                {
+                    await EventSubmissionModerationAccess.ReleaseClaimedItemToPendingAsync(
+                        _unitOfWork, _auditLogWriter, context.Actor.Id, item, access.DenialReason!, cancellationToken);
+                    await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                    releasedDueToAccessChange = true;
+                    throw new ForbiddenException(access.DenialReason!);
+                }
+            }
+
             item.Status = itemStatus;
             item.DecidedByUserId = context.Actor.Id;
             item.DecidedAt = now;
@@ -312,6 +351,13 @@ public partial class PublicStoryReviewService
             }
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            if (hasEventRepos)
+            {
+                await EventSubmissionModerationAccess.ApplyPublicReviewDecisionInTransactionAsync(
+                    _unitOfWork, story.Id, version.Id, item.Id, itemStatus, now, cancellationToken);
+            }
+
             // Bị từ chối thì Creator được hoàn lượt gửi duyệt; yêu cầu sửa thì không (Luồng 2, 2f).
             if (itemStatus == ModerationItemStatus.Rejected && _tokenQuotaService != null)
             {
@@ -338,7 +384,10 @@ public partial class PublicStoryReviewService
         }
         catch
         {
-            await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+            if (!releasedDueToAccessChange)
+            {
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+            }
             throw;
         }
 

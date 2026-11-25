@@ -30,6 +30,7 @@ public class PublicReviewPackageDto
     public PublicReviewSafetyScanDto SafetyScan { get; set; } = new();
     public string? PreviousModeratorName { get; set; }
     public List<PublicReviewHistoryEntryDto> ReviewHistory { get; set; } = new();
+    public List<ModerationItemEventSubmissionDto> EventSubmissions { get; set; } = new();
 }
 
 public class PublicReviewSafetyScanDto

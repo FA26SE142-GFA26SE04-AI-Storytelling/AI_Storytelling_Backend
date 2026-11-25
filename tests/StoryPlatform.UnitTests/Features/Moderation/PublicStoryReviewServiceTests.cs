@@ -1083,6 +1083,47 @@ public class PublicStoryReviewServiceTests
             PublicStoryReviewHarness.ModeratorId, PublicStoryReviewHarness.ItemId, "previous"));
     }
 
+    [Fact]
+    public async Task Decide_RowVersionChanged_ThrowsConflict()
+    {
+        _h.MakeApprovable();
+        _h.Items[0].RowVersion = 1;
+
+        var eventRepo = new Mock<StoryPlatform.Application.Abstractions.Persistence.IGenericRepository<Event>>();
+        eventRepo.Setup(r => r.FindAsync(
+                It.IsAny<System.Linq.Expressions.Expression<Func<Event, bool>>>(),
+                It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Event>());
+        var subRepo = new Mock<StoryPlatform.Application.Abstractions.Persistence.IGenericRepository<EventSubmission>>();
+        subRepo.Setup(r => r.FindAsync(
+                It.IsAny<System.Linq.Expressions.Expression<Func<EventSubmission, bool>>>(),
+                It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<EventSubmission>());
+        _h.UnitOfWork.Setup(u => u.Repository<Event>()).Returns(eventRepo.Object);
+        _h.UnitOfWork.Setup(u => u.Repository<EventSubmission>()).Returns(subRepo.Object);
+
+        var inTx = false;
+        _h.UnitOfWork.Setup(u => u.BeginTransactionAsync(It.IsAny<CancellationToken>()))
+            .Callback(() => inTx = true)
+            .Returns(Task.CompletedTask);
+        var itemRepo = Mock.Get(_h.UnitOfWork.Object.Repository<ModerationItem>());
+        itemRepo.Setup(r => r.FirstOrDefaultAsync(
+                It.IsAny<System.Linq.Expressions.Expression<Func<ModerationItem, bool>>>(),
+                It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => inTx
+                ? new ModerationItem
+                {
+                    Id = PublicStoryReviewHarness.ItemId,
+                    Status = ModerationItemStatus.Claimed,
+                    ClaimedByUserId = PublicStoryReviewHarness.ModeratorId,
+                    ClaimedAt = DateTime.UtcNow,
+                    RowVersion = 2
+                }
+                : _h.Items[0]);
+
+        await Assert.ThrowsAsync<ConflictException>(() => ApproveDecisionAsync());
+    }
+
     private void GivenTwoFlags()
     {
         _h.Versions[0].Moderation.GrayZoneFlags =

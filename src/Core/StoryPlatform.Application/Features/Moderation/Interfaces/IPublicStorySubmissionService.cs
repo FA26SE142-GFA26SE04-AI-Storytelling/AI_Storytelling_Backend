@@ -9,6 +9,13 @@ public interface IPublicStorySubmissionService
         SubmitPublicStoryRequestDto request,
         CancellationToken cancellationToken = default);
 
+    Task<PublicStorySubmissionResultDto> SubmitForEventAsync(
+        int actorUserId,
+        SubmitPublicStoryRequestDto request,
+        bool waiveSubmitQuota,
+        int eventId,
+        CancellationToken cancellationToken = default);
+
     Task<PublicStorySubmissionResultDto> WithdrawAsync(
         int actorUserId,
         int itemId,

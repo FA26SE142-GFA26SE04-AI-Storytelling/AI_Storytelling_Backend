@@ -5,6 +5,7 @@ using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
+using StoryPlatform.Application.Features.Events.Interfaces;
 using StoryPlatform.Application.Features.Moderation.DTOs;
 using StoryPlatform.Application.Features.Moderation.Interfaces;
 using StoryPlatform.Application.Features.Moderation;
@@ -15,7 +16,8 @@ namespace StoryPlatform.Application.Features.Moderation.Services;
 
 public sealed class CreatorPublicationService(IUnitOfWork uow, IModerationQueueService queue, IAuditLogWriter audit,
     IGrayZoneEvaluator? moderation = null, INotificationService? notifications = null,
-    INotificationRealtimePublisher? publisher = null, ILogger<CreatorPublicationService>? logger = null) : ICreatorPublicationService
+    INotificationRealtimePublisher? publisher = null, ILogger<CreatorPublicationService>? logger = null,
+    IEventIntegrationHooks? eventHooks = null) : ICreatorPublicationService
 {
     public async Task<CreatorPublicationStatus> GetStatusAsync(int userId, int storyId, CancellationToken ct = default)
     {
@@ -57,6 +59,7 @@ public sealed class CreatorPublicationService(IUnitOfWork uow, IModerationQueueS
             var story = await AuthorizeCreator(userId, storyId, ct);
             if (string.IsNullOrWhiteSpace(input.Reason) || input.Reason.Length > 2000) throw new BadRequestException("REMOVAL_REASON_REQUIRED");
             if (!story.IsPublished) throw new ConflictException("STORY_NOT_PUBLISHED");
+            if (eventHooks != null) await eventHooks.EnsureStoryNotLockedInEventAsync(storyId, ct);
             await EnsureNoOpenReview(storyId, ct);
             var version = await Current(storyId, ct);
             if (version.Moderation.ReviewStatus != VersionReviewStatus.Approved) throw new ConflictException("PUBLISHED_VERSION_REQUIRED");

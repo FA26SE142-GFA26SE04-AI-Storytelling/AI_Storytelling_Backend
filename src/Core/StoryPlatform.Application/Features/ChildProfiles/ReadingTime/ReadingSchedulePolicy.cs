@@ -142,19 +142,22 @@ public static class ReadingSchedulePolicy
         ReadingSchedule? schedule, IReadOnlyCollection<ReadingScheduleWindow> windows,
         DateTime nowUtc, DateTime? readingStartedAtUtc = null)
     {
-        if (schedule is not { Enabled: true })
+        // Công tắc tổng (Enabled) chỉ lo khung giờ và giờ đi ngủ. Giới hạn màn hình và nghỉ giữa giờ có công tắc
+        // riêng của từng phần nên vẫn chạy khi công tắc tổng tắt.
+        if (schedule == null || (!schedule.Enabled && !schedule.BreakEnabled && !schedule.ScreenLimitEnabled))
         {
             return ReadingTimeStatus.Free;
         }
 
+        var timeRules = schedule.Enabled;
         var today = VietnamTime.LocalDate(nowUtc);
         var limitSeconds = ScreenLimitSeconds(schedule, today);
         var usedSeconds = UsedSecondsOn(schedule, today);
-        var night = BedtimePeriodAt(schedule, windows, nowUtc);
+        var night = timeRules ? BedtimePeriodAt(schedule, windows, nowUtc) : null;
         var status = new ReadingTimeStatus
         {
             State = ReadingTimeState.Allowed,
-            BedtimeAt = night?.StartUtc ?? UpcomingBedtime(schedule, today, nowUtc),
+            BedtimeAt = timeRules ? night?.StartUtc ?? UpcomingBedtime(schedule, today, nowUtc) : null,
             ScreenMinutesUsed = limitSeconds == null ? null : usedSeconds / 60,
             ScreenMinutesLimit = limitSeconds / 60
         };
@@ -188,7 +191,7 @@ public static class ReadingSchedulePolicy
 
         (DateTime StartUtc, DateTime EndUtc)? window = null;
         // Loại ngày không có khung nào thì cả ngày đó không bị chặn theo khung (quyết định 24/11/2026).
-        if (windows.Any(value => value.DayType == DayTypeOf(today)))
+        if (timeRules && windows.Any(value => value.DayType == DayTypeOf(today)))
         {
             window = FindInterval(windows, nowUtc);
             if (window == null)
@@ -256,7 +259,7 @@ public static class ReadingSchedulePolicy
     /// <summary>Cập nhật bộ đếm đọc liên tục khi app gọi signal. Trả true nếu có thay đổi cần lưu.</summary>
     public static bool TrackReading(ReadingSchedule schedule, DateTime nowUtc)
     {
-        if (!schedule.Enabled || !schedule.BreakEnabled)
+        if (!schedule.BreakEnabled)
         {
             return false;
         }
@@ -287,6 +290,7 @@ public static class ReadingSchedulePolicy
         if (nowUtc - schedule.ContinuousReadingSince.Value >= TimeSpan.FromMinutes(schedule.BreakAfterMinutes))
         {
             schedule.BreakUntil = nowUtc.AddMinutes(schedule.BreakDurationMinutes);
+            schedule.LastBreakActivity = (int?)NextBreakActivity(schedule);
             schedule.ContinuousReadingSince = null;
             schedule.LastReadingSeenAt = nowUtc;
             return true;
@@ -493,8 +497,38 @@ public static class ReadingSchedulePolicy
         return periods;
     }
 
-    /// <summary>Lời nhắc của lượt nghỉ: xoay vòng trong các loại đã bật, cố định trong cùng một lượt nghỉ.</summary>
+    /// <summary>Lời nhắc của lượt nghỉ đang diễn ra: loại đã chọn lúc bắt đầu nghỉ, cố định suốt lượt nghỉ đó.</summary>
     public static BreakActivity? PickBreakActivity(ReadingSchedule schedule)
+    {
+        var options = SelectedBreakActivities(schedule);
+        if (options.Count == 0 || schedule.BreakUntil == null)
+        {
+            return null;
+        }
+
+        return schedule.LastBreakActivity is { } last && options.Contains((BreakActivity)last)
+            ? (BreakActivity)last
+            : options[0];
+    }
+
+    /// <summary>
+    /// Lời nhắc của lượt nghỉ sắp bắt đầu: loại kế tiếp sau lượt trước, xoay vòng mắt → nước → vận động
+    /// trong các loại đang chọn. Chưa có lượt trước thì lấy loại đầu tiên.
+    /// </summary>
+    public static BreakActivity? NextBreakActivity(ReadingSchedule schedule)
+    {
+        var options = SelectedBreakActivities(schedule);
+        if (options.Count == 0)
+        {
+            return null;
+        }
+
+        return schedule.LastBreakActivity is { } last
+            ? options.FirstOrDefault(option => (int)option > last, options[0])
+            : options[0];
+    }
+
+    private static List<BreakActivity> SelectedBreakActivities(ReadingSchedule schedule)
     {
         var options = new List<BreakActivity>();
         if (schedule.BreakRemindEyes)
@@ -512,12 +546,7 @@ public static class ReadingSchedulePolicy
             options.Add(BreakActivity.Move);
         }
 
-        if (options.Count == 0 || schedule.BreakUntil is not { } breakUntil)
-        {
-            return null;
-        }
-
-        return options[(int)(breakUntil.Ticks / TimeSpan.TicksPerMinute % options.Count)];
+        return options;
     }
 
     /// <summary>Trạng thái làm phiên đọc đang mở phải kết thúc (sau khi hết gia hạn).</summary>
@@ -542,14 +571,14 @@ public static class ReadingSchedulePolicy
     public static string BreakMessage(DateTime breakUntilUtc, DateTime nowUtc)
     {
         var minutes = Math.Max(1, (int)Math.Ceiling((breakUntilUtc - nowUtc).TotalMinutes));
-        return $"Bé nghỉ mắt một chút nhé, còn {minutes} phút.";
+        return $"Bé nghỉ một chút nhé, còn {minutes} phút.";
     }
 
     public static string BreakActivityMessage(BreakActivity activity) => activity switch
     {
         BreakActivity.Eyes => "Nhìn ra xa một chút cho mắt nghỉ nhé!",
         BreakActivity.Water => "Bé uống một ngụm nước nhé!",
-        _ => "Bé đứng dậy vươn vai, nhảy nhẹ vài cái nhé!"
+        _ => "Bé đứng dậy vươn vai, đi lại vài bước nhé!"
     };
 
     public static string ParentOutsideMessage(DateTime? nextWindowStartUtc)

@@ -27,6 +27,14 @@ public class EnqueueModerationItemCommand
     public bool IsPartnerCreator { get; set; }
 }
 
+public class ModerationItemEventSubmissionDto
+{
+    public int EventId { get; set; }
+    public string EventTitle { get; set; } = string.Empty;
+    public DateTime? ReviewCutoffAt { get; set; }
+    public int EventSubmissionId { get; set; }
+}
+
 public class ModerationQueueQueryDto
 {
     public ModerationItemType? ItemType { get; set; }
@@ -37,6 +45,9 @@ public class ModerationQueueQueryDto
 
     /// <summary>True: chỉ hiện mục đã quá hạn SLA.</summary>
     public bool OnlyOverdue { get; set; }
+
+    /// <summary>True: chỉ hiện bài dự thi còn hiệu lực của các sự kiện người gọi phụ trách (hoặc mọi bài dự thi với Admin).</summary>
+    public bool OnlyMyEventSubmissions { get; set; }
     public int PageIndex { get; set; } = 1;
     public int PageSize { get; set; } = 20;
 }
@@ -72,6 +83,7 @@ public class ModerationItemSummaryDto
     /// <summary>Lúc mục tự trả về hàng đợi nếu chưa quyết định (ClaimedAt + 2 giờ).</summary>
     public DateTime? ClaimExpiresAt { get; set; }
     public DateTime CreatedAt { get; set; }
+    public List<ModerationItemEventSubmissionDto> EventSubmissions { get; set; } = new();
 }
 
 /// <summary>Chi tiết hàng đợi của mục đang nhận. Nội dung truyện thật do từng luồng con dựng, không nằm ở đây.</summary>

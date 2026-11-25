@@ -84,6 +84,7 @@ public sealed class PublicStoryReviewHarness
         Back(CreditLots);
         Back(CreditUsages);
         Back(new List<StoryGenerationRequest>());
+        Back(new List<EventSubmission>());
         Back(new List<StoryAssistanceTask>());
         Back(new List<LearningArtifactGenerationBatch>());
         Back(new List<ParentStoryPackage>());

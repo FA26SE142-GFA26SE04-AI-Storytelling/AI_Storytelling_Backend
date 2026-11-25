@@ -14,5 +14,9 @@ public enum CreditSource
     /// <summary>Hạn mức tháng miễn phí của Content Creator; hết hạn cuối tháng (giờ Việt Nam).</summary>
     CreatorMonthly = 6,
     /// <summary>Lượt mua từ Gói Creator; không hết hạn.</summary>
-    CreatorPack = 7
+    CreatorPack = 7,
+    /// <summary>Lượt tài trợ tạm thời trong phạm vi một Event (EV-12).</summary>
+    EventGrant = 8,
+    /// <summary>Permanent prize credits, usable outside the event that awarded them.</summary>
+    EventReward = 9
 }

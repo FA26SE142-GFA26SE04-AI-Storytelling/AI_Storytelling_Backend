@@ -36,11 +36,16 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
     }
 
     public Task<PublicStorySubmissionResultDto> SubmitAsync(int actorUserId, SubmitPublicStoryRequestDto request, CancellationToken cancellationToken = default) =>
-        WithStoryLockAsync(request.StoryId, () => SubmitLockedAsync(actorUserId, request, cancellationToken), cancellationToken);
+        WithStoryLockAsync(request.StoryId, () => SubmitLockedAsync(actorUserId, request, waiveSubmitQuota: false, eventId: null, cancellationToken), cancellationToken);
+
+    public Task<PublicStorySubmissionResultDto> SubmitForEventAsync(int actorUserId, SubmitPublicStoryRequestDto request, bool waiveSubmitQuota, int eventId, CancellationToken cancellationToken = default) =>
+        WithStoryLockAsync(request.StoryId, () => SubmitLockedAsync(actorUserId, request, waiveSubmitQuota, eventId, cancellationToken), cancellationToken);
 
     private async Task<PublicStorySubmissionResultDto> SubmitLockedAsync(
         int actorUserId,
         SubmitPublicStoryRequestDto request,
+        bool waiveSubmitQuota,
+        int? eventId,
         CancellationToken cancellationToken = default)
     {
         var actor = await RequireCreatorAsync(actorUserId, cancellationToken);
@@ -163,13 +168,14 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         // Lượt gửi duyệt (Luồng 2, 2f): trừ 1 lượt, hết lượt thì 409 và cả yêu cầu bị huỷ cùng transaction.
-        // Gửi lại sau khi bị yêu cầu sửa không trừ thêm.
-        if (_tokenQuotaService != null)
+        // Gửi lại sau khi bị yêu cầu sửa không trừ thêm; sự kiện V2 miễn trừ quota lượt nộp.
+        if (!waiveSubmitQuota && _tokenQuotaService != null)
         {
             await _tokenQuotaService.ChargeSubmissionAsync(
                 actor.Id, item.Id,
                 returned?.Status == ModerationItemStatus.ChangesRequested ? returned.Id : null,
-                cancellationToken);
+                cancellationToken,
+                eventId);
         }
 
         await _auditLogWriter.LogAsync(
@@ -265,15 +271,16 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
 
     private async Task<T> WithStoryLockAsync<T>(int storyId, Func<Task<T>> action, CancellationToken ct)
     {
-        await _unitOfWork.BeginTransactionAsync(ct);
+        var ownsTransaction = !_unitOfWork.HasActiveTransaction;
+        if (ownsTransaction) await _unitOfWork.BeginTransactionAsync(ct);
         try
         {
             await _unitOfWork.AcquireTransactionLockAsync(storyId, ct);
             var result = await action();
-            await _unitOfWork.CommitTransactionAsync(ct);
+            if (ownsTransaction) await _unitOfWork.CommitTransactionAsync(ct);
             return result;
         }
-        catch { await _unitOfWork.RollbackTransactionAsync(CancellationToken.None); throw; }
+        catch { if (ownsTransaction) await _unitOfWork.RollbackTransactionAsync(CancellationToken.None); throw; }
     }
 
     private async Task<UserAccount> RequireCreatorAsync(

@@ -73,6 +73,9 @@ public sealed class SubmitAIStoryInputRequestDto : AIStoryCreativeInputDto
     [System.Text.Json.Serialization.JsonIgnore]
     public CreatorGenerationAudience? CreatorAudience { get; init; }
 
+    [Range(1, int.MaxValue)]
+    public int? EventId { get; init; }
+
     public int? ExistingStoryId { get; init; }
 
     /// <summary>Server-only provenance from the Parent wish workflow; never accepted from JSON.</summary>
@@ -87,6 +90,8 @@ public sealed record CreatorGenerationAudience(string AgeBand, int ReadingLevel)
 
 public sealed class SubmitCreatorAIStoryInputRequestDto : AIStoryCreativeInputDto
 {
+    [Range(1, int.MaxValue)]
+    public int? EventId { get; init; }
     [Required, RegularExpression("^(6-8|9-10)$")]
     public string AgeBand { get; init; } = "6-8";
     [Range(1, 5)] public int ReadingLevel { get; init; } = 2;

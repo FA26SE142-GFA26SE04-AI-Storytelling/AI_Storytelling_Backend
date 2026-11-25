@@ -12,12 +12,28 @@ namespace StoryPlatform.Application.Features.PlanBenefits.Services;
 /// </summary>
 public class PlanUsageService(IUnitOfWork unitOfWork) : IPlanUsageService
 {
+    internal const string EventWeeklyLimitWaiver = "{\"eventWeeklyLimitWaived\":true}";
+
     public async Task<int> CountNewLibraryStoriesThisWeekAsync(
+        int ownerUserId, DateTime utcNow, CancellationToken cancellationToken = default) =>
+        (await ListNewLibraryStoryIdsThisWeekAsync(ownerUserId, utcNow, cancellationToken)).Count;
+
+    public async Task<IReadOnlyList<int>> ListNewLibraryStoryIdsThisWeekAsync(
         int ownerUserId, DateTime utcNow, CancellationToken cancellationToken = default)
     {
         var weekStart = VietnamTime.StartOfWeekUtc(utcNow);
-        var firstOpenedAt = await FirstOpenedLibraryStoriesAsync(ownerUserId, storyId: null, cancellationToken);
-        return firstOpenedAt.Count(pair => pair.Value >= weekStart);
+        var openedThisWeek = (await FirstOpenedLibraryStoriesAsync(ownerUserId, storyId: null, cancellationToken))
+            .Where(session => session.StartedAt >= weekStart).ToList();
+        if (openedThisWeek.Count == 0)
+            return [];
+
+        var sessionIds = openedThisWeek.Select(session => session.Id).ToList();
+        var waivers = await unitOfWork.Repository<TelemetryLog>().FindAsync(
+            log => sessionIds.Contains(log.ReadingSessionId) && log.EventType == TelemetryEventType.SessionStarted
+                && log.EventPayload == EventWeeklyLimitWaiver && !log.IsDeleted,
+            cancellationToken: cancellationToken);
+        var waivedSessionIds = waivers.Select(log => log.ReadingSessionId).ToHashSet();
+        return openedThisWeek.Where(session => !waivedSessionIds.Contains(session.Id)).Select(session => session.StoryId).ToList();
     }
 
     public async Task<bool> HasOpenedLibraryStoryAsync(int ownerUserId, int storyId, CancellationToken cancellationToken = default) =>
@@ -31,7 +47,7 @@ public class PlanUsageService(IUnitOfWork unitOfWork) : IPlanUsageService
     }
 
     /// <summary>Lần mở đầu tiên của mỗi truyện thư viện trên mọi hồ sơ trẻ của tài khoản.</summary>
-    private async Task<Dictionary<int, DateTime>> FirstOpenedLibraryStoriesAsync(
+    private async Task<IReadOnlyList<ReadingSession>> FirstOpenedLibraryStoriesAsync(
         int ownerUserId, int? storyId, CancellationToken cancellationToken)
     {
         var childIds = (await unitOfWork.Repository<ChildProfile>().FindAsync(
@@ -62,6 +78,7 @@ public class PlanUsageService(IUnitOfWork unitOfWork) : IPlanUsageService
         return sessions
             .Where(session => libraryStoryIds.Contains(session.StoryId))
             .GroupBy(session => session.StoryId)
-            .ToDictionary(group => group.Key, group => group.Min(session => session.StartedAt));
+            .Select(group => group.OrderBy(session => session.StartedAt).ThenBy(session => session.Id).First())
+            .ToList();
     }
 }

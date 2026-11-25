@@ -119,7 +119,7 @@ public partial class TokenQuotaService : ITokenQuotaService
             ? (await GetChildAsync(story.ChildProfileId.Value, cancellationToken)).OwnerUserId
             : story.AuthorUserId;
 
-    public async Task<bool> HoldStoryCreditForRetryAsync(int storyId, CancellationToken cancellationToken = default)
+    public async Task<bool> HoldStoryCreditForRetryAsync(int storyId, CancellationToken cancellationToken = default, int? requestId = null)
     {
         var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Truyện", storyId);
@@ -149,9 +149,12 @@ public partial class TokenQuotaService : ITokenQuotaService
             await EnsureCreatorMonthlyGrantedAsync(userId, DateTime.UtcNow, cancellationToken);
         }
 
+        var parentEventId = story.Scope == StoryScope.Parent
+            ? await StoryGenerationEventAsync(storyId, cancellationToken, requestId)
+            : null;
         await HoldOneCreditAsync(
             userId, story, story.Scope == StoryScope.Creator ? CreatorOutOfAiCreditsMessage : OutOfCreditsMessage,
-            cancellationToken);
+            cancellationToken, parentEventId, fallbackWhenEventClosed: true);
         return true;
     }
 
@@ -323,10 +326,14 @@ public partial class TokenQuotaService : ITokenQuotaService
             cancellationToken: cancellationToken);
 
     /// <summary>Giữ 1 lượt: trừ khỏi lô sắp hết hạn nhất và ghi dòng lịch sử gắn với truyện. Nơi gọi đã khoá tài khoản.</summary>
-    private async Task HoldOneCreditAsync(int userId, Story? story, string outOfCreditsMessage, CancellationToken cancellationToken)
+    private async Task HoldOneCreditAsync(
+        int userId, Story? story, string outOfCreditsMessage, CancellationToken cancellationToken,
+        int? eventId = null, bool fallbackWhenEventClosed = false)
     {
         var now = DateTime.UtcNow;
-        var lot = OrderForUse(await GetUsableLotsAsync(userId, now, cancellationToken)).FirstOrDefault()
+        var lots = await GetStoryLotsAsync(userId, story, CreditType.AI, eventId, cancellationToken,
+            fallbackWhenEventClosed: fallbackWhenEventClosed);
+        var lot = OrderForUse(lots, preferEventGrants: eventId.HasValue).FirstOrDefault()
                   ?? throw new ConflictException(outOfCreditsMessage);
 
         lot.Remaining -= 1;
@@ -623,10 +630,12 @@ public partial class TokenQuotaService : ITokenQuotaService
         ?? throw new NotFoundException("Hồ sơ trẻ", childProfileId);
 
     private async Task<IReadOnlyList<CreditLot>> GetUsableLotsAsync(
-        int userId, DateTime now, CancellationToken cancellationToken, CreditType creditType = CreditType.AI) =>
+        int userId, DateTime now, CancellationToken cancellationToken, CreditType creditType = CreditType.AI,
+        bool includeEventGrants = false) =>
         await _unitOfWork.Repository<CreditLot>().FindAsync(
             lot => lot.UserId == userId
                    && lot.CreditType == creditType
+                   && (includeEventGrants || lot.Source != CreditSource.EventGrant)
                    && lot.Remaining > 0
                    && (lot.ExpiresAt == null || lot.ExpiresAt > now),
             cancellationToken: cancellationToken);
@@ -669,8 +678,10 @@ public partial class TokenQuotaService : ITokenQuotaService
             cancellationToken);
 
     /// <summary>Lô sắp hết hạn dùng trước; lô không hết hạn xếp cuối.</summary>
-    private static IEnumerable<CreditLot> OrderForUse(IEnumerable<CreditLot> lots) =>
-        lots.OrderBy(item => item.ExpiresAt ?? DateTime.MaxValue).ThenBy(item => item.Id);
+    private static IEnumerable<CreditLot> OrderForUse(IEnumerable<CreditLot> lots, bool preferEventGrants = false) =>
+        lots.OrderBy(item => preferEventGrants && item.Source == CreditSource.EventGrant ? 0 : 1)
+            .ThenBy(item => item.ExpiresAt ?? DateTime.MaxValue)
+            .ThenBy(item => item.Id);
 
     private static CreditAdjustmentDto MapToDto(CreditAdjustment adjustment, UserAccount? admin) => new()
     {

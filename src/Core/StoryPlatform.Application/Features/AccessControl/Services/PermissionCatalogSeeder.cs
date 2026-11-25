@@ -5,7 +5,8 @@ namespace StoryPlatform.Application.Features.AccessControl.Services;
 
 /// <summary>
 /// Đồng bộ danh mục role/permission trong code vào DB lúc khởi động. Idempotent; không bao giờ ghi đè quyền
-/// Administrator đã chỉnh: bản gán mặc định chỉ được ghi cho role chưa có quyền nào.
+/// Administrator đã chỉnh: bản gán mặc định đầy đủ chỉ được ghi cho role chưa có quyền nào; role đã có quyền chỉ nhận
+/// thêm permission vừa xuất hiện lần đầu trong DB.
 /// </summary>
 public sealed class PermissionCatalogSeeder(IUnitOfWork uow)
 {
@@ -35,6 +36,7 @@ public sealed class PermissionCatalogSeeder(IUnitOfWork uow)
         }
 
         var permissions = (await permissionRepo.GetAllAsync(ct)).ToList();
+        var created = new HashSet<string>(StringComparer.Ordinal);
         foreach (var definition in PermissionCatalog.All)
         {
             var existing = permissions.FirstOrDefault(p => p.Code == definition.Code);
@@ -47,6 +49,7 @@ public sealed class PermissionCatalogSeeder(IUnitOfWork uow)
                 };
                 await permissionRepo.AddAsync(permission, ct);
                 permissions.Add(permission);
+                created.Add(definition.Code);
                 changes++;
             }
             else if (existing.Group != definition.Group || existing.Description != definition.Description
@@ -80,6 +83,18 @@ public sealed class PermissionCatalogSeeder(IUnitOfWork uow)
                 .Select(code => new RolePermission { RoleId = role.Id, PermissionId = permissions.Single(p => p.Code == code).Id });
             await linkRepo.AddRangeAsync(links, ct);
             changes += DefaultRolePermissions.Map[role.Code].Count;
+        }
+
+        // Permission vừa thêm vào catalog (lần đầu có trong DB) thì Administrator chưa từng chỉnh nó, nên cấp theo bản gán
+        // mặc định cho cả role đã có quyền; không vậy role cũ sẽ mất tính năng mới (vd. API sự kiện trả 403).
+        foreach (var role in roles.Where(r => rolesWithLinks.Contains(r.Id) && DefaultRolePermissions.Map.ContainsKey(r.Code)))
+        {
+            var links = DefaultRolePermissions.Map[role.Code].Where(created.Contains)
+                .Select(code => new RolePermission { RoleId = role.Id, PermissionId = permissions.Single(p => p.Code == code).Id })
+                .ToList();
+            if (links.Count == 0) continue;
+            await linkRepo.AddRangeAsync(links, ct);
+            changes += links.Count;
         }
 
         await uow.SaveChangesAsync(ct);

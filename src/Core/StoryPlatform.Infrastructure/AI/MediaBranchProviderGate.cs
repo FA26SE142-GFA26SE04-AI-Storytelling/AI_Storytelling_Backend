@@ -50,7 +50,7 @@ internal sealed class MediaBranchProviderGate(MediaBranchOptions options, ILogge
             return result;
         }
         catch (TransientMediaGenerationException ex) when (!ct.IsCancellationRequested &&
-            modality == "Image" && ex.ErrorCode == "GEMINI_IMAGE_HTTP_429")
+            (ex.ErrorCode is "GEMINI_IMAGE_HTTP_429" or "GEMINI_TTS_HTTP_429" or "GOOGLE_CLOUD_TTS_HTTP_429"))
         {
             TimeSpan delay;
             lock (_sync)

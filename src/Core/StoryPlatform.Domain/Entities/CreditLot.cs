@@ -16,4 +16,7 @@ public class CreditLot : BaseEntity
 
     public int? PaymentId { get; set; }
     public virtual PaymentTransaction? Payment { get; set; }
+
+    /// <summary>Khóa phạm vi Event khi Source == EventGrant (EV-12); null với các lô thông thường.</summary>
+    public int? EventId { get; set; }
 }

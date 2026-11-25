@@ -49,6 +49,8 @@ public static class DependencyInjection
         services.AddSingleton(sp => sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<StoryPlatform.Application.Features.CreatorAssistance.CreatorAssistanceOptions>>().Value);
         services.AddScoped<StoryPlatform.Application.Features.CreatorAuthoring.Interfaces.IImportPreviewProtector,
             StoryPlatform.Infrastructure.Security.ImportPreviewProtector>();
+        services.AddScoped<StoryPlatform.Application.Features.Events.Interfaces.IRewardRecipientProtector,
+            StoryPlatform.Infrastructure.Security.RewardRecipientProtector>();
         services.AddOptions<CreatorAuthoringOptions>()
             .Bind(configuration.GetSection(CreatorAuthoringOptions.SectionName))
             .Validate(x => x.MaximumContentCharacters is > 0 and <= 200_000 &&

@@ -101,6 +101,17 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
                 "Mục đã quá 2 giờ kể từ lúc nhận và sẽ được trả về hàng đợi. Vui lòng nhận lại.");
         }
 
+        var now = DateTime.UtcNow;
+        if (_unitOfWork.Repository<EventSubmission>() != null && _unitOfWork.Repository<Event>() != null)
+        {
+            var access = await EventSubmissionModerationAccess.CheckActorAccessAsync(
+                _unitOfWork, actor, item, now, cancellationToken);
+            if (!access.IsAllowed)
+            {
+                throw new ForbiddenException(access.DenialReason!);
+            }
+        }
+
         if (item.StoryId == null || item.StoryVersionId == null)
         {
             throw new BadRequestException("Mục chưa gắn truyện hoặc phiên bản để duyệt.");
@@ -328,7 +339,9 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
             CanApprove = blockers.Count == 0,
             SafetyScan = BuildSafetyScan(context.Version, flags),
             PreviousModeratorName = history.FirstOrDefault()?.DecidedByName,
-            ReviewHistory = history
+            ReviewHistory = history,
+            EventSubmissions = await EventSubmissionModerationAccess.LoadLinkedForItemAsync(
+                _unitOfWork, item, DateTime.UtcNow, cancellationToken)
         };
         await SignMediaUrlsAsync(package, cancellationToken);
         return package;

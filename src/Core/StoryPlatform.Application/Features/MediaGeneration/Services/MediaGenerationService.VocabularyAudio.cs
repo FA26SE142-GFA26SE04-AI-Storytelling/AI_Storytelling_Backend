@@ -40,9 +40,8 @@ public sealed partial class MediaGenerationService
 
             await AssertFreshAsync(jobId, claimedToken, versionId, mediaContext.Id, cancellationToken);
             var storagePath = $"{storyId}/versions/{versionId}/v{mediaContext.Revision}/vocab-{word.Id}-asset-{asset.Id}-{Guid.NewGuid():N}-a{attempt + 1}{audio.SuggestedExtension}";
-            await using var content = audio.OpenReadStream();
-            asset.Url = await MeasureMediaStageAsync("VocabularyAudioUpload", jobId, asset,
-                () => _mediaStorage.UploadAsync(storagePath, content, audio.MimeType, cancellationToken));
+            asset.Url = await UploadGeneratedMediaAsync("VocabularyAudioUpload", jobId, claimedToken, mediaContext.Id, asset,
+                storagePath, audio, cancellationToken);
             asset.MimeType = audio.MimeType;
             asset.Provider = audio.GetMetadata("provider") ?? "GoogleCloud";
             asset.Model = audio.GetMetadata("model") ?? "unknown";

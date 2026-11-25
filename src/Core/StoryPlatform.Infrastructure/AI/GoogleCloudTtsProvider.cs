@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Google.Cloud.TextToSpeech.V1Beta1;
+using Grpc.Core;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StoryPlatform.Application.Features.MediaGeneration;
@@ -102,8 +103,8 @@ public sealed class GoogleCloudTtsProvider : ITtsProvider
             var response = await _client.SynthesizeSpeechAsync(request, cancellationToken).ConfigureAwait(false);
             var bytes = response.AudioContent.ToByteArray();
 
-            if (MagicByteValidators.ValidateAudio(bytes) is { IsValid: false } av)
-                throw new PermanentMediaGenerationException($"TTS_VALIDATION_FAILED: {av.Reason}");
+            if (!MagicByteValidators.ValidateAudio(bytes).IsValid)
+                throw new PermanentMediaGenerationException("AUDIO_QUALITY_GATE_FAILED");
 
             var wordTimingsJson = _options.EnableWordTimings
                 ? BuildWordTimingsJson(tokens, response)
@@ -121,6 +122,22 @@ public sealed class GoogleCloudTtsProvider : ITtsProvider
                 _logger, OperationName, ProviderName, _options.VoiceName, elapsed.Elapsed.TotalMilliseconds,
                 cancellationToken.IsCancellationRequested);
             throw;
+        }
+        catch (RpcException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            var failure = ex.StatusCode switch
+            {
+                StatusCode.ResourceExhausted => new TransientMediaGenerationException("GOOGLE_CLOUD_TTS_HTTP_429"),
+                StatusCode.DeadlineExceeded => new TransientMediaGenerationException("MEDIA_PROVIDER_TIMEOUT"),
+                StatusCode.Unavailable or StatusCode.Internal => new TransientMediaGenerationException("TTS_PROVIDER_UNAVAILABLE"),
+                StatusCode.Unauthenticated or StatusCode.PermissionDenied => (Exception)new PermanentMediaGenerationException("TTS_PROVIDER_ACCESS_DENIED"),
+                StatusCode.InvalidArgument or StatusCode.FailedPrecondition => new PermanentMediaGenerationException("TTS_PROVIDER_REJECTED"),
+                _ => new TransientMediaGenerationException("TTS_GENERATION_FAILED")
+            };
+            MediaProviderDiagnostics.LogFailed(
+                _logger, OperationName, ProviderName, _options.VoiceName, elapsed.Elapsed.TotalMilliseconds,
+                null, failure.Message, null, null, ex.GetType().Name);
+            throw failure;
         }
         catch (Exception ex)
         {

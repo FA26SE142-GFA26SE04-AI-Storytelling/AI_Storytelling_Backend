@@ -38,15 +38,32 @@ public sealed class SupabaseMediaStorage : IMediaStorage
         var bytes = buffer.ToArray();
         MediaObjectRules.ValidateContentMatchesMime(bytes, mimeType);
 
-        using var request = new HttpRequestMessage(
-            HttpMethod.Post,
-            BuildStorageUri($"object/{MediaObjectRules.EncodePath(_options.Bucket)}/{MediaObjectRules.EncodePath(normalizedPath)}"));
-        request.Headers.TryAddWithoutValidation("x-upsert", "true");
-        request.Content = new ByteArrayContent(bytes);
-        request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mimeType);
+        try
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Post,
+                BuildStorageUri($"object/{MediaObjectRules.EncodePath(_options.Bucket)}/{MediaObjectRules.EncodePath(normalizedPath)}"));
+            request.Headers.TryAddWithoutValidation("x-upsert", "true");
+            request.Content = new ByteArrayContent(bytes);
+            request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mimeType);
 
-        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        await EnsureSuccessAsync(response, cancellationToken);
+            using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Supabase Storage upload failed Status={Status}", (int)response.StatusCode);
+                var retry = response.Headers.RetryAfter;
+                var retryAfter = retry?.Delta ?? (retry?.Date - DateTimeOffset.UtcNow);
+                throw MediaUploadFailure.ForStatus((int)response.StatusCode, retryAfter);
+            }
+        }
+        catch (InvalidOperationException ex) when (ex.Message == "SUPABASE_STORAGE_NOT_CONFIGURED")
+        {
+            throw MediaUploadFailure.ForConfiguration();
+        }
+        catch (HttpRequestException ex)
+        {
+            throw MediaUploadFailure.ForStatus((int?)ex.StatusCode);
+        }
         _logger.LogInformation("Uploaded media object {StoragePath} to Supabase bucket {Bucket}",
             normalizedPath, _options.Bucket);
         return normalizedPath;

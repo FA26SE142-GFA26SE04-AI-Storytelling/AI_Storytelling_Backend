@@ -40,10 +40,12 @@ public sealed partial class MediaGenerationService
                 : segments.Where(x => x.StorySceneId == scene.Id).OrderBy(x => x.SegmentOrder).Select(x => x.Id).ToList();
             var index = orderedIds.IndexOf(target.Value);
             if (index < 0) continue;
-            var status = task?.Status.ToString() ?? (asset.Status == MediaStatus.ManualReview ? "ManualReview" :
-                branch?.Status is GenerationJobStatus.Pending or GenerationJobStatus.Processing ? branch.Status.ToString() : "Failed");
-            var code = task?.ErrorCode ?? branch?.ErrorCode ?? (asset.Status == MediaStatus.ManualReview ?
+            var needsManualReview = asset.Status == MediaStatus.ManualReview;
+            var code = task?.ErrorCode ?? branch?.ErrorCode ?? (needsManualReview ?
                 "MEDIA_MANUAL_REVIEW_REQUIRED" : image ? "IMAGE_GENERATION_FAILED" : "TTS_GENERATION_FAILED");
+            var status = task?.Status.ToString() ??
+                (needsManualReview ? "ManualReview" :
+                branch?.Status is GenerationJobStatus.Pending or GenerationJobStatus.Processing ? branch.Status.ToString() : "Failed");
             // Codes originate from worker PublicErrorCode. Never expose LastValidationReason or exception text.
             if (code.Length > 100 || code.Any(c => !(c is >= 'A' and <= 'Z' or >= '0' and <= '9' or '_')))
                 code = "MEDIA_GENERATION_FAILED";

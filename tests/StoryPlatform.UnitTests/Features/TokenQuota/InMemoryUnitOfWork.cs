@@ -41,6 +41,12 @@ internal sealed class InMemoryUnitOfWork : IUnitOfWork
         return Task.CompletedTask;
     }
 
+    public Task AcquireEventLockAsync(int eventId, CancellationToken cancellationToken = default)
+    {
+        Calls.Add($"event-lock:{eventId}");
+        return Task.CompletedTask;
+    }
+
     public Task CommitTransactionAsync(CancellationToken cancellationToken = default)
     {
         Calls.Add("commit");

@@ -52,14 +52,35 @@ public sealed class S3MediaStorage : IMediaStorage
         MediaObjectRules.ValidateContentMatchesMime(bytes, mimeType);
 
         using var body = new MemoryStream(bytes, writable: false);
-        await _s3.PutObjectAsync(new PutObjectRequest
+        try
         {
-            BucketName = RequireBucket(),
-            Key = key,
-            InputStream = body,
-            ContentType = mimeType,
-            AutoCloseStream = false
-        }, cancellationToken);
+            await _s3.PutObjectAsync(new PutObjectRequest
+            {
+                BucketName = RequireBucket(),
+                Key = key,
+                InputStream = body,
+                ContentType = mimeType,
+                AutoCloseStream = false
+            }, cancellationToken);
+        }
+        catch (InvalidOperationException ex) when (ex.Message == "S3_STORAGE_NOT_CONFIGURED")
+        {
+            throw MediaUploadFailure.ForConfiguration();
+        }
+        catch (Amazon.Runtime.AmazonServiceException ex)
+        {
+            _logger.LogWarning("S3 Storage upload failed Status={Status}", (int)ex.StatusCode);
+            throw MediaUploadFailure.ForStatus((int)ex.StatusCode);
+        }
+        catch (Amazon.Runtime.AmazonClientException ex)
+        {
+            _logger.LogWarning("S3 Storage upload failed ({ExceptionType})", ex.GetType().Name);
+            throw MediaUploadFailure.ForStatus(null);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw MediaUploadFailure.ForStatus((int?)ex.StatusCode);
+        }
 
         _logger.LogInformation("Uploaded media object {StoragePath} to S3 bucket {Bucket}", key, _options.BucketName);
         return key;

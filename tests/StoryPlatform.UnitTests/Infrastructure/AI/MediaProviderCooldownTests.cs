@@ -8,6 +8,21 @@ namespace StoryPlatform.UnitTests.Infrastructure.AI;
 public sealed class MediaProviderCooldownTests
 {
     [Fact]
+    public async Task TtsQuotaFailureDefersOtherAudioRequests()
+    {
+        var clock = new Clock();
+        var gate = new MediaBranchProviderGate(new(), modality: "Audio", clock: clock);
+        var failure = await Assert.ThrowsAsync<TransientMediaGenerationException>(() => gate.ExecuteAsync(_ =>
+            throw new TransientMediaGenerationException("GEMINI_TTS_HTTP_429", retryAfter: TimeSpan.FromSeconds(40)), default));
+
+        Assert.Equal("GEMINI_TTS_HTTP_429", failure.ErrorCode);
+        Assert.True(failure.RetryAfter >= TimeSpan.FromSeconds(40));
+        var deferred = await Assert.ThrowsAsync<TransientMediaGenerationException>(() => gate.ExecuteAsync(_ =>
+            throw new InvalidOperationException("Provider must not be called during cooldown"), default));
+        Assert.Equal("MEDIA_PROVIDER_COOLDOWN", deferred.ErrorCode);
+    }
+
+    [Fact]
     public async Task Audio_circuit_waits_until_deadline_then_recovers_without_extending_on_blocked_calls()
     {
         var clock=new Clock();

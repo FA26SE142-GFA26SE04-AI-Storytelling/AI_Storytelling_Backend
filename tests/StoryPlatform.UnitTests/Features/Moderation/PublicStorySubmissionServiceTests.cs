@@ -42,6 +42,16 @@ public class PublicStorySubmissionServiceTests
     private Task<PublicStorySubmissionResultDto> SubmitAsync(int versionId = V1, int actorId = Creator) =>
         _sut.SubmitAsync(actorId, new SubmitPublicStoryRequestDto { StoryId = StoryId, StoryVersionId = versionId, ContentCategoryIds = [5] });
 
+    [Fact]
+    public async Task SubmissionInsideEventTransactionDoesNotCommitItsCallerTransaction()
+    {
+        _h.UnitOfWork.SetupGet(x => x.HasActiveTransaction).Returns(true);
+        await SubmitAsync();
+        _h.UnitOfWork.Verify(x => x.BeginTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _h.UnitOfWork.Verify(x => x.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+        Assert.Single(_h.Items);
+    }
+
     private ModerationItem AddItem(int id, ModerationItemStatus status, int versionId = V1, DateTime? decidedAt = null)
     {
         var item = new ModerationItem

@@ -15,6 +15,9 @@ namespace StoryPlatform.Application.Features.Moderation.Services;
 
 public class ModerationQueueService : IModerationQueueService
 {
+    private const string QueueIncludes =
+        $"{nameof(ModerationItem.Story)},{nameof(ModerationItem.StoryVersion)},{nameof(ModerationItem.CreatedByUser)},{nameof(ModerationItem.ClaimedByUser)},{nameof(ModerationItem.ContentReport)}";
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditLogWriter _auditLogWriter;
     private readonly IStoryUsageImpactReader? _storyImpactReader;
@@ -63,11 +66,17 @@ public class ModerationQueueService : IModerationQueueService
         var itemType = query.ItemType;
         var priority = query.Priority;
         var onlyOverdue = query.OnlyOverdue;
+        var onlyMyEventSubmissions = query.OnlyMyEventSubmissions;
         var hideOwnItems = actor.Role == UserRole.Moderator;
         var actorId = actor.Id;
         var now = DateTime.UtcNow;
         var pageIndex = Math.Max(query.PageIndex, 1);
         var pageSize = Math.Clamp(query.PageSize, 1, 100);
+
+        if (onlyMyEventSubmissions && itemType != null && itemType != ModerationItemType.PublicStoryReview)
+        {
+            return new PagedResult<ModerationItemSummaryDto>(Array.Empty<ModerationItemSummaryDto>(), 0, pageIndex, pageSize);
+        }
 
         // Chỉ liệt kê loại mục role được nhận: Administrator không thấy báo cáo nội dung và đánh giá truyện.
         var visibleTypes = new List<ModerationItemType>();
@@ -86,25 +95,126 @@ public class ModerationQueueService : IModerationQueueService
             && (!hideOwnItems || item.CreatedByUserId != actorId);
 
         var resubmissionCutoff = now - ModerationQueuePolicy.ResubmissionPriorityWindow;
-        // Priority lưu dạng chuỗi nên phải sắp theo biểu thức CASE, không sắp trực tiếp theo cột.
+        var hasEventRepos = _unitOfWork.Repository<EventSubmission>() != null && _unitOfWork.Repository<Event>() != null;
+
+        if (onlyMyEventSubmissions && !hasEventRepos)
+        {
+            return new PagedResult<ModerationItemSummaryDto>(Array.Empty<ModerationItemSummaryDto>(), 0, pageIndex, pageSize);
+        }
+
+        Dictionary<(int StoryId, int StoryVersionId), ActiveVersionEventInfo>? activeMap = null;
+        Expression<Func<ModerationItem, int>>? activeOrder = null;
+        var activeQueue = status is ModerationItemStatus.Pending or ModerationItemStatus.Claimed;
+        if (hasEventRepos && (itemType == null || itemType == ModerationItemType.PublicStoryReview))
+        {
+            if (activeQueue)
+            {
+                activeMap = await EventSubmissionModerationAccess.LoadActiveByVersionAsync(_unitOfWork, now, cancellationToken);
+                if (activeMap.Count > 0 || onlyMyEventSubmissions)
+                {
+                    var visible = activeMap.Where(pair => !hideOwnItems || pair.Value.CanModeratorReview(actorId)).ToArray();
+                    var hiddenVersionIds = activeMap.Keys.Except(visible.Select(pair => pair.Key))
+                        .Select(key => key.StoryVersionId).ToList();
+                    var visibleVersionIds = visible.Select(pair => pair.Key.StoryVersionId).ToList();
+                    filter = And(filter, item => onlyMyEventSubmissions
+                        ? item.ItemType == ModerationItemType.PublicStoryReview && item.StoryId.HasValue && item.StoryVersionId.HasValue
+                            && visibleVersionIds.Contains(item.StoryVersionId.Value)
+                        : item.ItemType != ModerationItemType.PublicStoryReview || !item.StoryId.HasValue || !item.StoryVersionId.HasValue
+                            || !hiddenVersionIds.Contains(item.StoryVersionId.Value));
+                    activeOrder = ActiveEventPriority(visible);
+                }
+            }
+            else if (onlyMyEventSubmissions)
+            {
+                var eventIds = _unitOfWork.Repository<Event>().Query().Where(e => !e.IsDeleted).Select(e => e.Id);
+                var submissions = _unitOfWork.Repository<EventSubmission>().Query()
+                    .Where(s => !s.IsDeleted && s.ParentSubmissionText == null && eventIds.Contains(s.EventId));
+                var assignedIds = hideOwnItems
+                    ? (await EventSubmissionModerationAccess.LoadAssignedEventIdsAsync(_unitOfWork, actorId, cancellationToken)).ToList()
+                    : [];
+                filter = And(filter, item => item.ItemType == ModerationItemType.PublicStoryReview
+                    && item.StoryId.HasValue && item.StoryVersionId.HasValue
+                    && submissions.Any(s => s.StoryId == item.StoryId
+                        && (s.CurrentStoryVersionId == item.StoryVersionId || s.LockedStoryVersionId == item.StoryVersionId))
+                    && (!hideOwnItems || !submissions.Any(s => s.StoryId == item.StoryId
+                        && (s.CurrentStoryVersionId == item.StoryVersionId || s.LockedStoryVersionId == item.StoryVersionId)
+                        && !assignedIds.Contains(s.EventId))));
+            }
+        }
         var (items, totalCount) = await _unitOfWork.Repository<ModerationItem>().GetPagedAsync(
             pageIndex,
             pageSize,
             filter,
-            orderBy: source => source
-                .OrderBy(item => item.IsResubmission
+            orderBy: source => (activeOrder == null ? source.OrderBy(item => 0) : source.OrderBy(activeOrder))
+                .ThenBy(item => item.IsResubmission
                                  && item.PreviousItem != null
                                  && item.PreviousItem.DecidedByUserId == actorId
                                  && item.CreatedAt > resubmissionCutoff ? 0 : 1)
                 .ThenBy(item => item.Priority == ModerationPriority.High ? 0
                     : item.Priority == ModerationPriority.Medium ? 1 : 2)
-                .ThenBy(item => item.SlaDueAt)
+                .ThenBy(item => activeOrder != null || onlyMyEventSubmissions ? item.SlaDueAt ?? DateTime.MaxValue : item.SlaDueAt)
                 .ThenBy(item => item.Id),
-            includeProperties: $"{nameof(ModerationItem.Story)},{nameof(ModerationItem.StoryVersion)},{nameof(ModerationItem.CreatedByUser)},{nameof(ModerationItem.ClaimedByUser)},{nameof(ModerationItem.ContentReport)}",
+            includeProperties: QueueIncludes,
             cancellationToken: cancellationToken);
 
-        return new PagedResult<ModerationItemSummaryDto>(
-            items.Select(item => MapSummary(item, now)).ToList(), totalCount, pageIndex, pageSize);
+        var summaries = items.Select(item => MapSummary(item, now)).ToList();
+        if (activeMap != null)
+        {
+            foreach (var summary in summaries)
+            {
+                if (summary.ItemType == nameof(ModerationItemType.PublicStoryReview)
+                    && summary.StoryId is int storyId && summary.StoryVersionId is int versionId
+                    && activeMap.TryGetValue((storyId, versionId), out var info))
+                {
+                    summary.EventSubmissions = info.Events;
+                }
+            }
+        }
+        if (hasEventRepos
+            && summaries.Count > 0
+            && status is not (ModerationItemStatus.Pending or ModerationItemStatus.Claimed)
+            && (itemType == null || itemType == ModerationItemType.PublicStoryReview))
+        {
+            var historicalMap = await EventSubmissionModerationAccess.LoadHistoricalMapForItemsAsync(
+                _unitOfWork, items, cancellationToken);
+            foreach (var summary in summaries)
+            {
+                if (summary.StoryId.HasValue
+                    && summary.StoryVersionId.HasValue
+                    && historicalMap.TryGetValue((summary.StoryId.Value, summary.StoryVersionId.Value), out var linked))
+                {
+                    summary.EventSubmissions = linked;
+                }
+            }
+        }
+
+        return new PagedResult<ModerationItemSummaryDto>(summaries, totalCount, pageIndex, pageSize);
+    }
+
+    private static Expression<Func<ModerationItem, bool>> And(
+        Expression<Func<ModerationItem, bool>> first, Expression<Func<ModerationItem, bool>> second)
+    {
+        var combined = Expression.AndAlso(first.Body, Expression.Invoke(second, first.Parameters[0]));
+        return Expression.Lambda<Func<ModerationItem, bool>>(combined, first.Parameters);
+    }
+
+    private static Expression<Func<ModerationItem, int>> ActiveEventPriority(
+        IEnumerable<KeyValuePair<(int StoryId, int StoryVersionId), ActiveVersionEventInfo>> visible)
+    {
+        var deadlineGroups = visible.GroupBy(pair => pair.Value.NearestReviewCutoffAt ?? DateTime.MaxValue)
+            .OrderBy(group => group.Key).ToArray();
+        var item = Expression.Parameter(typeof(ModerationItem), "item");
+        Expression rank = Expression.Constant(deadlineGroups.Length);
+        for (var i = deadlineGroups.Length - 1; i >= 0; i--)
+        {
+            var versionIds = deadlineGroups[i].Select(pair => pair.Key.StoryVersionId).ToList();
+            Expression<Func<ModerationItem, bool>> matches = entry =>
+                entry.ItemType == ModerationItemType.PublicStoryReview && entry.StoryId.HasValue && entry.StoryVersionId.HasValue
+                && versionIds.Contains(entry.StoryVersionId.Value);
+            rank = Expression.Condition(Expression.Invoke(matches, item), Expression.Constant(i), rank);
+        }
+
+        return Expression.Lambda<Func<ModerationItem, int>>(rank, item);
     }
 
     public async Task<ModerationItemDetailDto> ClaimAsync(
@@ -130,24 +240,87 @@ public class ModerationQueueService : IModerationQueueService
             cancellationToken);
 
         var now = DateTime.UtcNow;
-        item.Status = ModerationItemStatus.Claimed;
-        item.ClaimedByUserId = actor.Id;
-        item.ClaimedAt = now;
-        // RowVersion là token đồng thời: nếu người khác vừa nhận thì SaveChanges ném ConflictException (409).
-        item.RowVersion += 1;
-        repository.Update(item);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        var hasEventRepos = item.ItemType == ModerationItemType.PublicStoryReview
+                            && item.StoryId.HasValue
+                            && item.StoryVersionId.HasValue
+                            && _unitOfWork.Repository<EventSubmission>() != null
+                            && _unitOfWork.Repository<Event>() != null;
 
-        await _auditLogWriter.LogAsync(
-            actor.Id, "ModerationItemClaimed", nameof(ModerationItem), item.Id,
-            beforeState: new { status = ModerationItemStatus.Pending.ToString() },
-            afterState: new { status = ModerationItemStatus.Claimed.ToString(), claimedBy = actor.Id },
-            cancellationToken: cancellationToken);
+        if (hasEventRepos)
+        {
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                await EventSubmissionModerationAccess.AcquireEventAndStoryLocksAsync(
+                    _unitOfWork, item.StoryId!.Value, item.StoryVersionId!.Value, now, cancellationToken);
+
+                var fresh = await repository.FirstOrDefaultAsync(x => x.Id == itemId, cancellationToken: cancellationToken)
+                            ?? throw new NotFoundException("Mục kiểm duyệt", itemId);
+                if (fresh.Status != ModerationItemStatus.Pending)
+                {
+                    throw new ConflictException("Mục này đã có người nhận hoặc đã xử lý xong.");
+                }
+
+                if (fresh.RowVersion != item.RowVersion)
+                {
+                    _unitOfWork.DiscardTrackedChanges();
+                    item = await repository.GetByIdAsync(itemId, cancellationToken)
+                           ?? throw new NotFoundException("Mục kiểm duyệt", itemId);
+                    actor = await RequireStaffAsync(actorUserId, cancellationToken);
+                }
+
+                var access = await EventSubmissionModerationAccess.CheckActorAccessAsync(
+                    _unitOfWork, actor, item, now, cancellationToken);
+                if (!access.IsAllowed)
+                {
+                    throw new ForbiddenException(access.DenialReason!);
+                }
+
+                item.Status = ModerationItemStatus.Claimed;
+                item.ClaimedByUserId = actor.Id;
+                item.ClaimedAt = now;
+                item.RowVersion += 1;
+                repository.Update(item);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+                await _auditLogWriter.LogAsync(
+                    actor.Id, "ModerationItemClaimed", nameof(ModerationItem), item.Id,
+                    beforeState: new { status = ModerationItemStatus.Pending.ToString() },
+                    afterState: new { status = ModerationItemStatus.Claimed.ToString(), claimedBy = actor.Id },
+                    cancellationToken: cancellationToken);
+
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                _unitOfWork.DiscardTrackedChanges();
+                throw;
+            }
+        }
+        else
+        {
+            item.Status = ModerationItemStatus.Claimed;
+            item.ClaimedByUserId = actor.Id;
+            item.ClaimedAt = now;
+            // RowVersion là token đồng thời: nếu người khác vừa nhận thì SaveChanges ném ConflictException (409).
+            item.RowVersion += 1;
+            repository.Update(item);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            await _auditLogWriter.LogAsync(
+                actor.Id, "ModerationItemClaimed", nameof(ModerationItem), item.Id,
+                beforeState: new { status = ModerationItemStatus.Pending.ToString() },
+                afterState: new { status = ModerationItemStatus.Claimed.ToString(), claimedBy = actor.Id },
+                cancellationToken: cancellationToken);
+        }
 
         await HydrateSummaryRelationsAsync(item, cancellationToken);
         var claimed = MapDetail(item, now);
         claimed.ClaimedByName = DisplayName(actor);
         claimed.StoryImpact = await ReadStoryImpactAsync(item, cancellationToken);
+        claimed.EventSubmissions = await EventSubmissionModerationAccess.LoadLinkedForItemAsync(
+            _unitOfWork, item, now, cancellationToken);
         return claimed;
     }
 
@@ -170,6 +343,18 @@ public class ModerationQueueService : IModerationQueueService
             throw new ConflictException("Mục đã quá 2 giờ kể từ lúc nhận và sẽ được trả về hàng đợi. Vui lòng nhận lại.");
         }
 
+        if (item.ItemType == ModerationItemType.PublicStoryReview
+            && _unitOfWork.Repository<EventSubmission>() != null
+            && _unitOfWork.Repository<Event>() != null)
+        {
+            var access = await EventSubmissionModerationAccess.CheckActorAccessAsync(
+                _unitOfWork, actor, item, now, cancellationToken);
+            if (!access.IsAllowed)
+            {
+                throw new ForbiddenException(access.DenialReason!);
+            }
+        }
+
         await _auditLogWriter.LogAsync(
             actor.Id, "ModerationItemOpened", nameof(ModerationItem), item.Id,
             beforeState: null, afterState: new { itemType = item.ItemType.ToString() },
@@ -179,6 +364,8 @@ public class ModerationQueueService : IModerationQueueService
         var opened = MapDetail(item, now);
         opened.ClaimedByName = DisplayName(actor);
         opened.StoryImpact = await ReadStoryImpactAsync(item, cancellationToken);
+        opened.EventSubmissions = await EventSubmissionModerationAccess.LoadLinkedForItemAsync(
+            _unitOfWork, item, now, cancellationToken);
         return opened;
     }
 

@@ -110,6 +110,22 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<PaymentReconciliationException> PaymentReconciliationExceptions => Set<PaymentReconciliationException>();
     public DbSet<CreditUsage> CreditUsages => Set<CreditUsage>();
 
+    // Storytelling Events & Reward Campaigns
+    public DbSet<Event> Events => Set<Event>();
+    public DbSet<EventTrack> EventTracks => Set<EventTrack>();
+    public DbSet<EventActivity> EventActivities => Set<EventActivity>();
+    public DbSet<EventRuleVersion> EventRuleVersions => Set<EventRuleVersion>();
+    public DbSet<EventTaskDefinition> EventTaskDefinitions => Set<EventTaskDefinition>();
+    public DbSet<EventParticipation> EventParticipations => Set<EventParticipation>();
+    public DbSet<EventSubmission> EventSubmissions => Set<EventSubmission>();
+    public DbSet<EventStory> EventStories => Set<EventStory>();
+    public DbSet<EventTaskProgress> EventTaskProgresses => Set<EventTaskProgress>();
+    public DbSet<EventAppeal> EventAppeals => Set<EventAppeal>();
+    public DbSet<EventEvaluation> EventEvaluations => Set<EventEvaluation>();
+    public DbSet<EventAward> EventAwards => Set<EventAward>();
+    public DbSet<EventVote> EventVotes => Set<EventVote>();
+    public DbSet<RewardFulfillment> RewardFulfillments => Set<RewardFulfillment>();
+
     // Khóa ASP.NET Data Protection: lưu DB để mọi instance Cloud Run dùng chung và còn sau mỗi lần deploy.
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 

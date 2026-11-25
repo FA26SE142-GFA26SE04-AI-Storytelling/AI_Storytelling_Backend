@@ -49,6 +49,9 @@ public sealed class AccessPolicy(IUnitOfWork uow, IPermissionService permissions
         return actor;
     }
 
+    public Task<bool> RoleHoldsAsync(string roleCode, string permission, CancellationToken cancellationToken = default) =>
+        permissions.RoleHasAsync(roleCode, permission, cancellationToken);
+
     public async Task<IReadOnlyList<PermissionAccessDto>> DescribeAsync(string roleCode, CancellationToken cancellationToken = default)
     {
         var codes = (await permissions.GetForRoleAsync(roleCode, cancellationToken)).Order(StringComparer.Ordinal).ToList();

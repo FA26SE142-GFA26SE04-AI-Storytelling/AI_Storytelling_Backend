@@ -39,7 +39,7 @@ public static class PermissionCatalog
         P(Permissions.Shared.StoryRatingReport, SharedGroup, "Báo cáo một nhận xét truyện"),
         P(Permissions.Shared.StoryReviewApprove, SharedGroup, "Duyệt hoặc từ chối nội dung truyện AI trước khi đến trẻ"),
         P(Permissions.Shared.StoryPackageConfirm, SharedGroup, "Xác nhận gói truyện"),
-        P(Permissions.Shared.CommunityView, SharedGroup, "Đọc thư viện truyện cộng đồng (với nhân viên: chỉ ảnh bìa và tên tác giả ở màn Rà soát thư viện)"),
+        P(Permissions.Shared.CommunityView, SharedGroup, "Đọc thư viện truyện cộng đồng"),
 
         P(Permissions.Creator.ApplicationSubmit, CreatorGroup, "Gửi lại đơn đăng ký nhà sáng tạo"),
         Own(Permissions.Creator.ApplicationViewOwn, CreatorGroup, "Xem đơn đăng ký nhà sáng tạo của mình"),

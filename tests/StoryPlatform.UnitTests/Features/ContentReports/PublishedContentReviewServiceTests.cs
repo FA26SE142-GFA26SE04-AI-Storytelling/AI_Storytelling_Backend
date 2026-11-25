@@ -5,6 +5,7 @@ using StoryPlatform.Api.Controllers;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ContentReports.DTOs;
 using StoryPlatform.Application.Features.ContentReports.Services;
+using StoryPlatform.Application.Features.Stories.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using Xunit;
@@ -43,6 +44,24 @@ public class PublishedContentReviewServiceTests
         Assert.Equal(new[] { 30, PublicStory }, result.Items.Select(item => item.Id));
         Assert.All(result.Items, item => Assert.Equal("PublicLibrary", item.Source));
         Assert.All(result.Items, item => Assert.Null(item.StoryCount));
+    }
+
+    [Fact]
+    public async Task ListAsync_PublicLibrary_ReturnsSignedCoverAndAuthorName()
+    {
+        var story = _h.AddPublicStory(30, "9-10", DateTime.UtcNow);
+        story.CoverImageUrl = "scene:1";
+        var covers = new Mock<IStoryCoverResolver>();
+        covers.Setup(c => c.ResolveAsync(It.IsAny<IEnumerable<string?>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(value => value is null ? null : "signed:" + value);
+        var sut = new PublishedContentReviewService(_h.UnitOfWork.Object, _h.Audit.Object, covers: covers.Object);
+
+        var item = (await sut.ListAsync(Moderator, new PublishedContentQueryDto { Source = PublishedContentSource.PublicLibrary }))
+            .Items.Single(x => x.Id == 30);
+
+        Assert.Equal("signed:scene:1", item.CoverImageUrl);
+        var author = _h.Users.Single(u => u.Id == ContentReportHarness.CreatorId);
+        Assert.Equal(string.IsNullOrWhiteSpace(author.FullName) ? author.Username : author.FullName, item.AuthorName);
     }
 
     [Fact]

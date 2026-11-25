@@ -241,6 +241,29 @@ public class EventManagementTests
     }
 
     [Fact]
+    public async Task SafetyWarningCategory_CannotBeTheEventTopic_OnCreateOrUpdate()
+    {
+        var store = new InMemoryUnitOfWork();
+        store.Seed(new ContentCategory { Id = 1, IsActive = true });
+        store.Seed(new ContentCategory { Id = 7, IsActive = true, Group = ContentCategoryGroup.SafetyWarning });
+        var now = DateTime.UtcNow;
+        CreateEventRequestDto Request(int categoryId) => new()
+        {
+            Title = "Chủ đề", Description = "Mô tả", MainCategoryId = categoryId, ConfigVersion = EventConfigVersion.ActivityBased,
+            OpensAt = now, ClosesAt = now.AddDays(3),
+            Activities = [new UpsertEventActivityDto { ActivityType = EventActivityType.Submission, AllowedAudience = EventAudience.Creator, RegistrationStartAt = now, RegistrationEndAt = now.AddDays(1), StartAt = now, EndAt = now.AddDays(2) }]
+        };
+        var service = new EventManagementService(store, _audit.Object);
+
+        var created = await service.CreateEventAsync(9, Request(1));
+        var onCreate = await Assert.ThrowsAsync<BadRequestException>(() => service.CreateEventAsync(9, Request(7)));
+        var onUpdate = await Assert.ThrowsAsync<BadRequestException>(() => service.UpdateEventAsync(9, created.Id, Request(7)));
+
+        Assert.Equal("Danh mục chính của sự kiện không hợp lệ.", onCreate.Message);
+        Assert.Equal(onCreate.Message, onUpdate.Message);
+    }
+
+    [Fact]
     public async Task ActivityAward_PlatformCreditsZero_ThrowsBadRequest()
     {
         var store = new InMemoryUnitOfWork();

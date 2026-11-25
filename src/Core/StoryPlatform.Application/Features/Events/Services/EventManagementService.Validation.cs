@@ -57,7 +57,8 @@ public partial class EventManagementService
 
     private async Task ValidateCategoryAsync(int categoryId, CancellationToken ct)
     {
-        if (!await _uow.Repository<ContentCategory>().ExistsAsync(x => x.Id == categoryId && x.IsActive, ct))
+        if (!await _uow.Repository<ContentCategory>().ExistsAsync(
+                x => x.Id == categoryId && x.IsActive && x.Group != ContentCategoryGroup.SafetyWarning, ct))
             throw new BadRequestException("Danh mục chính của sự kiện không hợp lệ.");
     }
 

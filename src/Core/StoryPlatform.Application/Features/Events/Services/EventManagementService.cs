@@ -69,8 +69,7 @@ public partial class EventManagementService : IEventManagementService
         => InTransactionAsync(null, async () =>
         {
             ValidateCreateRequest(request);
-            var categoryExists = await _uow.Repository<ContentCategory>().ExistsAsync(c => c.Id == request.MainCategoryId && c.IsActive, ct);
-            if (!categoryExists) throw new BadRequestException("Danh mục chính của sự kiện không hợp lệ.");
+            await ValidateCategoryAsync(request.MainCategoryId, ct);
 
             var ev = new Event
             {

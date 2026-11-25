@@ -281,6 +281,41 @@ public class EventManagementTests
     }
 
     [Fact]
+    public async Task TitleLongerThanTheColumn_IsRejectedOnCreateAndUpdate()
+    {
+        var store = new InMemoryUnitOfWork();
+        store.Seed(new ContentCategory { Id = 1, IsActive = true });
+        var now = DateTime.UtcNow;
+        CreateEventRequestDto Request(int length) => new()
+        {
+            Title = " " + new string('a', length) + " ", Description = "Mô tả", MainCategoryId = 1, ConfigVersion = EventConfigVersion.ActivityBased,
+            OpensAt = now, ClosesAt = now.AddDays(3),
+            Activities = [new UpsertEventActivityDto { ActivityType = EventActivityType.Submission, AllowedAudience = EventAudience.Creator, RegistrationStartAt = now, RegistrationEndAt = now.AddDays(1), StartAt = now, EndAt = now.AddDays(2) }]
+        };
+        var service = new EventManagementService(store, _audit.Object);
+
+        var created = await service.CreateEventAsync(9, Request(200));
+        var onCreate = await Assert.ThrowsAsync<BadRequestException>(() => service.CreateEventAsync(9, Request(201)));
+        await Assert.ThrowsAsync<BadRequestException>(() => service.UpdateEventAsync(9, created.Id, Request(201)));
+
+        Assert.Equal("Tên sự kiện không được vượt quá 200 ký tự.", onCreate.Message);
+    }
+
+    [Theory]
+    [InlineData(200)]
+    [InlineData(20)]
+    public async Task ClonedDraftTitle_FitsTheColumn(int length)
+    {
+        var store = new InMemoryUnitOfWork();
+        store.Seed(new Event { Id = 1, Title = new string('a', length), Status = EventStatus.Draft, ConfigVersion = EventConfigVersion.LegacyRoleBased, AssignedModeratorId = 9 });
+
+        var result = await new EventManagementService(store, _audit.Object).CloneLegacyDraftToActivityBasedAsync(9, 1);
+
+        Assert.EndsWith("a (Bản hoạt động)", result.Draft.Title);
+        Assert.Equal(Math.Min(200, length + " (Bản hoạt động)".Length), result.Draft.Title.Length);
+    }
+
+    [Fact]
     public async Task EventsWithTheSameTitle_CreatedInTheSameSecond_GetDifferentSlugs()
     {
         var store = new InMemoryUnitOfWork();

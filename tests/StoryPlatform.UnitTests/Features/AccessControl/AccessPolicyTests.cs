@@ -175,6 +175,72 @@ public sealed class AccessPolicyTests
         Assert.Equal(ModeratorId, (await Policy().EnsureAsync(ModeratorId, Permissions.Review.RoadmapTemplateAuthor)).Id);
     }
 
+    private async Task<Dictionary<string, (string State, string? Reason)>> Describe(string role, IPermissionService? permissions = null) =>
+        (await Policy(permissions).DescribeAsync(role)).ToDictionary(x => x.Code, x => (x.State, x.Reason));
+
+    [Fact]
+    public async Task Describe_Admin_BlocksConfigAndLimitsQueueWhileModeratorActive()
+    {
+        var access = await Describe(RoleCodes.Administrator);
+
+        Assert.Equal(("Blocked", AccessPolicy.NoActiveModeratorMessage), access[Permissions.Review.GuideManage]);
+        Assert.Equal(("Blocked", AccessPolicy.NoActiveModeratorMessage), access[Permissions.Review.RoadmapTemplateAuthor]);
+        Assert.Equal(("Limited", AccessPolicy.AdminFallbackLimitedReason), access[Permissions.Review.GrayZone]);
+        Assert.Equal(("Allowed", null), access[Permissions.Admin.AuditView]);
+        Assert.False(access.ContainsKey(Permissions.Moderation.ReportReview));
+    }
+
+    [Fact]
+    public async Task Describe_Admin_AllowsEverythingHeldWhenNoActiveModerator()
+    {
+        DeactivateModerator();
+
+        Assert.All((await Describe(RoleCodes.Administrator)).Values, x => Assert.Equal(("Allowed", (string?)null), x));
+    }
+
+    [Fact]
+    public async Task Describe_Admin_AllowedWhenModeratorRoleLostThatPermission()
+    {
+        var permissions = new Mock<IPermissionService>();
+        permissions.Setup(p => p.GetForRoleAsync(RoleCodes.Administrator, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new HashSet<string> { Permissions.Review.GuideManage, Permissions.Review.RubricManage });
+        permissions.Setup(p => p.RoleHasAsync(RoleCodes.Moderator, Permissions.Review.RubricManage, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var access = await Describe(RoleCodes.Administrator, permissions.Object);
+
+        Assert.Equal("Allowed", access[Permissions.Review.GuideManage].State);
+        Assert.Equal("Blocked", access[Permissions.Review.RubricManage].State);
+    }
+
+    [Theory]
+    [InlineData(RoleCodes.Moderator)]
+    [InlineData(RoleCodes.User)]
+    [InlineData(RoleCodes.CreatorApplicant)]
+    public async Task Describe_OtherRoles_ListTheirPermissionsAsAllowed(string role)
+    {
+        var access = await Describe(role);
+
+        Assert.Equal(DefaultRolePermissions.Map[role].Order(StringComparer.Ordinal), access.Keys.Order(StringComparer.Ordinal));
+        Assert.All(access.Values, x => Assert.Equal("Allowed", x.State));
+    }
+
+    /// <summary>Trạng thái hiển thị phải trùng với việc chặn thật của EnsureAsync.</summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Describe_AgreesWithEnsure_ForModerationConfig(bool moderatorActive)
+    {
+        if (!moderatorActive) DeactivateModerator();
+        var access = await Describe(RoleCodes.Administrator);
+        foreach (var code in new[] { Permissions.Review.GuideManage, Permissions.Review.RubricManage,
+                     Permissions.Review.WishCardManage, Permissions.Review.RoadmapTemplateAuthor })
+        {
+            var error = await Record.ExceptionAsync(() => Policy().EnsureAsync(AdminId, code));
+            Assert.Equal(access[code].State == "Blocked", error is ForbiddenException);
+        }
+    }
+
     [Fact]
     public void Catalog_MarksClaimedWorkAsAssignedScope()
     {

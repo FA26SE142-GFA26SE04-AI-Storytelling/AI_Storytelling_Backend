@@ -1,3 +1,4 @@
+using StoryPlatform.Application.Features.AccessControl.DTOs;
 using StoryPlatform.Domain.Entities;
 
 namespace StoryPlatform.Application.Features.AccessControl.Interfaces;
@@ -18,4 +19,10 @@ public interface IAccessPolicy
         AccessMode mode = AccessMode.Write,
         string? deniedMessage = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Các quyền role đang giữ kèm trạng thái lúc này, tính từ chính các điều kiện mà <see cref="EnsureAsync"/> chặn,
+    /// để giao diện ẩn hoặc khoá nút kèm lý do. Chỉ phục vụ hiển thị.
+    /// </summary>
+    Task<IReadOnlyList<PermissionAccessDto>> DescribeAsync(string roleCode, CancellationToken cancellationToken = default);
 }

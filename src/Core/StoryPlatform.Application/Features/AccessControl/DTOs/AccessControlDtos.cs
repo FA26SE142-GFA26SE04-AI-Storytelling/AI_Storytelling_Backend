@@ -18,6 +18,12 @@ public sealed record RolePermissionsDto(string RoleCode, IReadOnlyList<string> P
     IReadOnlyDictionary<string, IReadOnlyList<string>> Conditions, IReadOnlyList<string> DefaultCodes,
     IReadOnlyDictionary<string, string> Scopes, IReadOnlyDictionary<string, IReadOnlyList<string>> ConditionCodes);
 
+/// <param name="State">
+/// <c>Allowed</c>: dùng được; <c>Limited</c>: chỉ dùng được trên một số mục; <c>Blocked</c>: có quyền nhưng lúc này không ghi được (vẫn xem được).
+/// </param>
+/// <param name="Reason">Lý do khi bị giới hạn hoặc khoá.</param>
+public sealed record PermissionAccessDto(string Code, string State, string? Reason);
+
 public sealed class UpdateRolePermissionsRequest
 {
     /// <summary>Toàn bộ permission role sẽ giữ sau khi lưu (thay cả tập).</summary>

@@ -1,6 +1,5 @@
 using StoryPlatform.Api.Extensions;
 using Microsoft.AspNetCore.RateLimiting;
-using System.Linq;
 using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,6 +12,7 @@ using StoryPlatform.Application.Features.AuditLogs.DTOs;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Api.Authorization;
 using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.DTOs;
 using StoryPlatform.Application.Features.AccessControl.Interfaces;
 
 namespace StoryPlatform.Api.Controllers;
@@ -190,18 +190,16 @@ public class AuthController : BaseApiController
     }
 
     /// <summary>
-    /// Mã quyền role của tài khoản đang đăng nhập đang giữ, để giao diện ẩn mục không dùng được.
+    /// Quyền role của tài khoản đang đăng nhập đang giữ, kèm trạng thái và lý do, để giao diện ẩn hoặc khoá nút.
     /// Chỉ phục vụ hiển thị; mỗi API vẫn tự kiểm quyền.
     /// </summary>
-    [HttpGet("me/permissions")]
+    [HttpGet("me/access")]
     [Authorize]
-    public async Task<ActionResult<ApiResponse<IReadOnlyList<string>>>> GetMyPermissions(
-        [FromServices] IPermissionService permissions, CancellationToken cancellationToken)
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<PermissionAccessDto>>>> GetMyAccess(
+        [FromServices] IAccessPolicy accessPolicy, CancellationToken cancellationToken)
     {
         var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
-        IReadOnlyList<string> codes = (await permissions.GetForRoleAsync(role, cancellationToken))
-            .Order(StringComparer.Ordinal).ToList();
-        return HandleResult(codes, "Lấy quyền của tài khoản thành công.");
+        return HandleResult(await accessPolicy.DescribeAsync(role, cancellationToken), "Lấy quyền của tài khoản thành công.");
     }
 
     /// <summary>Sửa họ tên và ảnh đại diện của tài khoản đang đăng nhập.</summary>

@@ -11,16 +11,16 @@ using Xunit;
 namespace StoryPlatform.IntegrationTests.Api;
 
 /// <summary>Frontend ẩn menu theo quyền của chính người đăng nhập; quyền bị thu phải biến mất khỏi danh sách.</summary>
-public sealed class MyPermissionsApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
+public sealed class MyAccessApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
 {
-    private const string Url = "/api/v1/Auth/me/permissions";
+    private const string Url = "/api/v1/Auth/me/access";
 
     private static async Task<List<string>> ReadAsync(HttpClient client)
     {
         var response = await client.GetAsync(Url);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         return (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("data")
-            .EnumerateArray().Select(x => x.GetString()!).ToList();
+            .EnumerateArray().Select(x => x.GetProperty("code").GetString()!).ToList();
     }
 
     [Fact]

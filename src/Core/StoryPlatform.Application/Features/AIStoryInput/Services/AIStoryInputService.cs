@@ -77,6 +77,7 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
         return SubmitAsync(userId, new SubmitAIStoryInputRequestDto
         {
             CreatorAudience = new(request.AgeBand, request.ReadingLevel),
+            EventId = request.EventId,
             ExistingStoryId = request.ExistingStoryId, IdempotencyKey = request.IdempotencyKey,
             OutputMode = request.OutputMode, Topic = request.Topic, Genre = request.Genre,
             GenerationMode = request.GenerationMode, QuizQuestionCount = request.QuizQuestionCount,
@@ -118,7 +119,7 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
         if (quick && outputMode == StoryOutputMode.Learning)
             profile = profile with { QuizTarget = request.QuizQuestionCount ?? 3 };
         normalized = normalized with { VocabularyLevel = context.VocabularyLevel, Language = context.Language, TargetLength = profile.TargetWords };
-        var pinnedContext = context.Snapshot with { LearningProfile = profile, QuickGeneration = quick };
+        var pinnedContext = context.Snapshot with { LearningProfile = profile, QuickGeneration = quick, EventId = request.EventId };
         context = context with { Snapshot = pinnedContext, Fingerprint = Fingerprint(pinnedContext) };
         ValidateAgainstContext(normalized, context);
 
@@ -147,7 +148,14 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
         }
 
         // Lượt AI: phụ huynh dùng lượt của tài khoản chủ hồ sơ trẻ, Creator dùng hạn mức tháng rồi lượt Gói Creator (Luồng 2, 2f).
-        if (creator) await _tokenQuotaService.EnsureCreatorWithinQuotaAsync(userId, cancellationToken);
+        if (request.EventId.HasValue)
+        {
+            if (creator)
+                await _tokenQuotaService.EnsureCreatorEventWithinQuotaAsync(userId, request.EventId.Value, cancellationToken);
+            else
+                await _tokenQuotaService.EnsureParentEventWithinQuotaAsync(userId, request.ChildProfileId, request.EventId.Value, cancellationToken);
+        }
+        else if (creator) await _tokenQuotaService.EnsureCreatorWithinQuotaAsync(userId, cancellationToken);
         else await _tokenQuotaService.EnsureWithinQuotaAsync(request.ChildProfileId, cancellationToken);
 
         Story story;
@@ -237,7 +245,14 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
             generationRequest.StoryId = story.Id;
             await requestRepository.AddAsync(generationRequest, cancellationToken);
             // Giữ 1 lượt cho truyện; trừ chính thức khi AI sinh xong nội dung, trả khi lỗi hoặc bị chặn.
-            if (creator) await _tokenQuotaService.IncrementCreatorUsageAsync(userId, story, cancellationToken);
+            if (request.EventId.HasValue)
+            {
+                if (creator)
+                    await _tokenQuotaService.IncrementCreatorEventUsageAsync(userId, story, request.EventId.Value, cancellationToken);
+                else
+                    await _tokenQuotaService.IncrementParentEventUsageAsync(userId, request.ChildProfileId, story, request.EventId.Value, cancellationToken);
+            }
+            else if (creator) await _tokenQuotaService.IncrementCreatorUsageAsync(userId, story, cancellationToken);
             else await _tokenQuotaService.IncrementUsageAsync(request.ChildProfileId, story, cancellationToken);
             if (sourceWish is not null)
                 await AcceptWishAsync(userId, sourceWish, story, generationRequest, cancellationToken);
@@ -356,7 +371,7 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
             await _unitOfWork.AcquireTransactionLockAsync(storyId, cancellationToken);
             await _aiActivity.AdmitStoryAsync(userId, story, AiActivityMode.FullCreation, cancellationToken);
             // Lượt của yêu cầu bỏ dở có thể đã được trả (job dọn lượt): thử lại phải giữ lại (409 nếu hết).
-            await _tokenQuotaService.HoldStoryCreditForRetryAsync(storyId, cancellationToken);
+            await _tokenQuotaService.HoldStoryCreditForRetryAsync(storyId, cancellationToken, requestId);
             _unitOfWork.Repository<StoryGenerationRequest>().Update(request);
             RotateConcurrencyToken(request);
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
@@ -647,7 +662,7 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
 
     private static EffectiveContext WithPinnedGenerationSettings(EffectiveContext context, AIStoryInputContextSnapshot? original)
     {
-        var snapshot = context.Snapshot with { LearningProfile = original?.LearningProfile, QuickGeneration = original?.QuickGeneration == true };
+        var snapshot = context.Snapshot with { LearningProfile = original?.LearningProfile, QuickGeneration = original?.QuickGeneration == true, EventId = original?.EventId };
         return context with { Snapshot = snapshot, Fingerprint = Fingerprint(snapshot) };
     }
 

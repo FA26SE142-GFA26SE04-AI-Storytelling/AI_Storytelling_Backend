@@ -13,6 +13,7 @@ using StoryPlatform.Application.Features.ReadingSessions;
 using StoryPlatform.Domain.Enums;
 using StoryPlatform.Infrastructure.Persistence.Configurations;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
+using StoryPlatform.Application.Features.Events.Interfaces;
 using StoryPlatform.UnitTests.Features.ChildRoadmaps;
 using Xunit;
 
@@ -1354,6 +1355,51 @@ public class ChildReadingServiceTests
         _h.UnitOfWork.Verify(u => u.RollbackTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
         _recorder.Verify(r => r.RecordSessionCompletedAsync(
             It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CompleteReading_EventHookThrows_StillReturnsCompleted()
+    {
+        var session = _h.AddSession();
+        var eventHooks = new Mock<IEventIntegrationHooks>();
+        eventHooks.Setup(h => h.RecordActivityForActiveEventsAsync(
+                It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<int?>(),
+                It.IsAny<TaskVerifierType>(), It.IsAny<int?>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("event hook failed"));
+        var sut = new ChildReadingService(_h.UnitOfWork.Object, _eligibility.Object, _recorder.Object, _rewards.Object,
+            eventHooks: eventHooks.Object);
+
+        var result = await sut.CompleteAsync(ReadingHarness.Child, session.Id);
+
+        Assert.Equal(session.Id, result.SessionId);
+        Assert.Equal(SessionStatus.Completed, session.Status);
+    }
+
+    [Fact]
+    public async Task CompleteReading_SecondCall_RetriesEventHook()
+    {
+        var session = _h.AddSession();
+        var eventHooks = new Mock<IEventIntegrationHooks>();
+        var calls = 0;
+        eventHooks.Setup(h => h.RecordActivityForActiveEventsAsync(
+                It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<int?>(),
+                It.IsAny<TaskVerifierType>(), It.IsAny<int?>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
+            .Returns(() =>
+            {
+                calls++;
+                if (calls == 1)
+                {
+                    throw new InvalidOperationException("transient event failure");
+                }
+                return Task.CompletedTask;
+            });
+        var sut = new ChildReadingService(_h.UnitOfWork.Object, _eligibility.Object, _recorder.Object, _rewards.Object,
+            eventHooks: eventHooks.Object);
+
+        await sut.CompleteAsync(ReadingHarness.Child, session.Id);
+        await sut.CompleteAsync(ReadingHarness.Child, session.Id);
+
+        Assert.Equal(2, calls);
     }
 
     [Fact]

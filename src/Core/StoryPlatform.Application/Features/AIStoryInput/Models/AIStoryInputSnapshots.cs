@@ -47,6 +47,9 @@ public sealed record AIStoryInputContextSnapshot(
     int? CreatorUserId = null)
 {
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public int? EventId { get; init; }
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public StoryPlatform.Contracts.AI.Models.LearningGenerationProfile? LearningProfile { get; init; }
 
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]

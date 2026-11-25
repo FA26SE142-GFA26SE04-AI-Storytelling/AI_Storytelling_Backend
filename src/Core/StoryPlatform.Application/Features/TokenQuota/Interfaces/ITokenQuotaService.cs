@@ -34,7 +34,7 @@ public interface ITokenQuotaService
     /// Thử lại sau khi job AI lỗi đã trả lượt: giữ lại 1 lượt cho truyện (409 nếu hết). Không làm gì và trả false
     /// nếu truyện đang giữ lượt hoặc đã được trừ lượt.
     /// </summary>
-    Task<bool> HoldStoryCreditForRetryAsync(int storyId, CancellationToken cancellationToken = default);
+    Task<bool> HoldStoryCreditForRetryAsync(int storyId, CancellationToken cancellationToken = default, int? requestId = null);
 
     /// <summary>
     /// Worker: trả lượt đang giữ của truyện bỏ dở — lượt giữ và truyện đều không đổi từ <paramref name="maxHoldAge"/> trở lên,
@@ -63,6 +63,11 @@ public interface ITokenQuotaService
     /// <summary>Creator gửi yêu cầu tạo truyện AI: 409 nếu hết lượt (hạn mức tháng và lượt Gói Creator).</summary>
     Task EnsureCreatorWithinQuotaAsync(int creatorUserId, CancellationToken cancellationToken = default);
 
+    Task EnsureCreatorEventWithinQuotaAsync(int creatorUserId, int eventId, CancellationToken cancellationToken = default);
+    Task IncrementCreatorEventUsageAsync(int creatorUserId, Story story, int eventId, CancellationToken cancellationToken = default);
+    Task EnsureParentEventWithinQuotaAsync(int userId, int childProfileId, int eventId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    Task IncrementParentEventUsageAsync(int userId, int childProfileId, Story story, int eventId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
     /// <summary>Giữ 1 lượt AI của Creator cho <paramref name="story"/>, hạn mức tháng trước; như <see cref="IncrementUsageAsync"/>.</summary>
     Task IncrementCreatorUsageAsync(int creatorUserId, Story? story, CancellationToken cancellationToken = default);
 
@@ -71,7 +76,8 @@ public interface ITokenQuotaService
     /// (<paramref name="changesRequestedItemId"/>) thì không trừ thêm. Chạy trong transaction của nơi gọi.
     /// </summary>
     Task ChargeSubmissionAsync(
-        int creatorUserId, int moderationItemId, int? changesRequestedItemId, CancellationToken cancellationToken = default);
+        int creatorUserId, int moderationItemId, int? changesRequestedItemId,
+        CancellationToken cancellationToken = default, int? eventId = null);
 
     /// <summary>Hoàn lượt gửi duyệt của mục bị từ chối hoặc rút khi còn chờ; gọi lại không hoàn hai lần.</summary>
     Task RefundSubmissionAsync(int moderationItemId, CancellationToken cancellationToken = default);

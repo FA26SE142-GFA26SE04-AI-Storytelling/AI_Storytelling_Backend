@@ -117,7 +117,7 @@ public sealed partial class AIStoryInputServiceTests
         quota.Setup(q => q.EnsureCreatorWithinQuotaAsync(Moq.It.IsAny<int>(), Moq.It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         quota.Setup(q => q.IncrementCreatorUsageAsync(Moq.It.IsAny<int>(), Moq.It.IsAny<Story?>(), Moq.It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         // Thử lại kiểm tra đầu vào: truyện vẫn đang giữ lượt nên không giữ thêm.
-        quota.Setup(q => q.HoldStoryCreditForRetryAsync(Moq.It.IsAny<int>(), Moq.It.IsAny<CancellationToken>())).Returns(Task.FromResult(false));
+        quota.Setup(q => q.HoldStoryCreditForRetryAsync(Moq.It.IsAny<int>(), Moq.It.IsAny<CancellationToken>(), Moq.It.IsAny<int?>())).Returns(Task.FromResult(false));
         return quota.Object;
     }
 

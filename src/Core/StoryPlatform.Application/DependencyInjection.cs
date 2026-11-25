@@ -235,6 +235,12 @@ public static class DependencyInjection
         services.AddScoped<IExistingStoryEvaluationService, ExistingStoryEvaluationService>();
         services.AddScoped<IExistingStoryService, ExistingStoryService>();
 
+        // Storytelling Events & Reward Campaigns
+        services.AddScoped<Features.Events.Interfaces.IEventManagementService, Features.Events.Services.EventManagementService>();
+        services.AddScoped<Features.Events.Interfaces.IEventParticipationService, Features.Events.Services.EventParticipationService>();
+        services.AddScoped<Features.Events.Interfaces.IEventRewardService, Features.Events.Services.EventRewardService>();
+        services.AddScoped<Features.Events.Interfaces.IEventIntegrationHooks, Features.Events.Services.EventIntegrationHooks>();
+
         return services;
     }
 }

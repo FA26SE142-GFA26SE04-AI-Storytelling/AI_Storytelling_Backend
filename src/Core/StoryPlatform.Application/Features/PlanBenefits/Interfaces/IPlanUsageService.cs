@@ -9,6 +9,9 @@ public interface IPlanUsageService
     /// </summary>
     Task<int> CountNewLibraryStoriesThisWeekAsync(int ownerUserId, DateTime utcNow, CancellationToken cancellationToken = default);
 
+    /// <summary>Danh sách StoryId thư viện công khai mà các hồ sơ trẻ của tài khoản mở lần đầu trong tuần hiện tại.</summary>
+    Task<IReadOnlyList<int>> ListNewLibraryStoryIdsThisWeekAsync(int ownerUserId, DateTime utcNow, CancellationToken cancellationToken = default);
+
     /// <summary>Một hồ sơ bất kỳ của tài khoản đã từng mở truyện thư viện này.</summary>
     Task<bool> HasOpenedLibraryStoryAsync(int ownerUserId, int storyId, CancellationToken cancellationToken = default);
 

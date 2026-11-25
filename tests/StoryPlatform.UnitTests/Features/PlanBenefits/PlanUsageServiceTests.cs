@@ -44,6 +44,24 @@ public sealed class PlanUsageServiceTests
         Session(1, 11, WeekStart.AddHours(4));    // đọc lại
 
         Assert.Equal(2, await _sut.CountNewLibraryStoriesThisWeekAsync(OwnerId, Now));
+        var ids = await _sut.ListNewLibraryStoryIdsThisWeekAsync(OwnerId, Now);
+        Assert.Equal(new[] { 10, 11 }, ids.OrderBy(x => x).ToArray());
+    }
+
+    [Fact]
+    public async Task CountNewLibraryStories_OnlyTheFirstOpenCanWaiveTheStory()
+    {
+        Session(1, 10, WeekStart.AddHours(1));
+        Session(2, 10, WeekStart.AddHours(2));
+        Session(1, 11, WeekStart.AddHours(3));
+        Session(2, 11, WeekStart.AddHours(4));
+        _uow.Seed(new TelemetryLog { Id = 1, ReadingSessionId = 1, EventType = TelemetryEventType.SessionStarted,
+            EventPayload = "{\"eventWeeklyLimitWaived\":true}" });
+        _uow.Seed(new TelemetryLog { Id = 2, ReadingSessionId = 4, EventType = TelemetryEventType.SessionStarted,
+            EventPayload = "{\"eventWeeklyLimitWaived\":true}" });
+
+        Assert.Equal(1, await _sut.CountNewLibraryStoriesThisWeekAsync(OwnerId, Now));
+        Assert.Equal(11, Assert.Single(await _sut.ListNewLibraryStoryIdsThisWeekAsync(OwnerId, Now)));
     }
 
     [Fact]

@@ -2,6 +2,7 @@ using Moq;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ChildRoadmaps;
 using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
+using StoryPlatform.Application.Features.Events.Interfaces;
 using StoryPlatform.Application.Features.PlanBenefits.DTOs;
 using StoryPlatform.Application.Features.PlanBenefits.Interfaces;
 using StoryPlatform.Application.Features.ReadingSessions;
@@ -23,6 +24,7 @@ public sealed class ChildReadingLibraryLimitTests
     private readonly ReadingHarness _h = new();
     private readonly Mock<IPlanBenefitService> _benefits = new();
     private readonly Mock<IPlanUsageService> _usage = new();
+    private readonly Mock<IEventIntegrationHooks> _eventHooks = new();
     private readonly ChildReadingService _sut;
 
     public ChildReadingLibraryLimitTests()
@@ -35,18 +37,23 @@ public sealed class ChildReadingLibraryLimitTests
         WeeklyLimit(3);
         NewThisWeek(3);
         _usage.Setup(u => u.HasOpenedLibraryStoryAsync(OwnerId, It.IsAny<int>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        _eventHooks.Setup(h => h.IsStoryExemptFromWeeklyLimitAsync(OwnerId, It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
         _sut = new ChildReadingService(_h.UnitOfWork.Object, eligibility.Object,
             new Mock<IChildRoadmapProgressRecorder>().Object, new Mock<IChildRewardService>().Object,
-            planBenefits: _benefits.Object, planUsage: _usage.Object);
+            planBenefits: _benefits.Object, planUsage: _usage.Object, eventHooks: _eventHooks.Object);
     }
 
     private void WeeklyLimit(int? limit) => _benefits
         .Setup(b => b.GetForUserAsync(OwnerId, It.IsAny<CancellationToken>()))
         .ReturnsAsync(new PlanBenefitsDto { MaxChildProfiles = 4, WeeklyNewLibraryStories = limit });
 
-    private void NewThisWeek(int count) => _usage
-        .Setup(u => u.CountNewLibraryStoriesThisWeekAsync(OwnerId, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
-        .ReturnsAsync(count);
+    private void NewThisWeek(int count)
+    {
+        _usage
+            .Setup(u => u.CountNewLibraryStoriesThisWeekAsync(OwnerId, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(count);
+    }
 
     private Task<ReadingSessionStartedDto> StartAsync(int storyId = LibraryStory) =>
         _sut.StartAsync(ReadingHarness.Child, ReadingHarness.SessionKey, new StartReadingRequestDto { StoryId = storyId });
@@ -123,5 +130,33 @@ public sealed class ChildReadingLibraryLimitTests
         await StartAsync();
 
         _h.UnitOfWork.Verify(u => u.AcquireTransactionLockAsync(-(1_000_000_000 + OwnerId), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task StartReading_EventExemptionIsRecordedOnSessionStart()
+    {
+        _eventHooks
+            .Setup(h => h.IsStoryExemptFromWeeklyLimitAsync(OwnerId, LibraryStory, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var result = await StartAsync();
+
+        var log = Assert.Single(_h.Telemetry);
+        Assert.Equal(result.SessionId, log.ReadingSessionId);
+        Assert.Equal("{\"eventWeeklyLimitWaived\":true}", log.EventPayload);
+        _usage.Verify(u => u.CountNewLibraryStoriesThisWeekAsync(OwnerId, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task StartReading_UnlimitedPlan_DoesNotRecordEventWaiver()
+    {
+        WeeklyLimit(null);
+        _eventHooks
+            .Setup(h => h.IsStoryExemptFromWeeklyLimitAsync(OwnerId, LibraryStory, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        await StartAsync();
+
+        Assert.DoesNotContain(_h.Telemetry, t => t.EventPayload != null && t.EventPayload.Contains("eventWeeklyLimitWaived"));
     }
 }

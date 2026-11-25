@@ -39,7 +39,8 @@ public partial class TokenQuotaService
     }
 
     public async Task ChargeSubmissionAsync(
-        int creatorUserId, int moderationItemId, int? changesRequestedItemId, CancellationToken cancellationToken = default)
+        int creatorUserId, int moderationItemId, int? changesRequestedItemId,
+        CancellationToken cancellationToken = default, int? eventId = null)
     {
         await _unitOfWork.AcquireTransactionLockAsync(creatorUserId, cancellationToken);
         var now = DateTime.UtcNow;
@@ -67,8 +68,13 @@ public partial class TokenQuotaService
         }
 
         await EnsureCreatorMonthlyGrantedAsync(creatorUserId, now, cancellationToken);
-        var lot = OrderForUse(await GetUsableLotsAsync(creatorUserId, now, cancellationToken, CreditType.Submit))
-                      .FirstOrDefault()
+        var lots = await GetUsableLotsAsync(creatorUserId, now, cancellationToken, CreditType.Submit,
+            includeEventGrants: eventId.HasValue);
+        if (eventId.HasValue && lots.Any(lot => lot.Source == CreditSource.EventGrant))
+        {
+            lots = await GetStoryLotsAsync(creatorUserId, null, CreditType.Submit, eventId, cancellationToken, lots);
+        }
+        var lot = OrderForUse(lots, preferEventGrants: eventId.HasValue).FirstOrDefault()
                   ?? throw new ConflictException(CreatorOutOfSubmitCreditsMessage);
         lot.Remaining -= 1;
         lot.UpdatedAt = now;

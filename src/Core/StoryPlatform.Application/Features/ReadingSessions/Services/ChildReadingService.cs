@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using StoryPlatform.Application.Features.ParentAuthoring;
 using System.Text.Json;
 using StoryPlatform.Application.Abstractions.Persistence;
@@ -7,6 +8,7 @@ using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using StoryPlatform.Application.Features.ChildProfiles.ReadingSlots;
+using StoryPlatform.Application.Features.Events.Interfaces;
 using StoryPlatform.Application.Features.PlanBenefits.Interfaces;
 
 namespace StoryPlatform.Application.Features.ReadingSessions.Services;
@@ -21,6 +23,8 @@ public class ChildReadingService : IChildReadingService
     private readonly IReadingSlotService? _readingSlots;
     private readonly IPlanBenefitService? _planBenefits;
     private readonly IPlanUsageService? _planUsage;
+    private readonly IEventIntegrationHooks? _eventHooks;
+    private readonly ILogger<ChildReadingService>? _logger;
 
     /// <param name="readingSlots">Hồ sơ đang chỉ xem (vượt số hồ sơ của gói) không mở được phiên đọc; null thì không chặn.</param>
     public ChildReadingService(
@@ -31,11 +35,15 @@ public class ChildReadingService : IChildReadingService
         IChildMediaUrlSigner? mediaUrls = null,
         IReadingSlotService? readingSlots = null,
         IPlanBenefitService? planBenefits = null,
-        IPlanUsageService? planUsage = null)
+        IPlanUsageService? planUsage = null,
+        IEventIntegrationHooks? eventHooks = null,
+        ILogger<ChildReadingService>? logger = null)
     {
         _readingSlots = readingSlots;
         _planBenefits = planBenefits;
         _planUsage = planUsage;
+        _eventHooks = eventHooks;
+        _logger = logger;
         _mediaUrls = mediaUrls;
         _unitOfWork = unitOfWork;
         _eligibility = eligibility;
@@ -84,11 +92,12 @@ public class ChildReadingService : IChildReadingService
         await _unitOfWork.BeginTransactionAsync(ct);
         try
         {
+            var eventWeeklyLimitWaived = false;
             // Mức Miễn phí: tối đa N truyện thư viện mới mỗi tuần, tính chung cả tài khoản. Khoá theo tài khoản
             // (trước khoá truyện) để hai trẻ mở cùng lúc không vượt giới hạn.
             if (request.StoryId.HasValue && story.Scope == StoryScope.Creator)
             {
-                await EnsureWeeklyLibraryAllowanceAsync(child.OwnerUserId, storyId, ct);
+                eventWeeklyLimitWaived = await EnsureWeeklyLibraryAllowanceAsync(child.OwnerUserId, storyId, ct);
             }
 
             // Serialize starts for this story before checking sessions and the unique progress row.
@@ -126,7 +135,8 @@ public class ChildReadingService : IChildReadingService
                     SupervisorSessionId = childSession.SupervisorSessionId
                 }, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
-                await AddTelemetryAsync(open.Id, TelemetryEventType.SessionStarted, null, ct);
+                await AddTelemetryAsync(open.Id, TelemetryEventType.SessionStarted,
+                    eventWeeklyLimitWaived ? new { eventWeeklyLimitWaived = true } : null, ct);
             }
 
             await _unitOfWork.SaveChangesAsync(ct);
@@ -152,29 +162,34 @@ public class ChildReadingService : IChildReadingService
     public const string WeeklyLibraryLimitMessageFormat =
         "Đã mở đủ {0} truyện thư viện mới trong tuần. Truyện mới mở lại vào thứ Hai.";
 
-    private async Task EnsureWeeklyLibraryAllowanceAsync(int ownerUserId, int storyId, CancellationToken ct)
+    private async Task<bool> EnsureWeeklyLibraryAllowanceAsync(int ownerUserId, int storyId, CancellationToken ct)
     {
         if (_planBenefits == null || _planUsage == null)
         {
-            return;
+            return false;
         }
 
         var limit = (await _planBenefits.GetForUserAsync(ownerUserId, ct)).WeeklyNewLibraryStories;
         if (limit == null)
         {
-            return;
+            return false;
         }
 
         await _unitOfWork.AcquireTransactionLockAsync(-(1_000_000_000 + ownerUserId), ct);
         if (await _planUsage.HasOpenedLibraryStoryAsync(ownerUserId, storyId, ct))
         {
-            return;
+            return false;
         }
 
-        if (await _planUsage.CountNewLibraryStoriesThisWeekAsync(ownerUserId, DateTime.UtcNow, ct) >= limit)
+        if (_eventHooks != null && await _eventHooks.IsStoryExemptFromWeeklyLimitAsync(ownerUserId, storyId, ct))
         {
-            throw new ForbiddenException(string.Format(WeeklyLibraryLimitMessageFormat, limit));
+            return true;
         }
+
+        var counted = await _planUsage.CountNewLibraryStoriesThisWeekAsync(ownerUserId, DateTime.UtcNow, ct);
+        if (counted >= limit)
+            throw new ForbiddenException(string.Format(WeeklyLibraryLimitMessageFormat, limit));
+        return false;
     }
 
     private async Task<(Story Story, StoryVersion Version)> ResolveTargetAsync(
@@ -467,6 +482,7 @@ public class ChildReadingService : IChildReadingService
             {
                 var completed = await GetCompletedResultAsync(session, ct);
                 await _unitOfWork.CommitTransactionAsync(ct);
+                await RecordEventActivitySafelyAsync(childProfileId, session.StoryId, session.Id, ct);
                 return completed;
             }
 
@@ -497,6 +513,7 @@ public class ChildReadingService : IChildReadingService
             // The recorder reuses this UOW transaction and may commit it. Queue all completion writes before it.
             var roadmap = await _recorder.RecordSessionCompletedAsync(session.Id, isRetake, ct);
             await _unitOfWork.CommitTransactionAsync(ct);
+            await RecordEventActivitySafelyAsync(childProfileId, storyId, session.Id, ct);
             return new ReadingCompletedDto
             {
                 SessionId = session.Id,
@@ -514,6 +531,35 @@ public class ChildReadingService : IChildReadingService
         {
             await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
             throw;
+        }
+    }
+
+    private async Task RecordEventActivitySafelyAsync(int childProfileId, int storyId, int sessionId, CancellationToken ct)
+    {
+        if (_eventHooks == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var child = await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(childProfileId, ct);
+            if (child != null)
+            {
+                await _eventHooks.RecordActivityForActiveEventsAsync(
+                    child.OwnerUserId,
+                    childProfileId,
+                    storyId,
+                    TaskVerifierType.ReadEventStories,
+                    readingSessionId: sessionId,
+                    ct: ct);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _unitOfWork.DiscardTrackedChanges();
+            _logger?.LogWarning("Failed to record event reading activity for session {SessionId} ({ExceptionType}).",
+                sessionId, ex.GetType().Name);
         }
     }
 

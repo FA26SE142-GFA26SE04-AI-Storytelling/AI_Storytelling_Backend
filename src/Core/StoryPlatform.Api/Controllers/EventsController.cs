@@ -3,6 +3,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.Events.DTOs;
 using StoryPlatform.Application.Features.Events.Interfaces;
@@ -36,7 +38,7 @@ public class EventsController : BaseApiController
     }
 
     [HttpGet("reward-plans")]
-    [Authorize(Roles = "Moderator,Administrator")]
+    [HasPermission(Permissions.Moderation.EventOperate)]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<EventRewardPlanDto>>>> ListRewardPlans(CancellationToken ct = default) =>
         HandleResult(await _management.ListCreatorRewardPlansAsync(ct));
 
@@ -53,75 +55,75 @@ public class EventsController : BaseApiController
     }
 
     [HttpPut("{eventId:int}/lead-moderator")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.EventApprove)]
     public async Task<ActionResult<ApiResponse<EventDetailDto>>> UpdateLeadModerator(int eventId,
         [FromBody] UpdateEventLeadModeratorRequestDto request, CancellationToken ct = default) =>
         HandleResult(await _management.UpdateLeadModeratorAsync(GetCurrentUserId(), eventId, request, ct),
             "Đã cập nhật phân công Moderator.");
 
     [HttpPost("{eventId:int}/clone-to-activity-draft")]
-    [Authorize(Roles = "Moderator")]
+    [HasPermission(Permissions.Moderation.EventManage)]
     public async Task<ActionResult<ApiResponse<CloneLegacyDraftResultDto>>> CloneToActivityDraft(int eventId, CancellationToken ct = default) =>
         HandleResult(await _management.CloneLegacyDraftToActivityBasedAsync(GetCurrentUserId(), eventId, ct),
             "Đã sao chép bản nháp sang mô hình sự kiện theo hoạt động.");
 
     [HttpPost]
-    [Authorize(Roles = "Moderator")]
+    [HasPermission(Permissions.Moderation.EventManage)]
     public async Task<ActionResult<ApiResponse<EventDetailDto>>> Create([FromBody] CreateEventRequestDto request, CancellationToken ct = default) =>
         HandleResult(await _management.CreateEventAsync(GetCurrentUserId(), request, ct), "Đã tạo bản nháp sự kiện.");
 
     [HttpPut("{eventId:int}")]
-    [Authorize(Roles = "Moderator")]
+    [HasPermission(Permissions.Moderation.EventManage)]
     public async Task<ActionResult<ApiResponse<EventDetailDto>>> Update(int eventId, [FromBody] CreateEventRequestDto request, CancellationToken ct = default) =>
         HandleResult(await _management.UpdateEventAsync(GetCurrentUserId(), eventId, request, ct), "Đã cập nhật sự kiện.");
 
     [HttpDelete("{eventId:int}")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.EventApprove)]
     public async Task<ActionResult<ApiResponse<bool>>> DeleteDraft(int eventId, CancellationToken ct = default) =>
         HandleResult(await _management.DeleteDraftAsync(GetCurrentUserId(), eventId, ct), "Đã xóa bản nháp sự kiện.");
 
     [HttpPut("{eventId:int}/rules-section")]
-    [Authorize(Roles = "Moderator")]
+    [HasPermission(Permissions.Moderation.EventManage)]
     public async Task<ActionResult<ApiResponse<EventRuleVersionDto>>> UpdateRulesSection(int eventId, [FromBody] UpdateEventRulesSectionRequestDto request, CancellationToken ct = default) =>
         HandleResult(await _management.UpdateRulesSectionAsync(GetCurrentUserId(), eventId, request, ct), "Đã lưu mục thể lệ sự kiện.");
 
     [HttpPut("{eventId:int}/schedule-section")]
-    [Authorize(Roles = "Moderator")]
+    [HasPermission(Permissions.Moderation.EventManage)]
     public async Task<ActionResult<ApiResponse<EventDetailDto>>> UpdateScheduleSection(int eventId, [FromBody] UpdateEventScheduleSectionRequestDto request, CancellationToken ct = default) =>
         HandleResult(await _management.UpdateScheduleSectionAsync(GetCurrentUserId(), eventId, request, ct), "Đã lưu mục điều kiện và lịch.");
 
     [HttpPut("{eventId:int}/tasks-section")]
-    [Authorize(Roles = "Moderator")]
+    [HasPermission(Permissions.Moderation.EventManage)]
     public async Task<ActionResult<ApiResponse<EventRuleVersionDto>>> UpdateTasksSection(int eventId, [FromBody] UpdateEventTasksSectionRequestDto request, CancellationToken ct = default) =>
         HandleResult(await _management.UpdateTasksSectionAsync(GetCurrentUserId(), eventId, request, ct), "Đã lưu mục nhiệm vụ.");
 
     [HttpPut("{eventId:int}/awards-section")]
-    [Authorize(Roles = "Moderator")]
+    [HasPermission(Permissions.Moderation.EventManage)]
     public async Task<ActionResult<ApiResponse<EventDetailDto>>> UpdateAwardsSection(int eventId, [FromBody] UpdateEventAwardsSectionRequestDto request, CancellationToken ct = default) =>
         HandleResult(await _management.UpdateAwardsSectionAsync(GetCurrentUserId(), eventId, request, ct), "Đã lưu mục phần thưởng.");
 
     [HttpPost("{eventId:int}/rules")]
-    [Authorize(Roles = "Moderator")]
+    [HasPermission(Permissions.Moderation.EventManage)]
     public async Task<ActionResult<ApiResponse<EventRuleVersionDto>>> UpsertRules(int eventId, [FromBody] UpsertEventRuleRequestDto request, CancellationToken ct = default) =>
         HandleResult(await _management.UpsertRuleVersionAsync(GetCurrentUserId(), eventId, request, ct), "Đã lưu phiên bản thể lệ và nhiệm vụ động.");
 
     [HttpPost("{eventId:int}/submit-approval")]
-    [Authorize(Roles = "Moderator")]
+    [HasPermission(Permissions.Moderation.EventManage)]
     public async Task<ActionResult<ApiResponse<EventSummaryDto>>> SubmitApproval(int eventId, CancellationToken ct = default) =>
         HandleResult(await _management.SubmitForApprovalAsync(GetCurrentUserId(), eventId, ct), "Đã gửi sự kiện chờ Admin phê duyệt.");
 
     [HttpPost("{eventId:int}/approve")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.EventApprove)]
     public async Task<ActionResult<ApiResponse<EventSummaryDto>>> Approve(int eventId, [FromBody] EventApprovalDecisionDto request, CancellationToken ct = default) =>
         HandleResult(await _management.DecideApprovalAsync(GetCurrentUserId(), eventId, request, ct));
 
     [HttpPost("{eventId:int}/publish")]
-    [Authorize(Roles = "Moderator")]
+    [HasPermission(Permissions.Moderation.EventManage)]
     public async Task<ActionResult<ApiResponse<EventSummaryDto>>> Publish(int eventId, CancellationToken ct = default) =>
         HandleResult(await _management.PublishEventAsync(GetCurrentUserId(), eventId, ct), "Đã phát hành sự kiện.");
 
     [HttpGet("{eventId:int}/task-filter-stories")]
-    [Authorize(Roles = "Moderator,Administrator")]
+    [HasPermission(Permissions.Moderation.EventOperate)]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<EventTaskStoryOptionDto>>>> ListTaskFilterStories(
         int eventId, CancellationToken ct = default)
     {
@@ -130,12 +132,12 @@ public class EventsController : BaseApiController
     }
 
     [HttpPost("{eventId:int}/seed-stories")]
-    [Authorize(Roles = "Moderator")]
+    [HasPermission(Permissions.Moderation.EventManage)]
     public async Task<ActionResult<ApiResponse<int>>> SeedStories(int eventId, [FromBody] SeedEventStoriesRequestDto request, CancellationToken ct = default) =>
         HandleResult(await _management.SeedFallbackStoriesAsync(GetCurrentUserId(), eventId, request, ct), "Đã bổ sung truyện dự phòng vào thư viện sự kiện.");
 
     [HttpGet("{eventId:int}/summary")]
-    [Authorize(Roles = "Moderator,Administrator")]
+    [HasPermission(Permissions.Moderation.EventOperate)]
     public async Task<ActionResult<ApiResponse<EventReportSummaryDto>>> Summary(int eventId, CancellationToken ct = default)
     {
         await _management.EnsureStaffEventAccessAsync(eventId, GetCurrentUserId(), ct);
@@ -143,42 +145,42 @@ public class EventsController : BaseApiController
     }
 
     [HttpPost("{eventId:int}/close")]
-    [Authorize(Roles = "Moderator")]
+    [HasPermission(Permissions.Moderation.EventManage)]
     public async Task<ActionResult<ApiResponse<EventSummaryDto>>> Close(int eventId, CancellationToken ct = default) =>
         HandleResult(await _management.CloseEventAsync(GetCurrentUserId(), eventId, ct), "Đã tổng kết và đóng sự kiện.");
 
     [HttpPost("{eventId:int}/register")]
-    [Authorize(Roles = "User,ContentCreator")]
+    [HasPermission(Permissions.Shared.EventParticipate)]
     public async Task<ActionResult<ApiResponse<EventParticipationDto>>> Register(int eventId, [FromBody] RegisterEventRequestDto request, CancellationToken ct = default) =>
         HandleResult(await _participation.RegisterAsync(GetCurrentUserId(), eventId, request, ct), "Đăng ký tham gia sự kiện thành công.");
 
     [HttpPost("{eventId:int}/creator-submit")]
-    [Authorize(Roles = "ContentCreator")]
+    [HasPermission(Permissions.Creator.Studio)]
     public async Task<ActionResult<ApiResponse<EventSubmissionDto>>> CreatorSubmit(int eventId, [FromBody] CreatorEventSubmitRequestDto request, CancellationToken ct = default) =>
         HandleResult(await _participation.SubmitCreatorStoryAsync(GetCurrentUserId(), eventId, request, ct), "Đã nộp truyện dự thi.");
 
     [HttpPost("{eventId:int}/parent-submit")]
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.EventParticipate)]
     public async Task<ActionResult<ApiResponse<EventSubmissionDto>>> ParentSubmit(int eventId, [FromBody] CreatorEventSubmitRequestDto request, CancellationToken ct = default) =>
         HandleResult(await _participation.SubmitParentStoryAsync(GetCurrentUserId(), eventId, request, ct), "Đã nộp bài dự thi của Parent.");
 
     [HttpPost("{eventId:int}/activities/submission/submit")]
-    [Authorize(Roles = "User,ContentCreator")]
+    [HasPermission(Permissions.Shared.EventParticipate)]
     public async Task<ActionResult<ApiResponse<EventSubmissionDto>>> SubmitActivityStory(int eventId, [FromBody] CreatorEventSubmitRequestDto request, CancellationToken ct = default) =>
         HandleResult(await _participation.SubmitActivityStoryAsync(GetCurrentUserId(), eventId, request, ct), "Đã nộp bài dự thi.");
 
     [HttpGet("{eventId:int}/my-submissions")]
-    [Authorize(Roles = "User,ContentCreator")]
+    [HasPermission(Permissions.Shared.EventParticipate)]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<EventSubmissionDto>>>> MySubmissions(int eventId, CancellationToken ct = default) =>
         HandleResult(await _participation.ListMySubmissionsAsync(GetCurrentUserId(), eventId, ct));
 
     [HttpPost("{eventId:int}/submissions/{submissionId:int}/review-parent")]
-    [Authorize(Roles = "Moderator")]
+    [HasPermission(Permissions.Moderation.EventManage)]
     public async Task<ActionResult<ApiResponse<EventSubmissionDto>>> ReviewParent(int eventId, int submissionId, [FromBody] ReviewParentEventSubmissionDto request, CancellationToken ct = default) =>
         HandleResult(await _participation.ReviewParentStoryAsync(GetCurrentUserId(), eventId, submissionId, request, ct));
 
     [HttpGet("{eventId:int}/submissions")]
-    [Authorize(Roles = "Moderator,Administrator")]
+    [HasPermission(Permissions.Moderation.EventOperate)]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<EventSubmissionDto>>>> ListSubmissions(int eventId, CancellationToken ct = default)
     {
         await _management.EnsureStaffEventAccessAsync(eventId, GetCurrentUserId(), ct);
@@ -186,33 +188,33 @@ public class EventsController : BaseApiController
     }
 
     [HttpGet("{eventId:int}/my-submission")]
-    [Authorize(Roles = "User,ContentCreator")]
+    [HasPermission(Permissions.Shared.EventParticipate)]
     public async Task<ActionResult<ApiResponse<EventSubmissionDto?>>> MySubmission(int eventId, CancellationToken ct = default) =>
         HandleResult<EventSubmissionDto?>(await _participation.GetMySubmissionAsync(GetCurrentUserId(), eventId, ct));
 
     [HttpGet("{eventId:int}/my-participation")]
-    [Authorize(Roles = "User,ContentCreator")]
+    [HasPermission(Permissions.Shared.EventParticipate)]
     public async Task<ActionResult<ApiResponse<EventParticipationDto?>>> MyParticipation(
         int eventId, [FromQuery] StoryPlatform.Domain.Enums.EventTrackType trackType = StoryPlatform.Domain.Enums.EventTrackType.Creator, CancellationToken ct = default) =>
         HandleResult<EventParticipationDto?>(await _participation.GetMyParticipationAsync(GetCurrentUserId(), eventId, trackType, ct));
 
     [HttpGet("my-participations")]
-    [Authorize(Roles = "User,ContentCreator")]
+    [HasPermission(Permissions.Shared.EventParticipate)]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<EventParticipationDto>>>> MyParticipations(CancellationToken ct = default) =>
         HandleResult(await _participation.ListMyParticipationsAsync(GetCurrentUserId(), ct));
 
     [HttpGet("{eventId:int}/mission-dashboard")]
-    [Authorize(Roles = "User,ContentCreator")]
+    [HasPermission(Permissions.Shared.EventParticipate)]
     public async Task<ActionResult<ApiResponse<EventMissionDashboardDto>>> MissionDashboard(int eventId, CancellationToken ct = default) =>
         HandleResult(await _participation.GetMissionDashboardAsync(GetCurrentUserId(), eventId, ct));
 
     [HttpPost("{eventId:int}/votes")]
-    [Authorize(Roles = "User,ContentCreator")]
+    [HasPermission(Permissions.Shared.EventParticipate)]
     public async Task<ActionResult<ApiResponse<EventVoteDto>>> CastVote(int eventId, [FromBody] CastEventVoteRequestDto request, CancellationToken ct = default) =>
         HandleResult(await _participation.CastVoteAsync(GetCurrentUserId(), eventId, request, ct), "Đã ghi nhận phiếu bình chọn.");
 
     [HttpGet("{eventId:int}/votes")]
-    [Authorize(Roles = "Moderator,Administrator")]
+    [HasPermission(Permissions.Moderation.EventOperate)]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<EventVoteDto>>>> ListVotes(int eventId, CancellationToken ct = default)
     {
         await _management.EnsureStaffEventAccessAsync(eventId, GetCurrentUserId(), ct);
@@ -220,7 +222,7 @@ public class EventsController : BaseApiController
     }
 
     [HttpPost("votes/{voteId:int}/disqualify")]
-    [Authorize(Roles = "Moderator,Administrator")]
+    [HasPermission(Permissions.Moderation.EventOperate)]
     public async Task<ActionResult<ApiResponse<EventVoteDto>>> DisqualifyVote(int voteId, [FromBody] DisqualifyEventVoteRequestDto request, CancellationToken ct = default) =>
         HandleResult(await _participation.DisqualifyVoteAsync(GetCurrentUserId(), voteId, request, ct), "Đã loại phiếu bình chọn vi phạm.");
 
@@ -235,22 +237,22 @@ public class EventsController : BaseApiController
     }
 
     [HttpPost("{eventId:int}/tasks/{taskDefinitionId:int}/complete")]
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.EventParticipate)]
     public async Task<ActionResult<ApiResponse<EventMissionDashboardDto>>> CompleteTask(int eventId, int taskDefinitionId, [FromBody] CompleteEventTaskRequestDto request, CancellationToken ct = default) =>
         HandleResult(await _participation.RecordTaskProgressAsync(GetCurrentUserId(), eventId, taskDefinitionId, request, ct), "Đã ghi nhận tiến độ nhiệm vụ.");
 
     [HttpPost("{eventId:int}/verify")]
-    [Authorize(Roles = "Moderator,Administrator")]
+    [HasPermission(Permissions.Moderation.EventOperate)]
     public async Task<ActionResult<ApiResponse<int>>> Verify(int eventId, CancellationToken ct = default) =>
         HandleResult(await _participation.VerifyEventParticipationsAsync(GetCurrentUserId(), eventId, ct), "Đã chạy xác minh kết quả sự kiện.");
 
     [HttpPost("{eventId:int}/appeals")]
-    [Authorize(Roles = "User,ContentCreator")]
+    [HasPermission(Permissions.Shared.EventParticipate)]
     public async Task<ActionResult<ApiResponse<EventAppealDto>>> CreateAppeal(int eventId, [FromBody] CreateAppealRequestDto request, CancellationToken ct = default) =>
         HandleResult(await _participation.CreateAppealAsync(GetCurrentUserId(), eventId, request, ct), "Đã gửi đơn khiếu nại.");
 
     [HttpGet("{eventId:int}/appeals")]
-    [Authorize(Roles = "Moderator,Administrator")]
+    [HasPermission(Permissions.Moderation.EventOperate)]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<EventAppealDto>>>> ListAppeals(int eventId, CancellationToken ct = default)
     {
         await _management.EnsureStaffEventAccessAsync(eventId, GetCurrentUserId(), ct);
@@ -258,12 +260,12 @@ public class EventsController : BaseApiController
     }
 
     [HttpPost("appeals/{appealId:int}/decide")]
-    [Authorize(Roles = "Moderator,Administrator")]
+    [HasPermission(Permissions.Moderation.EventOperate)]
     public async Task<ActionResult<ApiResponse<EventAppealDto>>> DecideAppeal(int appealId, [FromBody] DecideAppealRequestDto request, CancellationToken ct = default) =>
         HandleResult(await _participation.DecideAppealAsync(GetCurrentUserId(), appealId, request, ct), "Đã xử lý đơn khiếu nại.");
 
     [HttpPost("submissions/{submissionId:int}/evaluate")]
-    [Authorize(Roles = "Moderator,Administrator")]
+    [HasPermission(Permissions.Moderation.EventOperate)]
     public async Task<ActionResult<ApiResponse<object>>> EvaluateSubmission(int submissionId, [FromBody] EvaluateSubmissionRequestDto request, CancellationToken ct = default)
     {
         await _rewards.EvaluateSubmissionAsync(GetCurrentUserId(), submissionId, request, ct);
@@ -271,43 +273,43 @@ public class EventsController : BaseApiController
     }
 
     [HttpPost("{eventId:int}/awards/propose")]
-    [Authorize(Roles = "Moderator")]
+    [HasPermission(Permissions.Moderation.EventManage)]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<EventAwardSlotDto>>>> ProposeAwards(int eventId, CancellationToken ct = default) =>
         HandleResult(await _rewards.ProposeAwardsAsync(GetCurrentUserId(), eventId, ct), "Đã đề xuất danh sách nhận giải.");
 
     [HttpPost("{eventId:int}/awards/approve")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.EventApprove)]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<EventAwardSlotDto>>>> ApproveAwards(int eventId, CancellationToken ct = default) =>
         HandleResult(await _rewards.ApproveAwardsAsync(GetCurrentUserId(), eventId, ct), "Đã phê duyệt danh sách nhận giải.");
 
     [HttpGet("my-rewards")]
-    [Authorize(Roles = "User,ContentCreator")]
+    [HasPermission(Permissions.Shared.EventParticipate)]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<EventAwardSlotDto>>>> MyRewards(CancellationToken ct = default) =>
         HandleResult(await _rewards.GetMyRewardsAsync(GetCurrentUserId(), ct));
 
     [HttpPost("awards/{awardId:int}/claim")]
-    [Authorize(Roles = "User,ContentCreator")]
+    [HasPermission(Permissions.Shared.EventParticipate)]
     public async Task<ActionResult<ApiResponse<EventAwardSlotDto>>> ClaimReward(int awardId, [FromBody] ClaimRewardRequestDto request, CancellationToken ct = default) =>
         HandleResult(await _rewards.ClaimRewardAsync(GetCurrentUserId(), awardId, request, ct), "Đã xác nhận nhận thưởng.");
 
     [HttpPost("{eventId:int}/awards/process-expired")]
-    [Authorize(Roles = "Moderator,Administrator")]
+    [HasPermission(Permissions.Moderation.EventOperate)]
     public async Task<ActionResult<ApiResponse<int>>> ProcessExpired(int eventId, CancellationToken ct = default) =>
         HandleResult(await _rewards.ProcessExpiredClaimsAsync(GetCurrentUserId(), eventId, ct), "Đã xử lý các suất thưởng quá hạn.");
 
     [HttpGet("awards/{awardId:int}/recipient")]
-    [Authorize(Roles = "Moderator,Administrator")]
+    [HasPermission(Permissions.Moderation.EventOperate)]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public async Task<ActionResult<ApiResponse<EventRewardRecipientDto>>> RewardRecipient(int awardId, CancellationToken ct = default) =>
         HandleResult(await _rewards.GetRewardRecipientAsync(GetCurrentUserId(), awardId, ct));
 
     [HttpPost("{eventId:int}/awards/notify")]
-    [Authorize(Roles = "Moderator,Administrator")]
+    [HasPermission(Permissions.Moderation.EventOperate)]
     public async Task<ActionResult<ApiResponse<EventAwardNotificationResultDto>>> NotifyAwardWinners(int eventId, CancellationToken ct = default) =>
         HandleResult(await _rewards.ResendAwardNotificationsAsync(GetCurrentUserId(), eventId, ct));
 
     [HttpPost("awards/{awardId:int}/fulfill")]
-    [Authorize(Roles = "Moderator,Administrator")]
+    [HasPermission(Permissions.Moderation.EventOperate)]
     public async Task<ActionResult<ApiResponse<EventAwardSlotDto>>> Fulfill(int awardId, [FromBody] FulfillRewardRequestDto request, CancellationToken ct = default) =>
         HandleResult(await _rewards.UpdateFulfillmentAsync(GetCurrentUserId(), awardId, request, ct), "Đã cập nhật trạng thái trao thưởng.");
 }

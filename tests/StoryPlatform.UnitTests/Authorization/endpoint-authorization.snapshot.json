@@ -750,6 +750,190 @@
   "CreatorTierController.Revoke#POST revoke": [
     "Administrator"
   ],
+  "EventsController.Approve#POST {eventId:int}/approve": [
+    "Administrator"
+  ],
+  "EventsController.ApproveAwards#POST {eventId:int}/awards/approve": [
+    "Administrator"
+  ],
+  "EventsController.CastVote#POST {eventId:int}/votes": [
+    "ContentCreator",
+    "User"
+  ],
+  "EventsController.ClaimReward#POST awards/{awardId:int}/claim": [
+    "ContentCreator",
+    "User"
+  ],
+  "EventsController.CloneToActivityDraft#POST {eventId:int}/clone-to-activity-draft": [
+    "Moderator"
+  ],
+  "EventsController.Close#POST {eventId:int}/close": [
+    "Moderator"
+  ],
+  "EventsController.CompleteTask#POST {eventId:int}/tasks/{taskDefinitionId:int}/complete": [
+    "User"
+  ],
+  "EventsController.Create#POST ": [
+    "Moderator"
+  ],
+  "EventsController.CreateAppeal#POST {eventId:int}/appeals": [
+    "ContentCreator",
+    "User"
+  ],
+  "EventsController.CreatorSubmit#POST {eventId:int}/creator-submit": [
+    "ContentCreator"
+  ],
+  "EventsController.DecideAppeal#POST appeals/{appealId:int}/decide": [
+    "Administrator",
+    "Moderator"
+  ],
+  "EventsController.DeleteDraft#DELETE {eventId:int}": [
+    "Administrator"
+  ],
+  "EventsController.Detail#GET {eventId:int}": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "EventsController.DisqualifyVote#POST votes/{voteId:int}/disqualify": [
+    "Administrator",
+    "Moderator"
+  ],
+  "EventsController.EvaluateSubmission#POST submissions/{submissionId:int}/evaluate": [
+    "Administrator",
+    "Moderator"
+  ],
+  "EventsController.Fulfill#POST awards/{awardId:int}/fulfill": [
+    "Administrator",
+    "Moderator"
+  ],
+  "EventsController.Leaderboard#GET {eventId:int}/leaderboard": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "EventsController.List#GET ": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
+  "EventsController.ListAppeals#GET {eventId:int}/appeals": [
+    "Administrator",
+    "Moderator"
+  ],
+  "EventsController.ListRewardPlans#GET reward-plans": [
+    "Administrator",
+    "Moderator"
+  ],
+  "EventsController.ListSubmissions#GET {eventId:int}/submissions": [
+    "Administrator",
+    "Moderator"
+  ],
+  "EventsController.ListTaskFilterStories#GET {eventId:int}/task-filter-stories": [
+    "Administrator",
+    "Moderator"
+  ],
+  "EventsController.ListVotes#GET {eventId:int}/votes": [
+    "Administrator",
+    "Moderator"
+  ],
+  "EventsController.MissionDashboard#GET {eventId:int}/mission-dashboard": [
+    "ContentCreator",
+    "User"
+  ],
+  "EventsController.MyParticipation#GET {eventId:int}/my-participation": [
+    "ContentCreator",
+    "User"
+  ],
+  "EventsController.MyParticipations#GET my-participations": [
+    "ContentCreator",
+    "User"
+  ],
+  "EventsController.MyRewards#GET my-rewards": [
+    "ContentCreator",
+    "User"
+  ],
+  "EventsController.MySubmission#GET {eventId:int}/my-submission": [
+    "ContentCreator",
+    "User"
+  ],
+  "EventsController.MySubmissions#GET {eventId:int}/my-submissions": [
+    "ContentCreator",
+    "User"
+  ],
+  "EventsController.NotifyAwardWinners#POST {eventId:int}/awards/notify": [
+    "Administrator",
+    "Moderator"
+  ],
+  "EventsController.ParentSubmit#POST {eventId:int}/parent-submit": [
+    "User"
+  ],
+  "EventsController.ProcessExpired#POST {eventId:int}/awards/process-expired": [
+    "Administrator",
+    "Moderator"
+  ],
+  "EventsController.ProposeAwards#POST {eventId:int}/awards/propose": [
+    "Moderator"
+  ],
+  "EventsController.Publish#POST {eventId:int}/publish": [
+    "Moderator"
+  ],
+  "EventsController.Register#POST {eventId:int}/register": [
+    "ContentCreator",
+    "User"
+  ],
+  "EventsController.ReviewParent#POST {eventId:int}/submissions/{submissionId:int}/review-parent": [
+    "Moderator"
+  ],
+  "EventsController.RewardRecipient#GET awards/{awardId:int}/recipient": [
+    "Administrator",
+    "Moderator"
+  ],
+  "EventsController.SeedStories#POST {eventId:int}/seed-stories": [
+    "Moderator"
+  ],
+  "EventsController.SubmitActivityStory#POST {eventId:int}/activities/submission/submit": [
+    "ContentCreator",
+    "User"
+  ],
+  "EventsController.SubmitApproval#POST {eventId:int}/submit-approval": [
+    "Moderator"
+  ],
+  "EventsController.Summary#GET {eventId:int}/summary": [
+    "Administrator",
+    "Moderator"
+  ],
+  "EventsController.Update#PUT {eventId:int}": [
+    "Moderator"
+  ],
+  "EventsController.UpdateAwardsSection#PUT {eventId:int}/awards-section": [
+    "Moderator"
+  ],
+  "EventsController.UpdateLeadModerator#PUT {eventId:int}/lead-moderator": [
+    "Administrator"
+  ],
+  "EventsController.UpdateRulesSection#PUT {eventId:int}/rules-section": [
+    "Moderator"
+  ],
+  "EventsController.UpdateScheduleSection#PUT {eventId:int}/schedule-section": [
+    "Moderator"
+  ],
+  "EventsController.UpdateTasksSection#PUT {eventId:int}/tasks-section": [
+    "Moderator"
+  ],
+  "EventsController.UpsertRules#POST {eventId:int}/rules": [
+    "Moderator"
+  ],
+  "EventsController.Verify#POST {eventId:int}/verify": [
+    "Administrator",
+    "Moderator"
+  ],
   "ExistingStoriesController.Adapt#POST {storyId:int}/existing/adapt": [
     "User"
   ],

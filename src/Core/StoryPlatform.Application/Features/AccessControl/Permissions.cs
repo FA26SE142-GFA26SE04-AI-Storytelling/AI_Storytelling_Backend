@@ -15,6 +15,7 @@ public static class Permissions
         public const string ContentReportSubmit = "content.report.submit";
         public const string StoryRatingWrite = "story.rating.write";
         public const string QuotaView = "quota.parent.view";
+        public const string EventParticipate = "event.parent.participate";
     }
 
     public static class Shared
@@ -24,6 +25,7 @@ public static class Permissions
         public const string StoryReviewApprove = "story.review.approve";
         public const string StoryPackageConfirm = "story.package.confirm";
         public const string CommunityView = "community.view";
+        public const string EventParticipate = "event.participate";
     }
 
     public static class Creator
@@ -46,6 +48,8 @@ public static class Permissions
         public const string ReportReview = "moderation.report.review";
         public const string RatingModerate = "moderation.rating.moderate";
         public const string CategoryManage = "category.manage";
+        public const string EventManage = "event.manage";
+        public const string EventOperate = "event.operate";
     }
 
     public static class Review
@@ -73,5 +77,6 @@ public static class Permissions
         public const string BusinessReportView = "report.business.view";
         public const string AuditView = "audit.view";
         public const string PermissionManage = "permission.manage";
+        public const string EventApprove = "event.approve";
     }
 }

@@ -68,6 +68,28 @@ public sealed class PermissionCatalogSeederTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Permission_new_to_the_database_is_granted_to_roles_that_already_have_permissions()
+    {
+        // DB đã phân quyền trước khi có permission sự kiện: giả lập bằng cách xóa permission đó sau lần seed đầu.
+        await SeedAsync();
+        _db.RemoveRange(await _db.Set<RolePermission>().Where(x => x.Permission.Code == Permissions.Moderation.EventManage).ToListAsync());
+        _db.Remove(await _db.Set<Permission>().SingleAsync(p => p.Code == Permissions.Moderation.EventManage));
+        var gray = await _db.Set<RolePermission>()
+            .SingleAsync(x => x.Role.Code == RoleCodes.Moderator && x.Permission.Code == Permissions.Review.GrayZone);
+        _db.Remove(gray);
+        await _db.SaveChangesAsync();
+        _db.ChangeTracker.Clear();
+
+        Assert.Equal(2, await SeedAsync()); // 1 permission + 1 liên kết cho Moderator
+
+        var moderator = await CodesOf(RoleCodes.Moderator);
+        Assert.Contains(Permissions.Moderation.EventManage, moderator);
+        Assert.DoesNotContain(Permissions.Review.GrayZone, moderator); // quyền Administrator đã gỡ vẫn giữ nguyên
+        Assert.DoesNotContain(Permissions.Moderation.EventManage, await CodesOf(RoleCodes.Administrator));
+        Assert.Equal(0, await SeedAsync());
+    }
+
+    [Fact]
     public async Task Code_removed_from_catalog_is_soft_deleted_and_metadata_refreshed()
     {
         await SeedAsync();

@@ -34,12 +34,14 @@ public static class PermissionCatalog
         P(Permissions.Parent.ContentReportSubmit, ParentGroup, "Gửi báo cáo vi phạm nội dung"),
         P(Permissions.Parent.StoryRatingWrite, ParentGroup, "Chấm sao và nhận xét truyện cộng đồng"),
         Own(Permissions.Parent.QuotaView, ParentGroup, "Xem gói và lượt của mình"),
+        P(Permissions.Parent.EventParticipate, ParentGroup, "Nộp bài dự thi và ghi nhận nhiệm vụ sự kiện của phụ huynh"),
 
         P(Permissions.Shared.MediaGenerate, SharedGroup, "Sinh tranh, âm thanh và ảnh bìa cho truyện"),
         P(Permissions.Shared.StoryRatingReport, SharedGroup, "Báo cáo một nhận xét truyện"),
         P(Permissions.Shared.StoryReviewApprove, SharedGroup, "Duyệt hoặc từ chối nội dung truyện AI trước khi đến trẻ"),
         P(Permissions.Shared.StoryPackageConfirm, SharedGroup, "Xác nhận gói truyện"),
         P(Permissions.Shared.CommunityView, SharedGroup, "Đọc thư viện truyện cộng đồng"),
+        P(Permissions.Shared.EventParticipate, SharedGroup, "Tham gia sự kiện: đăng ký, nộp bài, bình chọn, khiếu nại và nhận thưởng"),
 
         P(Permissions.Creator.ApplicationSubmit, CreatorGroup, "Gửi lại đơn đăng ký nhà sáng tạo"),
         Own(Permissions.Creator.ApplicationViewOwn, CreatorGroup, "Xem đơn đăng ký nhà sáng tạo của mình"),
@@ -56,6 +58,8 @@ public static class PermissionCatalog
         Assigned(Permissions.Moderation.ReportReview, "Xử lý báo cáo vi phạm nội dung"),
         Assigned(Permissions.Moderation.RatingModerate, "Duyệt hoặc ẩn nhận xét truyện"),
         P(Permissions.Moderation.CategoryManage, ModerationGroup, "Thêm, sửa, xóa danh mục nội dung"),
+        P(Permissions.Moderation.EventManage, ModerationGroup, "Soạn, phát hành và đóng sự kiện; duyệt bài phụ huynh và đề xuất danh sách giải"),
+        P(Permissions.Moderation.EventOperate, ModerationGroup, "Vận hành sự kiện: xem báo cáo, chấm bài, xử lý khiếu nại, phiếu bầu và trao thưởng"),
         Assigned(Permissions.Review.PublicStory, "Duyệt truyện nhà sáng tạo nộp công khai"),
         Assigned(Permissions.Review.GrayZone, "Duyệt nội dung vùng xám"),
         Assigned(Permissions.Review.Roadmap, "Duyệt lộ trình mẫu"),
@@ -76,6 +80,7 @@ public static class PermissionCatalog
         P(Permissions.Admin.BusinessReportView, AdminGroup, "Tạo và xem báo cáo nghiệp vụ"),
         P(Permissions.Admin.AuditView, AdminGroup, "Xem nhật ký thao tác"),
         P(Permissions.Admin.PermissionManage, AdminGroup, "Phân quyền cho role nhân viên"),
+        P(Permissions.Admin.EventApprove, AdminGroup, "Phê duyệt sự kiện và danh sách giải, phân công Moderator, xóa bản nháp sự kiện"),
     ];
 
     public static PermissionDefinition? Find(string code) => All.FirstOrDefault(p => p.Code == code);

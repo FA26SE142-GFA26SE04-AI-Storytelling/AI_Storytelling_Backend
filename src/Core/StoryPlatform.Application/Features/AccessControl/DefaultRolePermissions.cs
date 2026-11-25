@@ -18,6 +18,7 @@ public static class DefaultRolePermissions
         Permissions.Review.RubricManage,
         Permissions.Review.GuideManage,
         Permissions.Review.WishCardManage,
+        Permissions.Moderation.EventOperate,
     ];
 
     public static readonly IReadOnlyDictionary<string, IReadOnlySet<string>> Map =
@@ -35,12 +36,15 @@ public static class DefaultRolePermissions
                 Permissions.Shared.StoryRatingReport,
                 Permissions.Shared.StoryReviewApprove,
                 Permissions.Shared.StoryPackageConfirm,
-                Permissions.Shared.CommunityView),
+                Permissions.Shared.CommunityView,
+                Permissions.Shared.EventParticipate,
+                Permissions.Parent.EventParticipate),
             [RoleCodes.ContentCreator] = Set(
                 Permissions.Shared.MediaGenerate,
                 Permissions.Shared.StoryRatingReport,
                 Permissions.Shared.StoryPackageConfirm,
                 Permissions.Shared.CommunityView,
+                Permissions.Shared.EventParticipate,
                 Permissions.Creator.ApplicationViewOwn,
                 Permissions.Creator.Studio,
                 Permissions.Creator.RatingViewOwn,
@@ -58,6 +62,7 @@ public static class DefaultRolePermissions
                 Permissions.Moderation.ReportReview,
                 Permissions.Moderation.RatingModerate,
                 Permissions.Moderation.CategoryManage,
+                Permissions.Moderation.EventManage,
                 Permissions.Review.RoadmapTemplateAuthor]),
             [RoleCodes.Administrator] = Set([
                 .. ModeratorAndAdmin,
@@ -74,6 +79,7 @@ public static class DefaultRolePermissions
                 Permissions.Admin.BusinessReportView,
                 Permissions.Admin.AuditView,
                 Permissions.Admin.PermissionManage,
+                Permissions.Admin.EventApprove,
                 // Luồng 5: soạn bộ truyện mẫu khi không còn kiểm duyệt viên (điều kiện NoActiveModerator).
                 Permissions.Review.RoadmapTemplateAuthor]),
         };

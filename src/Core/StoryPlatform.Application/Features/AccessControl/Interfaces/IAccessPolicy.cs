@@ -20,6 +20,9 @@ public interface IAccessPolicy
         string? deniedMessage = null,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Role có đang giữ quyền không, không xét điều kiện; dùng để lọc danh sách.</summary>
+    Task<bool> RoleHoldsAsync(string roleCode, string permission, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Các quyền role đang giữ kèm trạng thái lúc này, tính từ chính các điều kiện mà <see cref="EnsureAsync"/> chặn,
     /// để giao diện ẩn hoặc khoá nút kèm lý do. Chỉ phục vụ hiển thị.

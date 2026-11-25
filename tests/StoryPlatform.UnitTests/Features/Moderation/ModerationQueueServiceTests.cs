@@ -227,7 +227,13 @@ public class ModerationQueueServiceTests
 
         await _sut.ListAsync(_admin.Id, new ModerationQueueQueryDto());
 
-        Assert.True(filter!.Compile()(PendingItem(createdBy: _admin.Id)));
+        var own = PendingItem(createdBy: _admin.Id);
+        own.ItemType = ModerationItemType.GrayZoneStory;
+        Assert.True(filter!.Compile()(own));
+        // Loại mục Administrator không được nhận thì không hiện trong danh sách.
+        Assert.False(filter.Compile()(PendingItem()));
+        own.ItemType = ModerationItemType.StoryRating;
+        Assert.False(filter.Compile()(own));
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseNpgsql("Host=localhost;Database=metadata_only;Username=unused;Password=unused").Options;
         await using var context = new ApplicationDbContext(options);

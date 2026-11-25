@@ -49,17 +49,19 @@ public sealed class SubscriptionPostgresTests(AuthoringGuidePostgresFixture fixt
                 var previous = migrations[migrations.FindIndex(id => id.EndsWith("_" + Migration)) - 1];
                 await before.GetService<IMigrator>().MigrateAsync(previous);
 
-                var parentA = NewParent("legacy_a");
-                var parentB = NewParent("legacy_b");
-                before.Users.AddRange(parentA, parentB);
-                await before.SaveChangesAsync();
-                (withLeftover, usedUp) = (parentA.Id, parentB.Id);
-                var today = DateOnly.FromDateTime(DateTime.UtcNow);
-                before.TokenQuotaConfigs.AddRange(
-                    new TokenQuotaConfig { Scope = TokenQuotaScope.System, QuotaLimit = 1000, QuotaUsed = 10, PeriodStart = today, PeriodEnd = today.AddMonths(1) },
-                    new TokenQuotaConfig { Scope = TokenQuotaScope.Personal, UserId = withLeftover, QuotaLimit = 50, QuotaUsed = 18, PeriodStart = today, PeriodEnd = today.AddMonths(1) },
-                    new TokenQuotaConfig { Scope = TokenQuotaScope.Personal, UserId = usedUp, QuotaLimit = 50, QuotaUsed = 50, PeriodStart = today, PeriodEnd = today.AddMonths(1) });
-                await before.SaveChangesAsync();
+                // SQL thuần: model hiện tại có cột mới hơn schema của migration cũ này.
+                async Task<int> InsertParentAsync(string username) => (await before.Database.SqlQuery<int>($"""
+                    INSERT INTO user_accounts ("Username", "Email", "PasswordHash", "FullName", "Role", "Status", "FailedLoginAttempts", "TokenVersion", "CreatedAt", "IsDeleted")
+                    VALUES ({username}, {username + "@example.test"}, 'not-a-real-hash', {username}, 'User', 'Active', 0, 0, NOW(), FALSE)
+                    RETURNING "Id" AS "Value"
+                    """).ToListAsync()).Single();
+                (withLeftover, usedUp) = (await InsertParentAsync("legacy_a"), await InsertParentAsync("legacy_b"));
+                await before.Database.ExecuteSqlAsync($"""
+                    INSERT INTO token_quota_configs ("Scope", "UserId", "QuotaLimit", "QuotaUsed", "PeriodStart", "PeriodEnd", "CreatedAt", "IsDeleted")
+                    VALUES ('System', NULL, 1000, 10, CURRENT_DATE, CURRENT_DATE + 30, NOW(), FALSE),
+                           ('Personal', {withLeftover}, 50, 18, CURRENT_DATE, CURRENT_DATE + 30, NOW(), FALSE),
+                           ('Personal', {usedUp}, 50, 50, CURRENT_DATE, CURRENT_DATE + 30, NOW(), FALSE)
+                    """);
             }
 
             await using var db = new ApplicationDbContext(options);

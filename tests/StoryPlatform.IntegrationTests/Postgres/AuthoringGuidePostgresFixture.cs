@@ -20,7 +20,7 @@ public sealed class AuthoringGuidePostgresFixture : IAsyncLifetime
     private string? _adminConnection;
     private string? _templateName;
     private bool _templateCreated;
-    private int _moderatorId, _administratorId, _parentId;
+    private int _moderatorId, _secondModeratorId, _administratorId, _parentId;
 
     public async Task InitializeAsync()
     {
@@ -40,11 +40,13 @@ public sealed class AuthoringGuidePostgresFixture : IAsyncLifetime
             await using var context = new ApplicationDbContext(OptionsFor(_templateName));
             await context.Database.MigrateAsync();
             var moderator = NewUser("it_moderator", UserRole.Moderator);
+            var secondModerator = NewUser("it_moderator2", UserRole.Moderator);
             var administrator = NewUser("it_administrator", UserRole.Administrator);
             var parent = NewUser("it_parent", UserRole.User);
-            context.Users.AddRange(moderator, administrator, parent);
+            context.Users.AddRange(moderator, secondModerator, administrator, parent);
             await context.SaveChangesAsync();
-            (_moderatorId, _administratorId, _parentId) = (moderator.Id, administrator.Id, parent.Id);
+            (_moderatorId, _secondModeratorId, _administratorId, _parentId) =
+                (moderator.Id, secondModerator.Id, administrator.Id, parent.Id);
 
             await using var uow = new UnitOfWork(context);
             await new AuthoringGuideCatalogSeeder(uow).SeedAsync(CancellationToken.None);
@@ -69,7 +71,7 @@ public sealed class AuthoringGuidePostgresFixture : IAsyncLifetime
             throw new InvalidOperationException("PostgreSQL fixture chưa được bật và khởi tạo.");
         var name = "storyplatform_it_" + Guid.NewGuid().ToString("N")[..12];
         await ExecuteAdminAsync($"CREATE DATABASE \"{name}\" TEMPLATE \"{_templateName}\"");
-        return new TestDatabase(name, OptionsFor(name), _moderatorId, _administratorId, _parentId, ExecuteAdminAsync);
+        return new TestDatabase(name, OptionsFor(name), _moderatorId, _secondModeratorId, _administratorId, _parentId, ExecuteAdminAsync);
     }
 
     private DbContextOptions<ApplicationDbContext> OptionsFor(string database)
@@ -94,11 +96,13 @@ public sealed class AuthoringGuidePostgresFixture : IAsyncLifetime
     };
 }
 
-public sealed class TestDatabase(string name, DbContextOptions<ApplicationDbContext> options, int moderatorId, int administratorId,
+public sealed class TestDatabase(string name, DbContextOptions<ApplicationDbContext> options, int moderatorId, int secondModeratorId, int administratorId,
     int parentUserId, Func<string, Task> executeAdmin) : IAsyncDisposable
 {
     public DbContextOptions<ApplicationDbContext> Options { get; } = options;
     public int ModeratorId { get; } = moderatorId;
+    /// <summary>Người ghi thứ hai: Administrator không sửa được cấu hình khi còn kiểm duyệt viên hoạt động.</summary>
+    public int SecondModeratorId { get; } = secondModeratorId;
     public int AdministratorId { get; } = administratorId;
     public int ParentUserId { get; } = parentUserId;
 

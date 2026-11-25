@@ -811,9 +811,13 @@ public partial class EventManagementService : IEventManagementService
         };
     }
 
+    private const int MaxTitleLength = 200;
+
     private static void ValidateCreateRequest(CreateEventRequestDto req)
     {
         if (string.IsNullOrWhiteSpace(req.Title)) throw new BadRequestException("Tên sự kiện không được để trống.");
+        if (req.Title.Trim().Length > MaxTitleLength)
+            throw new BadRequestException($"Tên sự kiện không được vượt quá {MaxTitleLength} ký tự.");
         if (req.ConfigVersion == EventConfigVersion.ActivityBased)
             ValidateActivityBasedDraftRequest(req);
         else

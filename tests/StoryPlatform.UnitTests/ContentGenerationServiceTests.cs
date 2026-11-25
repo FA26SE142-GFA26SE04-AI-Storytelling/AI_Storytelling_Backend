@@ -342,13 +342,16 @@ public sealed class ContentGenerationServiceTests
         var store = Seed(); var ai = new FakeAIClient(); var queued = new RecordingHandoffService(store);
         var handoff = new ScriptedHandoff(async (call, ct) =>
         {
-            await Task.Delay(1200, ct);
-            Assert.True(ai.ContentToken.IsCancellationRequested);
+            // Chờ đúng lúc hạn nội dung hết thay vì chờ cố định; ct còn 5 giây nên không hết trước.
+            var contentDeadline = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            using var registration = ai.ContentToken.Register(() => contentDeadline.SetResult());
+            await contentDeadline.Task.WaitAsync(ct);
             Assert.False(ct.IsCancellationRequested);
             return await queued.QueueArtifactsAsync(1, store.Items<StoryVersion>().Single(x => x.IsCurrent).Id, 1, 1, ct);
         });
         var service = new ContentGenerationService(store, ai, new PassingQualityEvaluator(), new FakeFailureFinalizer(store),
-            handoff, new() { ContentExecutionBudgetSeconds = 6 });
+            // Trừ 5 giây dự phòng còn 3 giây cho phần nội dung: 1 giây không đủ khi máy CI chậm.
+            handoff, new() { ContentExecutionBudgetSeconds = 8 });
         Assert.True(await service.ProcessNextAsync());
         Assert.Equal(GenerationJobStatus.Completed, store.Items<StoryGenerationJob>().Single(x => x.Operation == GenerationJobOperation.GenerateContent).Status);
         Assert.Single(store.Items<StoryGenerationJob>(), x => x.Operation == GenerationJobOperation.GenerateVocabulary);

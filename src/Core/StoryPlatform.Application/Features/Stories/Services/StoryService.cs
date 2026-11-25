@@ -121,10 +121,19 @@ public class StoryService : IStoryService
                 Average: Math.Round(group.Average(rating => rating.Rating), 1, MidpointRounding.AwayFromZero),
                 Count: group.Count()));
 
+        // Giống luồng bé: bản IsCurrent (ChildStoryLookup) và quiz chung ParentStoryPackageId == null (ChildQuizService).
+        var quizItems = _unitOfWork.Repository<QuizItem>().Query();
+        var withQuiz = (await _unitOfWork.Repository<StoryVersion>().FindAsync(
+                version => version.IsCurrent && !version.IsDeleted && storyIds.Contains(version.StoryId)
+                           && quizItems.Any(item => item.StoryVersionId == version.Id && item.ParentStoryPackageId == null && !item.IsDeleted),
+                cancellationToken: cancellationToken))
+            .Select(version => version.StoryId).ToHashSet();
+
         var cover = await CoverResolverAsync(items, cancellationToken);
         var dtos = items.Select(story =>
         {
             var dto = Fill(new CommunityStoryDto(), story, cover);
+            dto.HasQuiz = withQuiz.Contains(story.Id);
             dto.ViewCount = views.GetValueOrDefault(story.Id);
             dto.FavoriteCount = favorites.GetValueOrDefault(story.Id);
             if (ratings.TryGetValue(story.Id, out var rated))

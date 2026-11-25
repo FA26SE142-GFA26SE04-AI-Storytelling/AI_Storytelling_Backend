@@ -36,6 +36,9 @@ public class CommunityStoryDto : StoryDto
 
     /// <summary>Số đánh giá đang hiện.</summary>
     public int RatingCount { get; set; }
+
+    /// <summary>Bản hiện hành (bản bé đọc) có câu hỏi quiz chung; không xét cài đặt quiz của từng bé.</summary>
+    public bool HasQuiz { get; set; }
 }
 
 public class CreateStoryRequestDto

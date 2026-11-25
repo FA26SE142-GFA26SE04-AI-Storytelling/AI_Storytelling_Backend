@@ -31,7 +31,7 @@ public class PaymentReconciliationServiceTests
     public PaymentReconciliationServiceTests()
     {
         _store.Seed(new UserAccount { Id = ParentId, Role = UserRole.User, Email = "p1@x.com", Username = "parent_one", FullName = "Phụ huynh Một" });
-        _store.Seed(new UserAccount { Id = AdminId, Role = UserRole.Administrator, Email = "admin@x.com", Username = "admin", FullName = "Quản trị" });
+        _store.Seed(new UserAccount { Id = AdminId, Role = UserRole.Administrator, Status = AccountStatus.Active, Email = "admin@x.com", Username = "admin", FullName = "Quản trị" });
         _store.Seed(new SubscriptionPlan { Id = 1, Name = "Personal", PlanType = PlanType.Legacy, PriceVnd = 49000, AiCredits = 50, IsActive = false });
         _store.Seed(new SubscriptionPlan { Id = ReadingPlanId, Name = "Gói Đọc", PlanType = PlanType.Reading, PriceVnd = 49000, AiCredits = 0 });
         _store.Seed(new SubscriptionPlan { Id = CreativePlanId, Name = "Gói Sáng tạo", PlanType = PlanType.Creative, PriceVnd = 99000, AiCredits = 4 });

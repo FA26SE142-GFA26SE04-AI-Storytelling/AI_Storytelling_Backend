@@ -25,6 +25,7 @@ public class BusinessReportRevenueSnapshotTests
 
     public BusinessReportRevenueSnapshotTests()
     {
+        _store.Seed(new UserAccount { Id = AdminId, Role = UserRole.Administrator, Status = AccountStatus.Active, Username = "admin_demo" });
         _store.Seed(new SubscriptionPlan { Id = 2, Name = "Gói Đọc", PlanType = PlanType.Reading, PriceVnd = 49000 });
         _store.Seed(new SubscriptionPlan { Id = CreativePlanId, Name = "Gói Sáng tạo", PlanType = PlanType.Creative, PriceVnd = 99000, AiCredits = 4 });
         _sut = new BusinessReportService(

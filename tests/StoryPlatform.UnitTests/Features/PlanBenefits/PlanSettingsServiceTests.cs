@@ -5,6 +5,7 @@ using StoryPlatform.Application.Features.PlanBenefits.DTOs;
 using StoryPlatform.Application.Features.PlanBenefits.Services;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.UnitTests.Features.TokenQuota;
+using StoryPlatform.Domain.Enums;
 using Xunit;
 
 namespace StoryPlatform.UnitTests.Features.PlanBenefits;
@@ -19,6 +20,7 @@ public sealed class PlanSettingsServiceTests
     public PlanSettingsServiceTests()
     {
         _uow.Seed(new PlanSettings { Id = PlanSettings.SingletonId });
+        _uow.Seed(new UserAccount { Id = AdminId, Role = UserRole.Administrator, Status = AccountStatus.Active, Username = "admin_demo" });
         _sut = new PlanSettingsService(_uow, new PlanSettingsProvider(_uow), _audit.Object);
     }
 
@@ -94,6 +96,7 @@ public sealed class PlanSettingsServiceTests
     public async Task Update_NoRowYet_CreatesTheSingletonRow()
     {
         var empty = new InMemoryUnitOfWork();
+        empty.Seed(new UserAccount { Id = AdminId, Role = UserRole.Administrator, Status = AccountStatus.Active, Username = "admin_demo" });
         await new PlanSettingsService(empty, new PlanSettingsProvider(empty), _audit.Object).UpdateAsync(AdminId, Defaults());
 
         Assert.Equal(PlanSettings.SingletonId, Assert.Single(empty.Items<PlanSettings>()).Id);

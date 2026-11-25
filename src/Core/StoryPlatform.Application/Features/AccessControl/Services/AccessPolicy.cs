@@ -1,0 +1,121 @@
+using StoryPlatform.Application.Abstractions.Persistence;
+using StoryPlatform.Application.Common.Exceptions;
+using StoryPlatform.Application.Features.AccessControl.DTOs;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Domain.Entities;
+using StoryPlatform.Domain.Enums;
+
+namespace StoryPlatform.Application.Features.AccessControl.Services;
+
+/// <inheritdoc />
+public sealed class AccessPolicy(IUnitOfWork uow, IPermissionService permissions) : IAccessPolicy
+{
+    public const string DefaultDeniedMessage = "Bạn không có quyền thực hiện thao tác này.";
+    public const string OwnContentMessage = "Bạn không thể duyệt nội dung do chính mình tạo hoặc nộp.";
+    public const string AdminFallbackMessage =
+        "Quản trị viên chỉ xử lý hàng đợi khi không còn kiểm duyệt viên hợp lệ để nhận mục này.";
+    public const string NoActiveModeratorMessage =
+        "Quản trị viên chỉ sửa cấu hình kiểm duyệt khi không còn kiểm duyệt viên đang hoạt động.";
+
+    public const string AdminFallbackLimitedReason =
+        "Đang có kiểm duyệt viên hoạt động: chỉ nhận được mục đã chuyển lên, hoặc mục không còn kiểm duyệt viên nào khác nhận được.";
+    public const string Allowed = "Allowed";
+    public const string Limited = "Limited";
+    public const string Blocked = "Blocked";
+
+    /// <summary>Bản dùng khi service được dựng tay (test): quyền lấy theo bản gán mặc định trong code.</summary>
+    public static IAccessPolicy Default(IUnitOfWork uow) => new AccessPolicy(uow, new StaticPermissionService());
+
+    public async Task<UserAccount> EnsureAsync(int actorUserId, string permission, object? resource = null,
+        AccessMode mode = AccessMode.Write, string? deniedMessage = null, CancellationToken cancellationToken = default)
+    {
+        var denied = deniedMessage ?? DefaultDeniedMessage;
+        var actor = await uow.Repository<UserAccount>().GetByIdAsync(actorUserId, cancellationToken);
+        if (actor is null || actor.IsDeleted || actor.Status != AccountStatus.Active || actor.LockedUntil > DateTime.UtcNow)
+            throw new ForbiddenException(denied);
+
+        var roleCode = actor.Role.ToString();
+        if (!await permissions.RoleHasAsync(roleCode, permission, cancellationToken))
+            throw new ForbiddenException(denied);
+
+        if (mode == AccessMode.Read) return actor;
+
+        foreach (var condition in DefaultRolePermissions.ConditionsFor(roleCode, permission))
+        {
+            var failure = await EvaluateAsync(condition, actor, permission, resource, cancellationToken);
+            if (failure is not null) throw new ForbiddenException(failure);
+        }
+
+        return actor;
+    }
+
+    public async Task<IReadOnlyList<PermissionAccessDto>> DescribeAsync(string roleCode, CancellationToken cancellationToken = default)
+    {
+        var codes = (await permissions.GetForRoleAsync(roleCode, cancellationToken)).Order(StringComparer.Ordinal).ToList();
+        var result = new List<PermissionAccessDto>(codes.Count);
+        bool? anyModerator = null;
+        foreach (var code in codes)
+        {
+            var conditions = roleCode == RoleCodes.Administrator ? DefaultRolePermissions.ConditionsFor(roleCode, code) : [];
+            var state = conditions.Contains(AccessConditions.NoActiveModerator) ? Blocked
+                : conditions.Contains(AccessConditions.AdminFallback) ? Limited : Allowed;
+            if (state != Allowed && await ModeratorsHoldAsync(code, cancellationToken))
+                anyModerator ??= await CountActiveModeratorsAsync(cancellationToken) > 0;
+            else
+                state = Allowed;
+            if (state != Allowed && anyModerator != true) state = Allowed;
+
+            var reason = state switch
+            {
+                Blocked => NoActiveModeratorMessage,
+                Limited => AdminFallbackLimitedReason,
+                _ => null,
+            };
+            result.Add(new PermissionAccessDto(code, state, reason));
+        }
+
+        return result;
+    }
+
+    private Task<int> CountActiveModeratorsAsync(CancellationToken ct) =>
+        uow.Repository<UserAccount>().CountAsync(
+            user => user.Role == UserRole.Moderator && user.Status == AccountStatus.Active && !user.IsDeleted, ct);
+
+    /// <returns>Message khi điều kiện không đạt; null khi đạt.</returns>
+    private async Task<string?> EvaluateAsync(string condition, UserAccount actor, string permission, object? resource,
+        CancellationToken ct)
+    {
+        switch (condition)
+        {
+            case AccessConditions.NotOwnContent:
+                return resource is ModerationItem own && own.CreatedByUserId == actor.Id ? OwnContentMessage : null;
+
+            case AccessConditions.AdminFallback:
+                // Chỉ xét lúc nhận mục: mục đã nhận hợp lệ thì làm tiếp được dù có kiểm duyệt viên mới hoạt động.
+                if (actor.Role != UserRole.Administrator
+                    || resource is not ModerationItem { Status: ModerationItemStatus.Pending } item
+                    || item.EscalatedAt != null
+                    || !await ModeratorsHoldAsync(permission, ct))
+                    return null;
+                var creatorId = item.CreatedByUserId ?? 0;
+                var eligible = await uow.Repository<UserAccount>().CountAsync(
+                    user => user.Role == UserRole.Moderator && user.Status == AccountStatus.Active && user.Id != creatorId, ct);
+                return eligible > 0 ? AdminFallbackMessage : null;
+
+            case AccessConditions.NoActiveModerator:
+                if (actor.Role != UserRole.Administrator || !await ModeratorsHoldAsync(permission, ct)) return null;
+                return await CountActiveModeratorsAsync(ct) > 0 ? NoActiveModeratorMessage : null;
+
+            // Điều kiện Luồng 1, 3, 4 (OwnChildProfile, PlanLimits...) do code sẵn có kiểm; ở đây chỉ để mô tả.
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>
+    /// Moderator chỉ được tính là "còn người xử lý" khi role Moderator đang giữ đúng quyền này; nếu Administrator đã thu
+    /// quyền khỏi Moderator thì Administrator là người xử lý còn lại.
+    /// </summary>
+    private Task<bool> ModeratorsHoldAsync(string permission, CancellationToken ct) =>
+        permissions.RoleHasAsync(RoleCodes.Moderator, permission, ct);
+}

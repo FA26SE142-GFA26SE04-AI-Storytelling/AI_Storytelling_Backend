@@ -10,6 +10,9 @@ using StoryPlatform.Application.Features.CreatorStatistics.DTOs;
 using StoryPlatform.Application.Features.CreatorStatistics.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Application.Features.AccessControl.Services;
 
 namespace StoryPlatform.Application.Features.BusinessReports.Services;
 
@@ -32,12 +35,16 @@ public class BusinessReportService : IBusinessReportService
     // Report chỉ đổi khi Admin publish (lúc đó cache bị xoá ngay); TTL là giới hạn trên nếu xoá cache lỗi.
     private static readonly TimeSpan LatestPublishedCacheTtl = TimeSpan.FromHours(1);
 
+    private readonly IAccessPolicy _accessPolicy;
+
     public BusinessReportService(
         IUnitOfWork unitOfWork, IAuditLogWriter auditLogWriter, IRevenueStatisticsService revenueStatisticsService,
         IUserAccountStatisticsService userAccountStatisticsService,
         ICreatorStatisticsService? creatorStatisticsService = null,
-        IAppCache? cache = null)
+        IAppCache? cache = null,
+        IAccessPolicy? accessPolicy = null)
     {
+        _accessPolicy = accessPolicy ?? AccessPolicy.Default(unitOfWork);
         _cache = cache;
         _creatorStatisticsService = creatorStatisticsService;
         _unitOfWork = unitOfWork;
@@ -49,6 +56,7 @@ public class BusinessReportService : IBusinessReportService
     public async Task<AdminBusinessReportDto> GenerateAsync(
         int adminUserId, GenerateBusinessReportRequestDto request, CancellationToken cancellationToken = default)
     {
+        await _accessPolicy.EnsureAsync(adminUserId, Permissions.Admin.BusinessReportView, deniedMessage: "Chỉ quản trị viên đang hoạt động mới thực hiện được thao tác này.", cancellationToken: cancellationToken);
         // Kỳ tính trọn ngày, gồm cả ngày PeriodEnd, nên hai kỳ liền nhau là kỳ sau bắt đầu vào ngày kế tiếp.
         var (from, toExclusive) = ReportPeriod.Resolve(request.PeriodStart, request.PeriodEnd);
         var lastDay = toExclusive.AddDays(-1);
@@ -110,6 +118,7 @@ public class BusinessReportService : IBusinessReportService
     public async Task<AdminBusinessReportDto> PublishAsync(
         int adminUserId, int reportId, CancellationToken cancellationToken = default)
     {
+        await _accessPolicy.EnsureAsync(adminUserId, Permissions.Admin.BusinessReportView, deniedMessage: "Chỉ quản trị viên đang hoạt động mới thực hiện được thao tác này.", cancellationToken: cancellationToken);
         var report = await _unitOfWork.Repository<BusinessReport>().GetByIdAsync(reportId, cancellationToken)
                      ?? throw new NotFoundException("Business Report", reportId);
 

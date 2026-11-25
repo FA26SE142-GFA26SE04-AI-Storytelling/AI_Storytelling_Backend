@@ -15,6 +15,8 @@ public sealed class AuthoringGuideManagementTests
     private static readonly CancellationToken Ct = CancellationToken.None;
     private const int Moderator = 14;
     private const int Admin = 9;
+    // Moderator thứ hai: Administrator chỉ sửa hướng dẫn khi không còn Moderator hoạt động (Luồng 5).
+    private const int OtherModerator = 16;
     private const int ParentUser = 1;
 
     private sealed class Harness
@@ -27,6 +29,7 @@ public sealed class AuthoringGuideManagementTests
         {
             Store.Items<UserAccount>().Add(new() { Id = Moderator, Role = UserRole.Moderator, Status = AccountStatus.Active });
             Store.Items<UserAccount>().Add(new() { Id = 15, Role = UserRole.Moderator, Status = AccountStatus.Suspended });
+            Store.Items<UserAccount>().Add(new() { Id = OtherModerator, Role = UserRole.Moderator, Status = AccountStatus.Active });
             Service = new AuthoringGuideManagementService(Store.Uow.Object, Audit.Object);
         }
 
@@ -130,7 +133,7 @@ public sealed class AuthoringGuideManagementTests
         var publishedId = h.Catalog.PublishedVersionId!.Value;
         await h.Service.CreateDraftAsync(Moderator, new(publishedId), Ct);
 
-        Assert.Equal("GUIDE_DRAFT_EXISTS", (await Assert.ThrowsAsync<ConflictException>(() => h.Service.CreateDraftAsync(Admin, new(null), Ct))).Message);
+        Assert.Equal("GUIDE_DRAFT_EXISTS", (await Assert.ThrowsAsync<ConflictException>(() => h.Service.CreateDraftAsync(OtherModerator, new(null), Ct))).Message);
 
         var fresh = new Harness();
         await Assert.ThrowsAsync<NotFoundException>(() => fresh.Service.CreateDraftAsync(Moderator, new(424242), Ct));
@@ -152,7 +155,7 @@ public sealed class AuthoringGuideManagementTests
         Assert.Equal(31, added.Draft.ItemCount);
         Assert.NotEqual(t0, added.RevisionToken);
 
-        var updated = await h.Service.UpsertItemAsync(Admin, "opening-1", Item(added.RevisionToken, title: "Tiêu đề đã sửa"), Ct);
+        var updated = await h.Service.UpsertItemAsync(OtherModerator, "opening-1", Item(added.RevisionToken, title: "Tiêu đề đã sửa"), Ct);
         Assert.Equal(31, updated.Draft.ItemCount);
         var draftItems = (await h.Service.GetVersionAsync(Moderator, updated.Draft.VersionId, Ct)).Items;
         Assert.Equal("Tiêu đề đã sửa", draftItems.Single(x => x.Id == "opening-1").Title);
@@ -173,7 +176,7 @@ public sealed class AuthoringGuideManagementTests
         var t0 = (await h.Service.CreateDraftAsync(Moderator, new(null), Ct)).RevisionToken;
         await h.Service.UpsertItemAsync(Moderator, "opening-9", Item(t0), Ct);
 
-        var ex = await Assert.ThrowsAsync<ConflictException>(() => h.Service.UpsertItemAsync(Admin, "opening-8", Item(t0), Ct));
+        var ex = await Assert.ThrowsAsync<ConflictException>(() => h.Service.UpsertItemAsync(OtherModerator, "opening-8", Item(t0), Ct));
         Assert.Equal("GUIDE_REVISION_CONFLICT", ex.Message);
         var draft = await h.Service.GetVersionAsync(Moderator, h.Catalog.DraftVersionId!.Value, Ct);
         Assert.DoesNotContain(draft.Items, x => x.Id == "opening-8");
@@ -307,10 +310,10 @@ public sealed class AuthoringGuideManagementTests
         var oldPublishedId = h.Catalog.PublishedVersionId!.Value;
         var draftId = h.Catalog.DraftVersionId!.Value;
 
-        var published = await h.Service.PublishAsync(Admin, new(token), Ct);
+        var published = await h.Service.PublishAsync(OtherModerator, new(token), Ct);
 
         Assert.Equal(("Published", "parent-vi-2", 31), (published.Published.Status, published.Published.CatalogVersion, published.Published.ItemCount));
-        Assert.Equal(Admin, published.Published.PublishedByUserId);
+        Assert.Equal(OtherModerator, published.Published.PublishedByUserId);
         Assert.NotNull(published.Published.PublishedAt);
         Assert.NotEqual(token, published.RevisionToken);
         Assert.Equal(((int?)draftId, (int?)null, published.RevisionToken), (h.Catalog.PublishedVersionId, h.Catalog.DraftVersionId, h.Catalog.RevisionToken));
@@ -320,7 +323,7 @@ public sealed class AuthoringGuideManagementTests
         var old = h.Store.Items<AuthoringGuideCatalogVersion>().Single(x => x.Id == oldPublishedId);
         Assert.Equal((AuthoringGuideVersionStatus.Published, "parent-vi-1"), (old.Status, old.CatalogVersion));
         Assert.Equal(30, (await h.Service.GetVersionAsync(Moderator, oldPublishedId, Ct)).Items.Length);
-        h.Audit.Verify(x => x.LogAsync(Admin, "AuthoringGuideCatalogPublished", nameof(AuthoringGuideCatalogVersion),
+        h.Audit.Verify(x => x.LogAsync(OtherModerator, "AuthoringGuideCatalogPublished", nameof(AuthoringGuideCatalogVersion),
             draftId, It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
 
         // Bản đã phát hành không sửa được: không còn bản nháp để sửa.

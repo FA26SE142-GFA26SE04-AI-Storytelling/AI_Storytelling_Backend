@@ -2,6 +2,9 @@ using StoryPlatform.Application.Abstractions.Persistence;
 using System.Linq.Expressions;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Common.Exceptions;
+using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Application.Features.AccessControl.Services;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.Moderation.DTOs;
 using StoryPlatform.Application.Features.Moderation.Interfaces;
@@ -15,13 +18,16 @@ public class ModerationQueueService : IModerationQueueService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditLogWriter _auditLogWriter;
     private readonly IStoryUsageImpactReader? _storyImpactReader;
+    private readonly IAccessPolicy _accessPolicy;
 
     public ModerationQueueService(
-        IUnitOfWork unitOfWork, IAuditLogWriter auditLogWriter, IStoryUsageImpactReader? storyImpactReader = null)
+        IUnitOfWork unitOfWork, IAuditLogWriter auditLogWriter, IStoryUsageImpactReader? storyImpactReader = null,
+        IAccessPolicy? accessPolicy = null)
     {
         _unitOfWork = unitOfWork;
         _auditLogWriter = auditLogWriter;
         _storyImpactReader = storyImpactReader;
+        _accessPolicy = accessPolicy ?? AccessPolicy.Default(unitOfWork);
     }
 
     public async Task<ModerationItem> EnqueueAsync(
@@ -105,21 +111,14 @@ public class ModerationQueueService : IModerationQueueService
             throw new ConflictException("Mục này đã có người nhận hoặc đã xử lý xong.");
         }
 
-        if (item.CreatedByUserId == actor.Id)
-        {
-            throw new ForbiddenException("Bạn không thể duyệt nội dung do chính mình tạo hoặc nộp.");
-        }
-
-        if (actor.Role == UserRole.Administrator)
-        {
-            // Report nội dung và đánh giá truyện chỉ do Moderator xử lý, kể cả khi không còn Moderator.
-            if (item.ItemType is ModerationItemType.ContentReport or ModerationItemType.StoryRating)
-            {
-                throw new ForbiddenException("Report nội dung và đánh giá truyện chỉ do kiểm duyệt viên xử lý.");
-            }
-
-            await EnsureAdministratorMayClaimAsync(item, cancellationToken);
-        }
+        // Mỗi loại mục đòi quyền riêng; điều kiện NotOwnContent và AdminFallback (mục chuyển lên, hoặc không còn
+        // Moderator hợp lệ khác người tạo) gắn với lần cấp quyền, xem DefaultRolePermissions.GrantConditions.
+        var deniedMessage = item.ItemType is ModerationItemType.ContentReport or ModerationItemType.StoryRating
+            ? "Report nội dung và đánh giá truyện chỉ do kiểm duyệt viên xử lý."
+            : "Bạn không có quyền nhận loại mục kiểm duyệt này.";
+        await _accessPolicy.EnsureAsync(
+            actor.Id, ModerationQueuePolicy.ClaimPermission(item.ItemType), item, AccessMode.Write, deniedMessage,
+            cancellationToken);
 
         var now = DateTime.UtcNow;
         item.Status = ModerationItemStatus.Claimed;
@@ -174,36 +173,11 @@ public class ModerationQueueService : IModerationQueueService
         return opened;
     }
 
-    private async Task<UserAccount> RequireStaffAsync(int actorUserId, CancellationToken cancellationToken)
-    {
-        var actor = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(actorUserId, cancellationToken);
-        if (actor == null
-            || actor.Status != AccountStatus.Active
-            || actor.Role is not (UserRole.Moderator or UserRole.Administrator))
-        {
-            throw new ForbiddenException(
-                "Chỉ kiểm duyệt viên hoặc quản trị viên đang hoạt động mới dùng được hàng đợi kiểm duyệt.");
-        }
-
-        return actor;
-    }
-
-    /// <summary>
-    /// Administrator chỉ nhận mục khi không còn Moderator active nào khác người tạo mục
-    /// (không còn Moderator, hoặc Moderator duy nhất chính là người tạo).
-    /// </summary>
-    private async Task EnsureAdministratorMayClaimAsync(ModerationItem item, CancellationToken cancellationToken)
-    {
-        var creatorId = item.CreatedByUserId ?? 0;
-        var eligibleModerators = await _unitOfWork.Repository<UserAccount>().CountAsync(
-            user => user.Role == UserRole.Moderator && user.Status == AccountStatus.Active && user.Id != creatorId,
-            cancellationToken);
-        if (eligibleModerators > 0)
-        {
-            throw new ForbiddenException(
-                "Quản trị viên chỉ xử lý hàng đợi khi không còn kiểm duyệt viên hợp lệ để nhận mục này.");
-        }
-    }
+    private Task<UserAccount> RequireStaffAsync(int actorUserId, CancellationToken cancellationToken) =>
+        _accessPolicy.EnsureAsync(
+            actorUserId, Permissions.Moderation.QueueProcess, mode: AccessMode.Read,
+            deniedMessage: "Chỉ kiểm duyệt viên hoặc quản trị viên đang hoạt động mới dùng được hàng đợi kiểm duyệt.",
+            cancellationToken: cancellationToken);
 
     private static string? DisplayName(UserAccount? user) => ModerationQueuePolicy.DisplayName(user);
 

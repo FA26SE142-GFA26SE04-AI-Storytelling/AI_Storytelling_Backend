@@ -94,6 +94,7 @@ public static class DependencyInjection
         // Thay bản tĩnh do AddAppAuthorization đăng ký trước: runtime đọc quyền từ DB (đăng ký sau thắng khi resolve).
         services.AddScoped<Features.AccessControl.Interfaces.IPermissionService, Features.AccessControl.Services.PermissionService>();
         services.AddScoped<Features.AccessControl.Interfaces.IRolePermissionAdminService, Features.AccessControl.Services.RolePermissionAdminService>();
+        services.AddScoped<Features.AccessControl.Interfaces.IAccessPolicy, Features.AccessControl.Services.AccessPolicy>();
         services.AddScoped<Features.CreatorAssistance.Interfaces.ICreatorAssistanceService, Features.CreatorAssistance.Services.CreatorAssistanceService>();
         services.AddSingleton<Features.CreatorAssistance.Services.AssistanceCancellationRegistry>();
         services.AddScoped<IUserProvisioningService, UserProvisioningService>();

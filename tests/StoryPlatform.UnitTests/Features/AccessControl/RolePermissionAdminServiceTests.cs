@@ -121,6 +121,62 @@ public sealed class RolePermissionAdminServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Permissions_report_scope_and_role_permissions_report_conditions()
+    {
+        var permissions = await Service().ListPermissionsAsync();
+        Assert.Equal("Assigned", permissions.Single(p => p.Code == Permissions.Review.GrayZone).Scope);
+        Assert.Equal("Any", permissions.Single(p => p.Code == Permissions.Review.GuideManage).Scope);
+
+        var admin = await Service().GetRolePermissionsAsync(RoleCodes.Administrator);
+        Assert.Equal(
+            [AccessConditions.Describe(AccessConditions.NotOwnContent), AccessConditions.Describe(AccessConditions.AdminFallback)],
+            admin.Conditions[Permissions.Moderation.QueueProcess]);
+        Assert.Equal([AccessConditions.Describe(AccessConditions.NoActiveModerator)], admin.Conditions[Permissions.Review.GuideManage]);
+        Assert.False(admin.Conditions.ContainsKey(Permissions.Admin.AuditView));
+
+        var moderator = await Service().GetRolePermissionsAsync(RoleCodes.Moderator);
+        Assert.False(moderator.Conditions.ContainsKey(Permissions.Review.GuideManage));
+    }
+
+    [Fact]
+    public async Task Parent_and_creator_permissions_report_ownership_and_plan_rules()
+    {
+        var parent = await Service().GetRolePermissionsAsync(RoleCodes.User);
+        Assert.Contains(AccessConditions.Describe(AccessConditions.OwnChildProfile), parent.Conditions[Permissions.Parent.ChildProfileManage]);
+        Assert.Contains(AccessConditions.Describe(AccessConditions.ParentalGate), parent.Conditions[Permissions.Parent.ChildProfileManage]);
+        Assert.Contains(AccessConditions.Describe(AccessConditions.PlanLimits), parent.Conditions[Permissions.Parent.StoryAuthor]);
+        Assert.Equal([AccessConditions.Describe(AccessConditions.DelegatedApproval)], parent.Conditions[Permissions.Shared.StoryReviewApprove]);
+
+        var creator = await Service().GetRolePermissionsAsync(RoleCodes.ContentCreator);
+        Assert.Contains(AccessConditions.Describe(AccessConditions.OwnCreatorStory), creator.Conditions[Permissions.Creator.Studio]);
+
+        // Administrator giữ story.review.approve nhưng không phải qua ủy quyền của phụ huynh.
+        var admin = await Service().GetRolePermissionsAsync(RoleCodes.Administrator);
+        Assert.False(admin.Conditions.ContainsKey(Permissions.Shared.StoryReviewApprove));
+    }
+
+    [Fact]
+    public async Task Role_permissions_report_defaults_role_scopes_and_condition_codes()
+    {
+        var roles = await Service().ListRolesAsync();
+        Assert.All(roles, r => Assert.True(r.Id > 0));
+
+        var parent = await Service().GetRolePermissionsAsync(RoleCodes.User);
+        Assert.Equal(Defaults(RoleCodes.User).Order(StringComparer.Ordinal), parent.DefaultCodes);
+        // Phạm vi theo role: quyền của phụ huynh chỉ trên hồ sơ của mình.
+        Assert.Equal("Own", parent.Scopes[Permissions.Parent.ChildProfileManage]);
+        Assert.Equal("Any", parent.Scopes[Permissions.Parent.ContentReportSubmit]);
+        Assert.Equal([AccessConditions.OwnChildProfile, AccessConditions.PlanLimits, AccessConditions.ParentalGate],
+            parent.ConditionCodes[Permissions.Parent.ChildProfileManage]);
+
+        var admin = await Service().GetRolePermissionsAsync(RoleCodes.Administrator);
+        Assert.Equal("Assigned", admin.Scopes[Permissions.Review.GrayZone]);
+        Assert.Equal([AccessConditions.NotOwnContent, AccessConditions.AdminFallback],
+            admin.ConditionCodes[Permissions.Review.GrayZone]);
+        Assert.Equal(admin.AssignableCodes.Order(StringComparer.Ordinal), admin.Scopes.Keys.Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
     public async Task Role_permissions_report_assignable_codes()
     {
         var result = await Service().GetRolePermissionsAsync(RoleCodes.Moderator);

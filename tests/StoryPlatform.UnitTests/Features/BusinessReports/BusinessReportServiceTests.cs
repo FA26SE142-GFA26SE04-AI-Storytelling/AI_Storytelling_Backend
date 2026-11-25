@@ -1,6 +1,7 @@
 using StoryPlatform.UnitTests.Infrastructure.Caching;
 using System.Linq.Expressions;
 using Moq;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
@@ -45,7 +46,7 @@ public class BusinessReportServiceTests
             .ReturnsAsync(new UserAccountStatisticsDto());
 
         _sut = new BusinessReportService(
-            _unitOfWork.Object, _auditLogWriter.Object, _revenueStatistics.Object, _accountStatistics.Object);
+            _unitOfWork.Object, _auditLogWriter.Object, _revenueStatistics.Object, _accountStatistics.Object, accessPolicy: Mock.Of<IAccessPolicy>());
     }
 
     private static Story MakeStory(int id, StorySource source, StoryStatus status, DateTime createdAt) => new()
@@ -220,7 +221,7 @@ public class BusinessReportServiceTests
     {
         var cache = new InMemoryAppCache();
         var sut = new BusinessReportService(_unitOfWork.Object, _auditLogWriter.Object, _revenueStatistics.Object,
-            _accountStatistics.Object, cache: cache);
+            _accountStatistics.Object, cache: cache, accessPolicy: Mock.Of<IAccessPolicy>());
         var report = MakeReport(3, ReportStatus.Published);
         report.PublishedAt = new DateTime(2026, 3, 1);
         _businessReportRepository.Setup(repo => repo.FindAsync(
@@ -240,7 +241,7 @@ public class BusinessReportServiceTests
     {
         var cache = new InMemoryAppCache();
         var sut = new BusinessReportService(_unitOfWork.Object, _auditLogWriter.Object, _revenueStatistics.Object,
-            _accountStatistics.Object, cache: cache);
+            _accountStatistics.Object, cache: cache, accessPolicy: Mock.Of<IAccessPolicy>());
         _businessReportRepository.Setup(repo => repo.GetByIdAsync(4, It.IsAny<CancellationToken>()))
             .ReturnsAsync(MakeReport(4, ReportStatus.Compiling));
 

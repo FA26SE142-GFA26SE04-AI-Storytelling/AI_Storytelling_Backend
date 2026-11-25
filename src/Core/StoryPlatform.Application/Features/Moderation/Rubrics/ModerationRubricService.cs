@@ -5,6 +5,9 @@ using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Contracts.AI.Moderation;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Application.Features.AccessControl.Services;
 
 namespace StoryPlatform.Application.Features.Moderation.Rubrics;
 
@@ -20,18 +23,19 @@ public sealed record RubricDto(int Id, string VersionNo, string Name, string Sta
     string SchemaVersion, string ContentHash, RubricDefinition Definition, int CreatedByUserId,
     DateTime CreatedAt, int? ActivatedByUserId, DateTime? ActivatedAt, DateTime? RetiredAt);
 
-public sealed class ModerationRubricService(IUnitOfWork uow, IEnumerable<IModelModerationProvider> providers) : IModerationRubricSource
+public sealed class ModerationRubricService(IUnitOfWork uow, IEnumerable<IModelModerationProvider> providers,
+    IAccessPolicy? accessPolicy = null) : IModerationRubricSource
 {
     // All catalog mutations serialize before reading rows. Negative ID is outside the story ID range.
     private const int CatalogLock = int.MinValue + 1349;
     private static readonly JsonSerializerOptions Json = RubricRules.Json;
-    private async Task Guard(int userId, bool administrator, CancellationToken ct)
-    {
-        var user = await uow.Repository<UserAccount>().FirstOrDefaultAsync(x => x.Id == userId, cancellationToken: ct);
-        if (user is null || user.IsDeleted || user.Status != AccountStatus.Active || user.LockedUntil > DateTime.UtcNow
-            || (administrator ? user.Role != UserRole.Administrator : user.Role is not (UserRole.Moderator or UserRole.Administrator)))
-            throw new ForbiddenException("RUBRIC_ACCESS_DENIED");
-    }
+    /// <summary>
+    /// Đọc, kiểm tra, chạy thử và kích hoạt: Moderator và Administrator. Soạn, nhân bản, sửa, xoá: Administrator chỉ khi
+    /// không còn Moderator hoạt động (Luồng 5, cấu hình M4).
+    /// </summary>
+    private Task Guard(int userId, AccessMode mode, CancellationToken ct) =>
+        (accessPolicy ?? AccessPolicy.Default(uow)).EnsureAsync(
+            userId, Permissions.Review.RubricManage, mode: mode, deniedMessage: "RUBRIC_ACCESS_DENIED", cancellationToken: ct);
 
     private async Task<ModerationRubricVersion> Row(int id, CancellationToken ct) =>
         await uow.Repository<ModerationRubricVersion>().FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted, cancellationToken: ct)
@@ -61,7 +65,7 @@ public sealed class ModerationRubricService(IUnitOfWork uow, IEnumerable<IModelM
     }
     public async Task<object> ListAsync(int userId, string? status, int pageIndex, int pageSize, CancellationToken ct)
     {
-        await Guard(userId, false, ct);
+        await Guard(userId, AccessMode.Read, ct);
         if (pageIndex < 1 || pageSize is < 1 or > 100 || (status is not null && status is not ("Draft" or "Active" or "Retired")))
             throw new BadRequestException("RUBRIC_QUERY_INVALID");
         ModerationRubricStatus? filter = status is null ? null : Enum.Parse<ModerationRubricStatus>(status);
@@ -70,9 +74,9 @@ public sealed class ModerationRubricService(IUnitOfWork uow, IEnumerable<IModelM
         return new { items = page.Items.Select(Dto).ToArray(), page.TotalCount, pageIndex, pageSize };
     }
     public async Task<RubricDto> GetAsync(int userId, int id, CancellationToken ct)
-    { await Guard(userId, false, ct); return Dto(await Row(id, ct)); }
+    { await Guard(userId, AccessMode.Read, ct); return Dto(await Row(id, ct)); }
     public async Task<RubricSnapshot> ActiveAsync(int userId, CancellationToken ct)
-    { await Guard(userId, false, ct); return await GetActiveAsync(ct); }
+    { await Guard(userId, AccessMode.Read, ct); return await GetActiveAsync(ct); }
 
     private static void ValidateWrite(RubricWriteRequest request)
     {
@@ -82,13 +86,13 @@ public sealed class ModerationRubricService(IUnitOfWork uow, IEnumerable<IModelM
         try { RubricRules.Validate(request.Definition); }
         catch (ArgumentException) { throw new BadRequestException("RUBRIC_DEFINITION_INVALID"); }
     }
-    private async Task<T> Mutation<T>(int userId, bool administrator, Func<Task<T>> action, CancellationToken ct)
+    private async Task<T> Mutation<T>(int userId, AccessMode mode, Func<Task<T>> action, CancellationToken ct)
     {
         await uow.BeginTransactionAsync(ct);
         try
         {
             await uow.AcquireTransactionLockAsync(CatalogLock, ct);
-            await Guard(userId, administrator, ct);
+            await Guard(userId, mode, ct);
             var result = await action();
             await uow.CommitTransactionAsync(ct);
             return result;
@@ -112,14 +116,14 @@ public sealed class ModerationRubricService(IUnitOfWork uow, IEnumerable<IModelM
             DefinitionJson = RubricRules.Serialize(request.Definition), ContentHash = RubricRules.Hash(request.Definition), CreatedByUserId = userId
         }, ct);
     }
-    public Task<RubricDto> CreateAsync(int userId, RubricWriteRequest request, CancellationToken ct) => Mutation(userId, false, async () =>
+    public Task<RubricDto> CreateAsync(int userId, RubricWriteRequest request, CancellationToken ct) => Mutation(userId, AccessMode.Write, async () =>
     {
         var row = await CreateRow(userId, request, ct);
         await uow.SaveChangesAsync(ct); // Generate ID for response and append-only audit FK.
         await Audit(row, userId, "Created", null, ct);
         return Dto(row);
     }, ct);
-    public Task<RubricDto> CloneAsync(int userId, int id, RubricCloneRequest request, CancellationToken ct) => Mutation(userId, false, async () =>
+    public Task<RubricDto> CloneAsync(int userId, int id, RubricCloneRequest request, CancellationToken ct) => Mutation(userId, AccessMode.Write, async () =>
     {
         var source = await Row(id, ct);
         var row = await CreateRow(userId, new(request.VersionNo, request.Name, Definition(source)), ct);
@@ -135,7 +139,7 @@ public sealed class ModerationRubricService(IUnitOfWork uow, IEnumerable<IModelM
         uow.Repository<ModerationRubricVersion>().Update(row);
         row.Revision++;
     }
-    public Task<RubricDto> UpdateAsync(int userId, int id, RubricWriteRequest request, CancellationToken ct) => Mutation(userId, false, async () =>
+    public Task<RubricDto> UpdateAsync(int userId, int id, RubricWriteRequest request, CancellationToken ct) => Mutation(userId, AccessMode.Write, async () =>
     {
         ValidateWrite(request);
         var row = await Row(id, ct);
@@ -146,7 +150,7 @@ public sealed class ModerationRubricService(IUnitOfWork uow, IEnumerable<IModelM
         await Audit(row, userId, "Updated", before, ct);
         return Dto(row);
     }, ct);
-    public Task<bool> DeleteAsync(int userId, int id, int revision, CancellationToken ct) => Mutation(userId, false, async () =>
+    public Task<bool> DeleteAsync(int userId, int id, int revision, CancellationToken ct) => Mutation(userId, AccessMode.Write, async () =>
     {
         var row = await Row(id, ct);
         var before = JsonSerializer.Serialize(Dto(row), Json);
@@ -156,13 +160,13 @@ public sealed class ModerationRubricService(IUnitOfWork uow, IEnumerable<IModelM
     }, ct);
     public async Task<object> ValidateAsync(int userId, int id, int revision, CancellationToken ct)
     {
-        await Guard(userId, false, ct);
+        await Guard(userId, AccessMode.Read, ct);
         var row = await Row(id, ct);
         if (row.Revision != revision) throw new ConflictException("RUBRIC_REVISION_STALE");
         var snapshot = Snapshot(row);
         return new { valid = true, row.Id, row.Revision, snapshot.ContentHash, snapshot.SchemaVersion };
     }
-    public Task<RubricDto> ActivateAsync(int userId, int id, int revision, CancellationToken ct) => Mutation(userId, false, async () =>
+    public Task<RubricDto> ActivateAsync(int userId, int id, int revision, CancellationToken ct) => Mutation(userId, AccessMode.Read /* kích hoạt: cả hai, không áp NoActiveModerator */, async () =>
     {
         var row = await Row(id, ct);
         Snapshot(row);
@@ -184,7 +188,7 @@ public sealed class ModerationRubricService(IUnitOfWork uow, IEnumerable<IModelM
     }, ct);
     public async Task<object> AuditLogsAsync(int userId, int id, int pageIndex, int pageSize, CancellationToken ct)
     {
-        await Guard(userId, false, ct);
+        await Guard(userId, AccessMode.Read, ct);
         if (pageIndex < 1 || pageSize is < 1 or > 100) throw new BadRequestException("RUBRIC_QUERY_INVALID");
         // Deleted drafts remain auditable, including their deletion event.
         var page = await uow.Repository<ModerationRubricAuditLog>().GetPagedAsync(pageIndex, pageSize,
@@ -193,7 +197,7 @@ public sealed class ModerationRubricService(IUnitOfWork uow, IEnumerable<IModelM
     }
     public async Task<object> EvaluateAsync(int userId, int id, RubricEvaluationRequest request, CancellationToken ct)
     {
-        await Guard(userId, false, ct);
+        await Guard(userId, AccessMode.Read, ct);
         var row = await Row(id, ct);
         if (row.Revision != request.Revision) throw new ConflictException("RUBRIC_REVISION_STALE");
         var snapshot = Snapshot(row); // Pin before the provider call; no transaction/lock held during inference.
@@ -207,7 +211,7 @@ public sealed class ModerationRubricService(IUnitOfWork uow, IEnumerable<IModelM
         var provider = providers.SingleOrDefault(x => x.Name == "Vertex") ?? throw new ConflictException("MODERATION_PROVIDER_NOT_REGISTERED");
         var result = await provider.EvaluateAsync(scan, ct);
         // Audit references the actual pinned snapshot even if this draft changed during inference.
-        await Mutation(userId, false, async () =>
+        await Mutation(userId, AccessMode.Read, async () =>
         {
             var current = await Row(id, ct);
             await uow.Repository<ModerationRubricAuditLog>().AddAsync(new() { RubricVersionId = current.Id, ActorUserId = userId,

@@ -8,6 +8,9 @@ using StoryPlatform.Application.Features.StoryRatings.DTOs;
 using StoryPlatform.Application.Features.StoryRatings.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Application.Features.AccessControl.Services;
 
 namespace StoryPlatform.Application.Features.StoryRatings.Services;
 
@@ -20,10 +23,13 @@ public class StoryRatingModerationService : IStoryRatingModerationService
     private readonly IUnitOfWork _unitOfWork;
     private readonly INotificationService _notifications;
     private readonly IAuditLogWriter _audit;
+    private readonly IAccessPolicy _accessPolicy;
 
     public StoryRatingModerationService(
-        IUnitOfWork unitOfWork, INotificationService notifications, IAuditLogWriter audit)
+        IUnitOfWork unitOfWork, INotificationService notifications, IAuditLogWriter audit,
+        IAccessPolicy? accessPolicy = null)
     {
+        _accessPolicy = accessPolicy ?? AccessPolicy.Default(unitOfWork);
         _unitOfWork = unitOfWork;
         _notifications = notifications;
         _audit = audit;
@@ -187,11 +193,10 @@ public class StoryRatingModerationService : IStoryRatingModerationService
     /// <summary>Cổng chung: Moderator đang hoạt động, mục StoryRating đang do chính mình giữ và còn hạn.</summary>
     private async Task<Context> LoadClaimedAsync(int actorUserId, int itemId, CancellationToken cancellationToken)
     {
-        var actor = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(actorUserId, cancellationToken);
-        if (actor == null || actor.IsDeleted || actor.Status != AccountStatus.Active || actor.Role != UserRole.Moderator)
-        {
-            throw new ForbiddenException("Chỉ kiểm duyệt viên đang hoạt động mới kiểm duyệt được đánh giá.");
-        }
+        var actor = await _accessPolicy.EnsureAsync(
+            actorUserId, Permissions.Moderation.RatingModerate, mode: AccessMode.Read,
+            deniedMessage: "Chỉ kiểm duyệt viên đang hoạt động mới kiểm duyệt được đánh giá.",
+            cancellationToken: cancellationToken);
 
         var item = await _unitOfWork.Repository<ModerationItem>().GetByIdAsync(itemId, cancellationToken);
         if (item == null || item.IsDeleted)

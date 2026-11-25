@@ -12,6 +12,9 @@ using StoryPlatform.Application.Features.CreatorTiers.Interfaces;
 using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Application.Features.AccessControl.Services;
 
 namespace StoryPlatform.Application.Features.CreatorTiers.Services;
 
@@ -31,10 +34,14 @@ public class CreatorTierService : ICreatorTierService, IStoryArchiveHandler
     private readonly INotificationService _notificationService;
     private readonly IServiceProvider _services;
 
+    private readonly IAccessPolicy _accessPolicy;
+
     public CreatorTierService(
         IUnitOfWork unitOfWork, IAuditLogWriter auditLogWriter, INotificationService notificationService,
-        IServiceProvider services)
+        IServiceProvider services,
+        IAccessPolicy? accessPolicy = null)
     {
+        _accessPolicy = accessPolicy ?? AccessPolicy.Default(unitOfWork);
         _unitOfWork = unitOfWork;
         _auditLogWriter = auditLogWriter;
         _notificationService = notificationService;
@@ -140,11 +147,10 @@ public class CreatorTierService : ICreatorTierService, IStoryArchiveHandler
             throw new BadRequestException("Lý do thu hồi tối đa 500 ký tự.");
         }
 
-        var admin = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(adminUserId, cancellationToken);
-        if (admin is not { Role: UserRole.Administrator, Status: AccountStatus.Active } || admin.IsDeleted)
-        {
-            throw new ForbiddenException("Chỉ quản trị viên đang hoạt động mới thu hồi được cấp nhà sáng tạo đối tác.");
-        }
+        var admin = await _accessPolicy.EnsureAsync(
+            adminUserId, Permissions.Admin.CreatorTierManage,
+            deniedMessage: "Chỉ quản trị viên đang hoạt động mới thu hồi được cấp nhà sáng tạo đối tác.",
+            cancellationToken: cancellationToken);
 
         var creator = await RequireCreatorAsync(creatorUserId, cancellationToken);
         if (creator.CreatorTier != CreatorTier.Partner)

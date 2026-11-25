@@ -562,6 +562,9 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<int?>("Age")
+                        .HasColumnType("integer");
+
                     b.Property<string>("AgeBand")
                         .IsRequired()
                         .HasMaxLength(30)
@@ -3943,6 +3946,9 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.Property<decimal?>("SafetyScoreThreshold")
                         .HasColumnType("decimal(5,2)");
+
+                    b.Property<int?>("StoryLengthTarget")
+                        .HasColumnType("integer");
 
                     b.Property<bool>("StoryWishesEnabled")
                         .ValueGeneratedOnAdd()

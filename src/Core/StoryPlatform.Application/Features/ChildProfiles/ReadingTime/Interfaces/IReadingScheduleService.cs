@@ -1,4 +1,5 @@
 using StoryPlatform.Application.Features.ChildProfiles.ReadingTime.DTOs;
+using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.ChildProfiles.ReadingTime.Interfaces;
 
@@ -6,6 +7,9 @@ namespace StoryPlatform.Application.Features.ChildProfiles.ReadingTime.Interface
 public interface IReadingScheduleService
 {
     Task<ReadingScheduleDto> GetAsync(int childProfileId, int currentUserId, CancellationToken cancellationToken = default);
+
+    /// <summary>Gợi ý theo nhóm tuổi khi bé chưa có hồ sơ (form "Thêm bé"); không đọc / ghi DB, childProfileId = 0.</summary>
+    ReadingScheduleDto GetSuggestion(AgeBand ageBand);
 
     Task<ReadingScheduleDto> SetAsync(
         int childProfileId, int currentUserId, SetReadingScheduleRequestDto request,

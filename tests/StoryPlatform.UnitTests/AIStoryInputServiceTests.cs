@@ -174,12 +174,65 @@ public sealed partial class AIStoryInputServiceTests
     }
 
     [Fact]
-    public async Task ParentAgeDefaultNeverRaisesExistingChildPolicyLimit()
+    public async Task LegacyLimitBelowLevelDefault_IsHonouredAsTargetAndCap()
+    {
+        var store = CreateEligibleUnitOfWork(); // trần 700 < mặc định 900
+        var service = new AIStoryInputService(store, new RuleBasedInputGuardrail(), CreateTokenQuotaService(store));
+
+        var context = await service.GetContextAsync(1, 1);
+        Assert.Equal(700, context.RecommendedTargetLength);
+        Assert.Equal(700, context.MaximumLength);
+
+        await service.SubmitAsync(1, ValidRequest(targetLength: 0));
+        Assert.Equal(700, StoredInput(store).TargetLength);
+    }
+
+    [Fact]
+    public async Task CustomStoryLength_IsTheRecommendedAndDefaultTarget()
     {
         var store = CreateEligibleUnitOfWork();
+        var policy = store.Items<SafetyPolicy>().Single();
+        policy.StoryLengthTarget = 1200;
+        policy.MaxStoryLength = 1320;
         var service = new AIStoryInputService(store, new RuleBasedInputGuardrail(), CreateTokenQuotaService(store));
-        await Assert.ThrowsAsync<BadRequestException>(() => service.SubmitAsync(1, ValidRequest(targetLength: 0)));
-        Assert.Empty(store.Items<StoryGenerationRequest>());
+
+        var context = await service.GetContextAsync(1, 1);
+        Assert.Equal(1200, context.RecommendedTargetLength);
+        Assert.Equal(1320, context.MaximumLength);
+
+        await service.SubmitAsync(1, ValidRequest(targetLength: 0));
+        Assert.Equal(1200, StoredInput(store).TargetLength);
+    }
+
+    [Theory]
+    [InlineData(2, 900)]
+    [InlineData(4, 1500)]
+    public async Task WithoutCustomLength_TargetFollowsReadingLevel(int readingLevel, int words)
+    {
+        var store = CreateEligibleUnitOfWork();
+        store.Items<LearningProfile>().Single().ReadingLevel = readingLevel;
+        store.Items<SafetyPolicy>().Single().MaxStoryLength = 2000;
+        var service = new AIStoryInputService(store, new RuleBasedInputGuardrail(), CreateTokenQuotaService(store));
+
+        var context = await service.GetContextAsync(1, 1);
+        Assert.Equal(words, context.RecommendedTargetLength);
+        Assert.Equal(2000, context.MaximumLength);
+
+        await service.SubmitAsync(1, ValidRequest(targetLength: 0));
+        Assert.Equal(words, StoredInput(store).TargetLength);
+    }
+
+    [Fact]
+    public async Task WithoutCustomLength_CapCoversUpperBoundOfLevelDefault()
+    {
+        var store = CreateEligibleUnitOfWork();
+        store.Items<SafetyPolicy>().Single().MaxStoryLength = 900; // bằng mặc định, chưa đủ 110%
+        var service = new AIStoryInputService(store, new RuleBasedInputGuardrail(), CreateTokenQuotaService(store));
+
+        var context = await service.GetContextAsync(1, 1);
+
+        Assert.Equal(900, context.RecommendedTargetLength);
+        Assert.Equal(990, context.MaximumLength);
     }
 
     [Fact]
@@ -468,6 +521,11 @@ public sealed partial class AIStoryInputServiceTests
 
         Assert.Equal(EligibleCredits - 1, lot.Remaining);
     }
+
+    private static AcceptedAIStoryInputSnapshot StoredInput(FakeUnitOfWork store) =>
+        JsonSerializer.Deserialize<AcceptedAIStoryInputSnapshot>(
+            Assert.Single(store.Items<StoryGenerationRequest>()).AcceptedInputJson!,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
 
     private static SubmitAIStoryInputRequestDto ValidRequest(string topic = "Tình bạn", int targetLength = 500,
         string generationMode = "standard", int? quizCount = null) => new()

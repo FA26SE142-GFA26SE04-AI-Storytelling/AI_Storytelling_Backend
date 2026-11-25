@@ -99,6 +99,45 @@ public class ChildProfileServiceTests
     }
 
     [Fact]
+    public async Task CreateChildProfileAsync_WithAgeAndAvatar_SavesBoth()
+    {
+        SetupOwner();
+        ChildProfile? profile = null;
+        _profileRepo.Setup(repository => repository.AddAsync(
+                It.IsAny<ChildProfile>(), It.IsAny<CancellationToken>()))
+            .Callback<ChildProfile, CancellationToken>((value, _) => profile = value)
+            .ReturnsAsync((ChildProfile value, CancellationToken _) => value);
+        var request = PersonalRequest();
+        request.Age = 7;
+        request.AvatarId = "  avatar-fox ";
+
+        var result = await _sut.CreateChildProfileAsync(2, request);
+
+        Assert.Equal(7, profile!.Age);
+        Assert.Equal("avatar-fox", profile.AvatarId);
+        Assert.Equal(7, result.Age);
+        Assert.Equal("avatar-fox", result.AvatarId);
+    }
+
+    [Theory]
+    [InlineData(5, AgeBand.Age_6_8, "Tuổi của bé phải từ 6 đến 10.")]
+    [InlineData(11, AgeBand.Age_9_10, "Tuổi của bé phải từ 6 đến 10.")]
+    [InlineData(9, AgeBand.Age_6_8, "Tuổi của bé không khớp nhóm tuổi đã chọn.")]
+    [InlineData(8, AgeBand.Age_9_10, "Tuổi của bé không khớp nhóm tuổi đã chọn.")]
+    public async Task CreateChildProfileAsync_InvalidAge_ThrowsBadRequest(int age, AgeBand ageBand, string message)
+    {
+        SetupOwner();
+        var request = PersonalRequest();
+        request.Age = age;
+        request.AgeBand = ageBand;
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() => _sut.CreateChildProfileAsync(2, request));
+
+        Assert.Equal(message, ex.Message);
+        VerifyNothingWasSaved();
+    }
+
+    [Fact]
     public async Task CreateChildProfileAsync_NonVietnameseLanguage_ThrowsBadRequest()
     {
         SetupOwner();
@@ -412,6 +451,63 @@ public class ChildProfileServiceTests
                 && history.PreviousConfig.Contains("Age_6_8")
                 && history.NewConfig.Contains("Age_9_10")),
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateChildProfileAsync_WithAge_SetsAge()
+    {
+        var profile = new ChildProfile
+        {
+            Id = 1, OwnerUserId = 2, Nickname = "An",
+            AgeBand = AgeBand.Age_6_8, Status = ChildProfileStatus.Active
+        };
+        _profileRepo.Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(profile);
+
+        var result = await _sut.UpdateChildProfileAsync(1, 2, new UpdateChildProfileRequestDto
+        {
+            Nickname = "An", AgeBand = AgeBand.Age_9_10, Age = 9
+        });
+
+        Assert.Equal(9, profile.Age);
+        Assert.Equal(9, result.Age);
+    }
+
+    [Fact]
+    public async Task UpdateChildProfileAsync_WithoutAge_KeepsMatchingAgeAndClearsMismatchedAge()
+    {
+        var profile = new ChildProfile
+        {
+            Id = 1, OwnerUserId = 2, Nickname = "An", Age = 7,
+            AgeBand = AgeBand.Age_6_8, Status = ChildProfileStatus.Active
+        };
+        _profileRepo.Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(profile);
+
+        await _sut.UpdateChildProfileAsync(1, 2, new UpdateChildProfileRequestDto { Nickname = "An Mới", AgeBand = AgeBand.Age_6_8 });
+        Assert.Equal(7, profile.Age);
+
+        await _sut.UpdateChildProfileAsync(1, 2, new UpdateChildProfileRequestDto { Nickname = "An Mới", AgeBand = AgeBand.Age_9_10 });
+        Assert.Null(profile.Age);
+    }
+
+    [Fact]
+    public async Task UpdateChildProfileAsync_AgeNotMatchingAgeBand_ThrowsBadRequestAndKeepsProfile()
+    {
+        var profile = new ChildProfile
+        {
+            Id = 1, OwnerUserId = 2, Nickname = "An",
+            AgeBand = AgeBand.Age_6_8, Status = ChildProfileStatus.Active
+        };
+        _profileRepo.Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(profile);
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() => _sut.UpdateChildProfileAsync(
+            1, 2, new UpdateChildProfileRequestDto { Nickname = "Mới", AgeBand = AgeBand.Age_6_8, Age = 10 }));
+
+        Assert.Equal("Tuổi của bé không khớp nhóm tuổi đã chọn.", ex.Message);
+        Assert.Equal("An", profile.Nickname);
+        Assert.Null(profile.Age);
     }
 
     [Fact]

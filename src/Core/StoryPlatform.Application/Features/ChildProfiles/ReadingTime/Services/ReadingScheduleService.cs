@@ -53,6 +53,16 @@ public class ReadingScheduleService : IReadingScheduleService, IReadingTimeGate,
         return Suggestion(childProfileId, child.AgeBand);
     }
 
+    public ReadingScheduleDto GetSuggestion(AgeBand ageBand)
+    {
+        if (!Enum.IsDefined(ageBand))
+        {
+            throw new BadRequestException("Nhóm tuổi không hợp lệ.");
+        }
+
+        return Suggestion(0, ageBand);
+    }
+
     public async Task<ReadingScheduleDto> SetAsync(
         int childProfileId, int currentUserId, SetReadingScheduleRequestDto request,
         CancellationToken cancellationToken = default)

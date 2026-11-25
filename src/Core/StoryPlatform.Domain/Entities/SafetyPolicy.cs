@@ -9,6 +9,11 @@ public class SafetyPolicy : BaseEntity
     public virtual ChildProfile? ChildProfile { get; set; }
 
     public int MaxStoryLength { get; set; }
+
+    /// <summary>
+    /// Độ dài truyện (số từ) phụ huynh tự chỉnh; NULL = theo mức đọc của bé (900 hoặc 1500). AI viết khoảng ±10% quanh số này.
+    /// </summary>
+    public int? StoryLengthTarget { get; set; }
     public ApprovalMode RequiredApprovalMode { get; set; } = ApprovalMode.AlwaysManual;
     public bool ParentalGateEnabled { get; set; } = true;
     public bool ConsentRecorded { get; set; } = false;

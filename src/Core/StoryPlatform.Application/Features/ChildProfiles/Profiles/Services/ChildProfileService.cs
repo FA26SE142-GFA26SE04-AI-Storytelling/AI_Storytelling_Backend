@@ -80,9 +80,14 @@ public class ChildProfileService : IChildProfileService
             OwnerUserId = ownerUserId,
             Nickname = request.Nickname.Trim(),
             AgeBand = request.AgeBand,
+            Age = request.Age,
             Language = NormalizeLanguage(request.Language),
             Status = ChildProfileStatus.Draft
         };
+        if (!string.IsNullOrWhiteSpace(request.AvatarId))
+        {
+            childProfile.AvatarId = request.AvatarId.Trim();
+        }
 
         await _unitOfWork.Repository<ChildProfile>().AddAsync(childProfile, cancellationToken);
 
@@ -209,12 +214,15 @@ public class ChildProfileService : IChildProfileService
             throw new BadRequestException("Nhóm tuổi nhận thức không hợp lệ.");
         }
 
+        ValidateAge(request.Age, request.AgeBand);
         var language = NormalizeLanguage(request.Language);
         var previousAgeBand = profile.AgeBand;
         var ageBandChanged = previousAgeBand != request.AgeBand;
 
         profile.Nickname = request.Nickname.Trim();
         profile.AgeBand = request.AgeBand;
+        // Không gửi tuổi: giữ tuổi đang lưu nếu còn khớp nhóm tuổi mới, không thì xoá để không lệch nhóm tuổi.
+        profile.Age = request.Age ?? (profile.Age is { } saved && AgeBandOf(saved) == request.AgeBand ? saved : null);
         profile.Language = language;
         if (!string.IsNullOrWhiteSpace(request.AvatarId))
         {
@@ -436,6 +444,32 @@ public class ChildProfileService : IChildProfileService
         {
             throw new BadRequestException("Mã ngôn ngữ tối đa 10 ký tự.");
         }
+
+        ValidateAge(request.Age, request.AgeBand);
+    }
+
+    private const int MinAge = 6;
+    private const int MaxAge = 10;
+
+    private static AgeBand AgeBandOf(int age) => age <= 8 ? AgeBand.Age_6_8 : AgeBand.Age_9_10;
+
+    /// <summary>Tuổi không bắt buộc; có thì phải 6–10 và khớp nhóm tuổi.</summary>
+    private static void ValidateAge(int? age, AgeBand ageBand)
+    {
+        if (age is not { } value)
+        {
+            return;
+        }
+
+        if (value is < MinAge or > MaxAge)
+        {
+            throw new BadRequestException($"Tuổi của bé phải từ {MinAge} đến {MaxAge}.");
+        }
+
+        if (AgeBandOf(value) != ageBand)
+        {
+            throw new BadRequestException("Tuổi của bé không khớp nhóm tuổi đã chọn.");
+        }
     }
 
     private const string SupportedLanguage = "vi";
@@ -462,6 +496,7 @@ public class ChildProfileService : IChildProfileService
             Nickname = childProfile.Nickname,
             AvatarId = childProfile.AvatarId,
             AgeBand = childProfile.AgeBand.ToString(),
+            Age = childProfile.Age,
             Language = childProfile.Language,
             Status = childProfile.Status.ToString(),
             CreatedAt = childProfile.CreatedAt

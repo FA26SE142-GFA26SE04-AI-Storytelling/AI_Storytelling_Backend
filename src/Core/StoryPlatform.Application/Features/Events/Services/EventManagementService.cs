@@ -823,7 +823,9 @@ public partial class EventManagementService : IEventManagementService
     private static string BuildSlug(string title)
     {
         var baseSlug = new string(title.Trim().ToLowerInvariant().Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray()).Trim('-');
-        return $"{(string.IsNullOrEmpty(baseSlug) ? "event" : baseSlug)}-{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
+        // Hậu tố ngẫu nhiên: thời gian theo giây trùng nhau khi hai sự kiện cùng tên được tạo trong một giây.
+        // 10 ký tự để tên 200 ký tự (bản sao thêm "-activity") vẫn vừa cột Slug 220 ký tự.
+        return $"{(string.IsNullOrEmpty(baseSlug) ? "event" : baseSlug)}-{Guid.NewGuid().ToString("N")[..10]}";
     }
 
     private static EventSummaryDto MapSummary(Event ev, string? mainCategoryName = null) => new()

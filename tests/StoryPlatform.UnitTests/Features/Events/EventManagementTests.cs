@@ -281,6 +281,30 @@ public class EventManagementTests
     }
 
     [Fact]
+    public async Task EventsWithTheSameTitle_CreatedInTheSameSecond_GetDifferentSlugs()
+    {
+        var store = new InMemoryUnitOfWork();
+        store.Seed(new ContentCategory { Id = 1, IsActive = true });
+        var now = DateTime.UtcNow;
+        var title = new string('a', 200);
+        var service = new EventManagementService(store, _audit.Object);
+
+        for (var i = 0; i < 5; i++)
+        {
+            await service.CreateEventAsync(9, new CreateEventRequestDto
+            {
+                Title = title, Description = "Mô tả", MainCategoryId = 1, ConfigVersion = EventConfigVersion.ActivityBased,
+                OpensAt = now, ClosesAt = now.AddDays(3),
+                Activities = [new UpsertEventActivityDto { ActivityType = EventActivityType.Submission, AllowedAudience = EventAudience.Creator, RegistrationStartAt = now, RegistrationEndAt = now.AddDays(1), StartAt = now, EndAt = now.AddDays(2) }]
+            });
+        }
+
+        var slugs = store.Items<Event>().Select(item => item.Slug).ToList();
+        Assert.Equal(5, slugs.Distinct().Count());
+        Assert.All(slugs, slug => Assert.True(slug.Length + "-activity".Length <= 220));
+    }
+
+    [Fact]
     public async Task ActivityAward_PlatformCreditsZero_ThrowsBadRequest()
     {
         var store = new InMemoryUnitOfWork();

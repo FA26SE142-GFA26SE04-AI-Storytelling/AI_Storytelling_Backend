@@ -11,6 +11,7 @@ public class ReadingSchedule : BaseEntity
     public int ChildProfileId { get; set; }
     public virtual ChildProfile? ChildProfile { get; set; }
 
+    // Công tắc tổng của khung giờ đọc và giờ đi ngủ. Nghỉ giữa giờ, giới hạn màn hình và thói quen có công tắc riêng.
     public bool Enabled { get; set; }
 
     // Giờ đi ngủ (giờ Việt Nam); null = không đặt.
@@ -24,6 +25,10 @@ public class ReadingSchedule : BaseEntity
     public bool BreakRemindEyes { get; set; } = true;
     public bool BreakRemindWater { get; set; } = true;
     public bool BreakRemindMove { get; set; } = true;
+
+    // Loại lời nhắc của lượt nghỉ gần nhất (0 = mắt, 1 = uống nước, 2 = vận động; theo enum BreakActivity bên
+    // Application). Dùng để lượt nghỉ sau chuyển sang loại kế tiếp; null = chưa có lượt nào.
+    public int? LastBreakActivity { get; set; }
 
     // Giới hạn thời gian nhìn màn hình mỗi ngày.
     public bool ScreenLimitEnabled { get; set; }

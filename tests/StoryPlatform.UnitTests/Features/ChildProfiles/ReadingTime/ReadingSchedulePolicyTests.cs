@@ -79,6 +79,63 @@ public sealed class ReadingSchedulePolicyTests
         Assert.Equal(ReadingTimeState.Allowed, ReadingSchedulePolicy.Evaluate(schedule, Default, Vn(23, 23, 0)).State);
     }
 
+    // Công tắc tổng "Giới hạn thời gian đọc" chỉ lo khung giờ và giờ đi ngủ; màn hình và nghỉ giữa giờ có công tắc riêng.
+
+    [Fact]
+    public void Evaluate_MasterOff_StillEnforcesScreenLimit()
+    {
+        var schedule = WithScreenLimit(45);
+        schedule.Enabled = false;
+
+        Assert.Equal(ReadingTimeState.ScreenLimitReached, ReadingSchedulePolicy.Evaluate(schedule, Default, Vn(23, 10, 0)).State);
+    }
+
+    [Fact]
+    public void Evaluate_MasterOff_StillEnforcesBreak()
+    {
+        var schedule = Schedule(breakEnabled: true);
+        schedule.Enabled = false;
+        schedule.BreakUntil = Vn(23, 10, 3);
+
+        var status = ReadingSchedulePolicy.Evaluate(schedule, Default, Vn(23, 10, 0));
+
+        Assert.Equal(ReadingTimeState.Break, status.State);
+        Assert.Equal(Vn(23, 10, 3), status.BreakUntil);
+    }
+
+    [Fact]
+    public void Evaluate_MasterOff_IgnoresWindowsAndBedtimeEvenWithScreenLimitOn()
+    {
+        var schedule = WithScreenLimit(10);
+        schedule.Enabled = false;
+        schedule.BedtimeWeekday = T("20:30");
+
+        var status = ReadingSchedulePolicy.Evaluate(schedule, Default, Vn(23, 23, 0)); // ngoài khung, quá giờ ngủ
+
+        Assert.Equal(ReadingTimeState.Allowed, status.State);
+        Assert.Null(status.BedtimeAt);
+        Assert.Equal(45, status.ScreenMinutesLimit);
+    }
+
+    [Fact]
+    public void Evaluate_MasterOn_ScreenLimitOff_DoesNotBlockOnScreenTime()
+    {
+        var schedule = WithScreenLimit(45);
+        schedule.ScreenLimitEnabled = false;
+
+        Assert.Equal(ReadingTimeState.Allowed, ReadingSchedulePolicy.Evaluate(schedule, Default, Vn(23, 10, 0)).State);
+    }
+
+    [Fact]
+    public void TrackReading_MasterOff_StillCountsContinuousReading()
+    {
+        var schedule = Schedule(breakEnabled: true);
+        schedule.Enabled = false;
+
+        Assert.True(ReadingSchedulePolicy.TrackReading(schedule, Vn(23, 10, 0)));
+        Assert.Equal(Vn(23, 10, 0), schedule.ContinuousReadingSince);
+    }
+
     [Fact]
     public void Evaluate_EnabledWithNothingSet_IsAllowedWithoutEnd()
     {
@@ -395,19 +452,78 @@ public sealed class ReadingSchedulePolicyTests
         Assert.Equal(ReadingTimeState.ScreenLimitReached,
             ReadingSchedulePolicy.Evaluate(WithScreenLimit(60), Default, Vn(23, 6, 0)).State);
 
+    // Mỗi lần nghỉ bắt đầu (đọc đủ 20 phút liên tục), lời nhắc chuyển sang loại kế tiếp trong các loại đang chọn.
+    private static BreakActivity? StartBreakAndPick(ReadingSchedule schedule, DateTime nowUtc)
+    {
+        schedule.BreakUntil = null;
+        schedule.ContinuousReadingSince = nowUtc.AddMinutes(-20);
+        schedule.LastReadingSeenAt = nowUtc;
+        Assert.True(ReadingSchedulePolicy.TrackReading(schedule, nowUtc));
+        Assert.NotNull(schedule.BreakUntil);
+        return ReadingSchedulePolicy.PickBreakActivity(schedule);
+    }
+
+    private static List<BreakActivity?> PicksOverBreaks(ReadingSchedule schedule, int breaks) =>
+        Enumerable.Range(0, breaks).Select(i => StartBreakAndPick(schedule, Vn(23, 10 + i, 0))).ToList();
+
     [Fact]
-    public void PickBreakActivity_RotatesAmongSelectedOnly()
+    public void BreakActivity_AllThreeSelected_RotatesInOrderAndWraps() =>
+        Assert.Equal(
+            new BreakActivity?[] { BreakActivity.Eyes, BreakActivity.Water, BreakActivity.Move, BreakActivity.Eyes },
+            PicksOverBreaks(Schedule(breakEnabled: true), 4));
+
+    [Fact]
+    public void BreakActivity_TwoSelected_Alternates()
     {
         var schedule = Schedule(breakEnabled: true);
         schedule.BreakRemindEyes = false;
-        schedule.BreakUntil = Vn(23, 10, 0);
-        var first = ReadingSchedulePolicy.PickBreakActivity(schedule);
-        schedule.BreakUntil = Vn(23, 10, 1);
-        var second = ReadingSchedulePolicy.PickBreakActivity(schedule);
 
-        Assert.NotEqual(first, second);
-        Assert.Contains(first, new BreakActivity?[] { BreakActivity.Water, BreakActivity.Move });
-        Assert.Contains(second, new BreakActivity?[] { BreakActivity.Water, BreakActivity.Move });
+        Assert.Equal(
+            new BreakActivity?[] { BreakActivity.Water, BreakActivity.Move, BreakActivity.Water, BreakActivity.Move },
+            PicksOverBreaks(schedule, 4));
+    }
+
+    [Fact]
+    public void BreakActivity_OneSelected_AlwaysThatOne()
+    {
+        var schedule = Schedule(breakEnabled: true);
+        schedule.BreakRemindEyes = false;
+        schedule.BreakRemindMove = false;
+
+        Assert.All(PicksOverBreaks(schedule, 3), pick => Assert.Equal(BreakActivity.Water, pick));
+    }
+
+    [Fact]
+    public void BreakActivity_TypeDeselectedBetweenBreaks_IsSkipped()
+    {
+        var schedule = Schedule(breakEnabled: true);
+        Assert.Equal(BreakActivity.Eyes, StartBreakAndPick(schedule, Vn(23, 10, 0)));
+
+        schedule.BreakRemindWater = false;
+
+        Assert.Equal(BreakActivity.Move, StartBreakAndPick(schedule, Vn(23, 11, 0)));
+    }
+
+    [Fact]
+    public void BreakActivity_StaysTheSameThroughoutOneBreak()
+    {
+        var schedule = Schedule(breakEnabled: true);
+        StartBreakAndPick(schedule, Vn(23, 10, 0));
+
+        var early = ReadingSchedulePolicy.Evaluate(schedule, Default, Vn(23, 10, 1)).BreakActivity;
+        var late = ReadingSchedulePolicy.Evaluate(schedule, Default, Vn(23, 10, 4)).BreakActivity;
+
+        Assert.Equal(early, late);
+    }
+
+    [Fact]
+    public void PickBreakActivity_NoHistory_UsesFirstSelected()
+    {
+        var schedule = Schedule(breakEnabled: true);
+        schedule.BreakRemindEyes = false;
+        schedule.BreakUntil = Vn(23, 10, 3);
+
+        Assert.Equal(BreakActivity.Water, ReadingSchedulePolicy.PickBreakActivity(schedule));
     }
 
     [Fact]
@@ -672,7 +788,7 @@ public sealed class ReadingSchedulePolicyTests
 
     [Fact]
     public void BreakMessage_RoundsRemainingMinutesUp() =>
-        Assert.Equal("Bé nghỉ mắt một chút nhé, còn 5 phút.",
+        Assert.Equal("Bé nghỉ một chút nhé, còn 5 phút.",
             ReadingSchedulePolicy.BreakMessage(Vn(23, 10, 4).AddSeconds(30), Vn(23, 10, 0)));
 
     [Fact]
@@ -683,7 +799,7 @@ public sealed class ReadingSchedulePolicyTests
             State = ReadingTimeState.Break, BreakUntil = Vn(23, 10, 3), BreakActivity = BreakActivity.Water
         };
 
-        Assert.Equal("Bé nghỉ mắt một chút nhé, còn 3 phút. Bé uống một ngụm nước nhé!",
+        Assert.Equal("Bé nghỉ một chút nhé, còn 3 phút. Bé uống một ngụm nước nhé!",
             ReadingSchedulePolicy.MessageFor(status, Vn(23, 10, 0)));
     }
 

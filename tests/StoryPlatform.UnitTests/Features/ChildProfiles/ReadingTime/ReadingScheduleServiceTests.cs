@@ -262,7 +262,7 @@ public sealed class ReadingScheduleServiceTests
         var error = await Assert.ThrowsAsync<ForbiddenException>(() => _sut.EnsureCanStartAsync(ChildId, childFacing: true));
 
         Assert.Equal(ReadingSchedulePolicy.BreakErrorCode, error.ErrorCode);
-        Assert.Equal("Bé nghỉ mắt một chút nhé, còn 3 phút.", error.Message);
+        Assert.Equal("Bé nghỉ một chút nhé, còn 3 phút.", error.Message);
     }
 
     [Fact]
@@ -325,7 +325,7 @@ public sealed class ReadingScheduleServiceTests
         Assert.Equal("Break", status.State);
         Assert.Equal(Now.AddMinutes(25), status.BreakUntil);
         Assert.NotNull(status.BreakActivity);
-        Assert.StartsWith("Bé nghỉ mắt một chút nhé, còn 5 phút.", status.Message);
+        Assert.StartsWith("Bé nghỉ một chút nhé, còn 5 phút.", status.Message);
     }
 
     [Fact]

@@ -3562,6 +3562,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
+                    b.Property<int?>("LastBreakActivity")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime?>("LastReadingSeenAt")
                         .HasColumnType("timestamp with time zone");
 

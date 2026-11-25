@@ -380,6 +380,31 @@ public sealed class ReadingScheduleServiceTests
     }
 
     [Fact]
+    public async Task GetSuggestion_ByAgeBand_MatchesSuggestionOfSavedProfile_WithoutTouchingDb()
+    {
+        var fromProfile = await _sut.GetAsync(ChildId, OwnerId);
+
+        var young = _sut.GetSuggestion(AgeBand.Age_6_8);
+        var older = _sut.GetSuggestion(AgeBand.Age_9_10);
+
+        Assert.Equal(0, young.ChildProfileId);
+        Assert.True(young.IsSuggested);
+        Assert.Equal(fromProfile.BedtimeWeekday, young.BedtimeWeekday);
+        Assert.Equal(fromProfile.ScreenLimitWeekdayMinutes, young.ScreenLimitWeekdayMinutes);
+        Assert.Equal(fromProfile.Windows.Count, young.Windows.Count);
+        Assert.Equal("21:00", older.BedtimeWeekday);
+        Assert.Equal(4, older.WeeklyGoalDays);
+        Assert.Empty(_uow.Items<ReadingSchedule>());
+    }
+
+    [Fact]
+    public void GetSuggestion_UnknownAgeBand_Throws()
+    {
+        var ex = Assert.Throws<BadRequestException>(() => _sut.GetSuggestion((AgeBand)0));
+        Assert.Equal("Nhóm tuổi không hợp lệ.", ex.Message);
+    }
+
+    [Fact]
     public async Task Set_SavesHabitFieldsAndGetReturnsThem()
     {
         var request = Request();

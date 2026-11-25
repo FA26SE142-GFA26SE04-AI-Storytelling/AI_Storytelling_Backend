@@ -119,6 +119,27 @@ public sealed class ReadingScheduleApiTests(ReadingTimeApiFactory factory) : ICl
     }
 
     [Fact]
+    public async Task Suggestion_by_age_band_needs_no_profile_and_rejects_missing_age_or_anonymous()
+    {
+        var client = await factory.ClientForNewUserAsync(UserRole.User);
+
+        var older = (await client.GetFromJsonAsync<JsonElement>("/api/v1/ReadingSchedule/suggestion?ageBand=Age_9_10"))
+            .GetProperty("data");
+        Assert.True(older.GetProperty("isSuggested").GetBoolean());
+        Assert.Equal(0, older.GetProperty("childProfileId").GetInt32());
+        Assert.Equal("21:00", older.GetProperty("bedtimeWeekday").GetString());
+        Assert.Equal(60, older.GetProperty("screenLimitWeekdayMinutes").GetInt32());
+
+        var missing = await client.GetAsync("/api/v1/ReadingSchedule/suggestion");
+        Assert.Equal(HttpStatusCode.BadRequest, missing.StatusCode);
+        Assert.Equal("Nhóm tuổi không hợp lệ.",
+            (await missing.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("message").GetString());
+
+        Assert.Equal(HttpStatusCode.Unauthorized,
+            (await factory.CreateClient().GetAsync("/api/v1/ReadingSchedule/suggestion?ageBand=Age_6_8")).StatusCode);
+    }
+
+    [Fact]
     public async Task Other_parent_moderator_and_anonymous_are_rejected()
     {
         var owner = await factory.AddUserAsync(UserRole.User);

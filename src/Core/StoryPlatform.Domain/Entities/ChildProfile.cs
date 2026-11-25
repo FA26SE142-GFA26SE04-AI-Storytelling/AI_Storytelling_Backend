@@ -14,6 +14,8 @@ public class ChildProfile : BaseEntity
     /// <summary>Ảnh đại diện hiển thị ở ProfileSwitcher / màn hình Easy Login.</summary>
     public string AvatarId { get; set; } = DefaultAvatarId;
     public AgeBand AgeBand { get; set; }
+    /// <summary>Tuổi cụ thể (6–10), luôn khớp <see cref="AgeBand"/>; null với hồ sơ tạo trước khi có trường này. Không lưu ngày sinh.</summary>
+    public int? Age { get; set; }
     public string Language { get; set; } = "vi";
     public ChildProfileStatus Status { get; set; } = ChildProfileStatus.Draft;
     /// <summary>

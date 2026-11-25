@@ -1281,6 +1281,9 @@
   "ReadingScheduleController.GetReadingSchedule#GET {childProfileId:int}": [
     "User"
   ],
+  "ReadingScheduleController.GetSuggestion#GET suggestion": [
+    "User"
+  ],
   "ReadingScheduleController.SetReadingSchedule#PUT {childProfileId:int}": [
     "User"
   ],

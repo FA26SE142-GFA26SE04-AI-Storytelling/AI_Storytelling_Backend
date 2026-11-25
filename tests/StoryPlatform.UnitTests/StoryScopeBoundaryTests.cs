@@ -270,6 +270,40 @@ public sealed class StoryScopeBoundaryTests
     }
 
     [Fact]
+    public async Task CommunityList_HasWordHighlight_OnlyForTimedNarrationOnCurrentVersion()
+    {
+        var stories = Enumerable.Range(10, 7).Select(id => PublishedCreatorStory(id, 7, new DateTime(2026, 11, id))).ToArray();
+        var versions = new[]
+        {
+            new StoryVersion { Id = 100, StoryId = 10, IsCurrent = true },  // audio có mốc từng chữ -> true
+            new StoryVersion { Id = 110, StoryId = 11, IsCurrent = true },  // audio không có mốc
+            new StoryVersion { Id = 120, StoryId = 12, IsCurrent = true },  // audio chưa Ready
+            new StoryVersion { Id = 130, StoryId = 13, IsCurrent = true },
+            new StoryVersion { Id = 131, StoryId = 13, IsCurrent = false }, // mốc chỉ ở bản cũ
+            new StoryVersion { Id = 140, StoryId = 14, IsCurrent = true },  // chỉ của gói phụ huynh
+            new StoryVersion { Id = 150, StoryId = 15, IsCurrent = true },  // không phải TtsAudio
+            new StoryVersion { Id = 160, StoryId = 16, IsCurrent = true },  // audio đã xoá mềm
+        };
+        static MediaAsset Audio(int id, int versionId, string? timings = "[{\"start\":0,\"end\":3,\"time\":0}]") =>
+            new() { Id = id, StoryVersionId = versionId, Type = MediaType.TtsAudio, Status = MediaStatus.Ready, WordTimings = timings };
+        var processing = Audio(3, 120);
+        processing.Status = MediaStatus.Processing;
+        var parentOnly = Audio(5, 140);
+        parentOnly.ParentStoryPackageId = 9;
+        var illustration = Audio(6, 150);
+        illustration.Type = MediaType.Illustration;
+        var deleted = Audio(7, 160);
+        deleted.IsDeleted = true;
+        MediaAsset[] assets = [Audio(1, 100), Audio(2, 110, ""), processing, Audio(4, 131), parentOnly, illustration, deleted];
+
+        var result = await Service(PagedStoryRepo(stories), versions: versions, assets: assets)
+            .GetPublishedCreatorStoriesAsync(new StoryFilterRequestDto());
+
+        Assert.Equal(new[] { (10, true), (11, false), (12, false), (13, false), (14, false), (15, false), (16, false) },
+            result.Items.Select(item => (item.Id, item.HasWordHighlight)));
+    }
+
+    [Fact]
     public async Task MyPublishedList_UsesCallerAsAuthor_IgnoringRequestedAuthor()
     {
         var mine = PublishedCreatorStory(20, 7, new DateTime(2026, 11, 1));
@@ -347,7 +381,7 @@ public sealed class StoryScopeBoundaryTests
 
     private static StoryService Service(Mock<IGenericRepository<Story>> repo,
         ReadingSession[]? sessions = null, ReadingProgress[]? progress = null, StoryRating[]? ratings = null,
-        IAppCache? cache = null, StoryVersion[]? versions = null, QuizItem[]? quizzes = null)
+        IAppCache? cache = null, StoryVersion[]? versions = null, QuizItem[]? quizzes = null, MediaAsset[]? assets = null)
     {
         var uow = new Mock<IUnitOfWork>();
         uow.Setup(x => x.Repository<Story>()).Returns(repo.Object);
@@ -356,6 +390,7 @@ public sealed class StoryScopeBoundaryTests
         uow.Setup(x => x.Repository<StoryRating>()).Returns(ReadOnlyRepo(ratings ?? []).Object);
         uow.Setup(x => x.Repository<StoryVersion>()).Returns(ReadOnlyRepo(versions ?? []).Object);
         uow.Setup(x => x.Repository<QuizItem>()).Returns(ReadOnlyRepo(quizzes ?? []).Object);
+        uow.Setup(x => x.Repository<MediaAsset>()).Returns(ReadOnlyRepo(assets ?? []).Object);
         return new StoryService(uow.Object, cache: cache);
     }
 

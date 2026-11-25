@@ -71,7 +71,7 @@ public sealed class SubscriptionPostgresTests(AuthoringGuidePostgresFixture fixt
                 (lot.UserId, lot.CreditType, lot.Source, lot.Total, lot.Remaining, lot.ExpiresAt, lot.PaymentId));
             Assert.Equal(3, await db.TokenQuotaConfigs.CountAsync()); // bảng cũ giữ nguyên dữ liệu
             Assert.Equal(
-                ["1:Legacy:User:49000:50:0:False", "2:Reading:User:49000:0:0:True", "3:Creative:User:99000:4:0:True",
+                ["2:Reading:User:49000:0:0:True", "3:Creative:User:99000:4:0:True",
                     "4:AddOn:User:29000:2:0:True", "5:CreatorPack:Creator:99000:6:20:True"],
                 (await db.SubscriptionPlans.OrderBy(plan => plan.Id).ToListAsync())
                     .Select(plan => $"{plan.Id}:{plan.PlanType}:{plan.Audience}:{plan.PriceVnd}:{plan.AiCredits}:{plan.SubmitCredits}:{plan.IsActive}"));
@@ -86,6 +86,45 @@ public sealed class SubscriptionPostgresTests(AuthoringGuidePostgresFixture fixt
         {
             await ExecuteAsync(admin.ConnectionString, $"DROP DATABASE IF EXISTS \"{name}\" WITH (FORCE)");
         }
+    }
+
+    [PostgresFact]
+    public async Task Migration_SoftDeletesThePersonalPlanAndItsTransactions_KeepsCredits_AndDownRestores()
+    {
+        await using var database = await fixture.CreateDatabaseAsync();
+        await using var db = new ApplicationDbContext(database.Options);
+        var migrator = db.GetService<IMigrator>();
+        var migrations = db.Database.GetMigrations().ToList();
+        var previous = migrations[migrations.FindIndex(id => id.EndsWith("_SoftDeleteLegacyPlan")) - 1];
+        await migrator.MigrateAsync(previous);
+        db.AddRange(
+            new PaymentTransaction
+            {
+                PlanId = 1, PayerUserId = database.ParentUserId, TransactionCode = "TOPUP-LEGACY-1", Amount = 49000,
+                Status = PaymentStatus.Paid, PaidAt = DateTime.UtcNow, ExpiresAt = DateTime.UtcNow
+            },
+            new PaymentTransaction
+            {
+                PlanId = CreativePlanId, PayerUserId = database.ParentUserId, TransactionCode = "SEPAYKEEP1", Amount = 99000,
+                Status = PaymentStatus.Paid, PaidAt = DateTime.UtcNow, ExpiresAt = DateTime.UtcNow
+            });
+        await db.SaveChangesAsync();
+        var legacyId = await db.PaymentTransactions.Where(item => item.PlanId == 1).Select(item => item.Id).SingleAsync();
+        db.AddRange(
+            new CreditLot { UserId = database.ParentUserId, Source = CreditSource.Legacy, Total = 50, Remaining = 50, PaymentId = legacyId },
+            new PaymentReconciliationException { PaymentId = legacyId, Reason = "NotApplied" });
+        await db.SaveChangesAsync();
+
+        await migrator.MigrateAsync();
+        Assert.Equal("SEPAYKEEP1", (await db.PaymentTransactions.AsNoTracking().SingleAsync()).TransactionCode);
+        Assert.False(await db.SubscriptionPlans.AnyAsync(plan => plan.Id == 1));
+        Assert.False(await db.Set<PaymentReconciliationException>().AnyAsync());
+        Assert.Equal(50, await db.CreditLots.SumAsync(lot => lot.Remaining));
+
+        await migrator.MigrateAsync(previous);
+        Assert.Equal(2, await db.PaymentTransactions.CountAsync());
+        Assert.True(await db.SubscriptionPlans.AnyAsync(plan => plan.Id == 1));
+        Assert.True(await db.Set<PaymentReconciliationException>().AnyAsync());
     }
 
     [PostgresFact]

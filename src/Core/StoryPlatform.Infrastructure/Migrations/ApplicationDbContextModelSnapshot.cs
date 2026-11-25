@@ -5604,7 +5604,7 @@ namespace StoryPlatform.Infrastructure.Migrations
                             CanCopyRoadmapTemplates = false,
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = false,
-                            IsDeleted = false,
+                            IsDeleted = true,
                             MaxChildProfiles = 0,
                             Name = "Personal",
                             PlanType = "Legacy",

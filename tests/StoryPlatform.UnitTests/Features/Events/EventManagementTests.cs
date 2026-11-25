@@ -264,6 +264,23 @@ public class EventManagementTests
     }
 
     [Fact]
+    public async Task CloseEvent_ReturnsBudgetOfUnassignedAwards_AndKeepsOtherAwards()
+    {
+        var store = new InMemoryUnitOfWork();
+        var now = DateTime.UtcNow;
+        store.Seed(new Event { Id = 1, Status = EventStatus.Published, ConfigVersion = EventConfigVersion.ActivityBased, AssignedModeratorId = 9, ResultsFinalizedAt = now });
+        store.Seed(new EventActivity { Id = 2, EventId = 1, ActivityType = EventActivityType.ReadingMissions, EndAt = now.AddMinutes(-10) });
+        store.Seed(new EventParticipation { Id = 3, EventId = 1, EventActivityId = 2, UserId = 55, Status = EventParticipationStatus.Verified });
+        store.Seed(new EventAward { Id = 4, EventId = 1, EventActivityId = 2, Status = EventAwardStatus.AwardProposed });
+        store.Seed(new EventAward { Id = 5, EventId = 1, EventActivityId = 2, ParticipationId = 3, Status = EventAwardStatus.Fulfilled });
+
+        await new EventManagementService(store, _audit.Object).CloseEventAsync(9, 1);
+
+        Assert.Equal(EventAwardStatus.UnclaimedBudgetReturned, store.Items<EventAward>().Single(a => a.Id == 4).Status);
+        Assert.Equal(EventAwardStatus.Fulfilled, store.Items<EventAward>().Single(a => a.Id == 5).Status);
+    }
+
+    [Fact]
     public async Task ActivityAward_PlatformCreditsZero_ThrowsBadRequest()
     {
         var store = new InMemoryUnitOfWork();

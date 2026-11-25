@@ -599,6 +599,14 @@ public partial class EventManagementService : IEventManagementService
         if (pendingAwards)
             throw new ConflictException("Còn suất giải thưởng chưa hoàn tất đối soát hoặc trao thưởng.");
 
+        // Suất không có người đủ điều kiện nhận: ngân sách coi như đã hoàn khi sự kiện đóng.
+        foreach (var award in eventAwards.Where(a => a.Status == EventAwardStatus.AwardProposed && a.ParticipationId == null))
+        {
+            award.Status = EventAwardStatus.UnclaimedBudgetReturned;
+            award.UpdatedAt = DateTime.UtcNow;
+            _uow.Repository<EventAward>().Update(award);
+        }
+
         var summary = await GetSummaryAsync(eventId, ct);
         ev.SummaryReportJson = JsonSerializer.Serialize(summary);
         ev.Status = EventStatus.Closed;

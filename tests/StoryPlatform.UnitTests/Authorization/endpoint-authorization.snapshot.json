@@ -77,6 +77,13 @@
     "Moderator",
     "User"
   ],
+  "AuthController.GetMyPermissions#GET me/permissions": [
+    "Administrator",
+    "ContentCreator",
+    "CreatorApplicant",
+    "Moderator",
+    "User"
+  ],
   "AuthController.GetProfile#GET me": [
     "Administrator",
     "ContentCreator",

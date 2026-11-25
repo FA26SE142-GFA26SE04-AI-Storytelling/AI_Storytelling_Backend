@@ -39,7 +39,7 @@ public static class PermissionCatalog
         P(Permissions.Shared.StoryRatingReport, SharedGroup, "Báo cáo một nhận xét truyện"),
         P(Permissions.Shared.StoryReviewApprove, SharedGroup, "Duyệt hoặc từ chối nội dung truyện AI trước khi đến trẻ"),
         P(Permissions.Shared.StoryPackageConfirm, SharedGroup, "Xác nhận gói truyện"),
-        P(Permissions.Shared.CommunityView, SharedGroup, "Xem thư viện cộng đồng"),
+        P(Permissions.Shared.CommunityView, SharedGroup, "Đọc thư viện truyện cộng đồng (với nhân viên: chỉ ảnh bìa và tên tác giả ở màn Rà soát thư viện)"),
 
         P(Permissions.Creator.ApplicationSubmit, CreatorGroup, "Gửi lại đơn đăng ký nhà sáng tạo"),
         Own(Permissions.Creator.ApplicationViewOwn, CreatorGroup, "Xem đơn đăng ký nhà sáng tạo của mình"),
@@ -51,7 +51,7 @@ public static class PermissionCatalog
 
         Assigned(Permissions.Moderation.QueueProcess, "Nhận và xử lý hàng đợi kiểm duyệt"),
         P(Permissions.Moderation.StatisticsView, ModerationGroup, "Xem thống kê kiểm duyệt của mình"),
-        P(Permissions.Moderation.PublishedView, ModerationGroup, "Xem truyện và lộ trình đang công khai"),
+        P(Permissions.Moderation.PublishedView, ModerationGroup, "Mở màn Rà soát thư viện: xem truyện và lộ trình đang công khai"),
         P(Permissions.Moderation.PublishedReview, ModerationGroup, "Mở hồ sơ rà soát nội dung đang công khai"),
         Assigned(Permissions.Moderation.ReportReview, "Xử lý báo cáo vi phạm nội dung"),
         Assigned(Permissions.Moderation.RatingModerate, "Duyệt hoặc ẩn nhận xét truyện"),

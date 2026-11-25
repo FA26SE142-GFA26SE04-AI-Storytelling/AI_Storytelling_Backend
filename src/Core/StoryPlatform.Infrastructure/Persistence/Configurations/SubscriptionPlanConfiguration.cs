@@ -34,7 +34,7 @@ public class SubscriptionPlanConfiguration : IEntityTypeConfiguration<Subscripti
 
         builder.HasQueryFilter(x => !x.IsDeleted);
 
-        // Luong 2 — goi Personal cu (49.000d/+50 luot) ngung ban, giu lai de giao dich cu hien dung ten.
+        // Luong 2 — goi Personal cu (49.000d/+50 luot) da xoa mem cung cac giao dich cua no; luot da cap van giu.
         // Mo hinh moi: Goi Doc, Goi Sang tao theo chu ky thang, Add-on va Goi Creator.
         builder.HasData(
             new SubscriptionPlan
@@ -46,7 +46,7 @@ public class SubscriptionPlanConfiguration : IEntityTypeConfiguration<Subscripti
                 AiCredits = 50,
                 IsActive = false,
                 CreatedAt = SeedCreatedAt,
-                IsDeleted = false
+                IsDeleted = true
             },
             new SubscriptionPlan
             {

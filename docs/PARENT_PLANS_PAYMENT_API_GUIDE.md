@@ -10,7 +10,7 @@ Tài liệu này thay cho các mô tả `Payment` và `TokenQuota` trong
 
 | Id | Tên | `planType` | Giá | `aiCredits` | Ghi chú |
 |---|---|---|---|---|---|
-| 1 | Personal | `Legacy` | 49.000 đ | 50 | Ngừng bán, chỉ còn trong lịch sử giao dịch cũ |
+| 1 | Personal | `Legacy` | 49.000 đ | 50 | Đã xóa mềm cùng các giao dịch của nó; lượt đã cấp vẫn giữ |
 | 2 | Gói Đọc | `Reading` | 49.000 đ / tháng | 0 | Không có lượt AI |
 | 3 | Gói Sáng tạo | `Creative` | 99.000 đ / tháng | 4 | Lượt cấp mỗi chu kỳ, không cộng dồn |
 | 4 | Add-on | `AddOn` | 29.000 đ | 2 | Chỉ mua khi đang có gói; hết hạn cùng chu kỳ |

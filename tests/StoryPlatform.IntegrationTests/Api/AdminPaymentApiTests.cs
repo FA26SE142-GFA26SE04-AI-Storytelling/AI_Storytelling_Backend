@@ -170,14 +170,14 @@ public sealed class AdminPlanApiTests(ApiFactory factory) : IClassFixture<ApiFac
 
         var plans = await AdminApi.GetDataAsync(admin, "/api/v1/Payment/admin/plans");
         Assert.Equal(
-            ["1:Legacy:False", "2:Reading:True", "3:Creative:True", "4:AddOn:True", "5:CreatorPack:True"],
+            ["2:Reading:True", "3:Creative:True", "4:AddOn:True", "5:CreatorPack:True"],
             plans.EnumerateArray().Select(plan =>
                 $"{plan.GetProperty("id").GetInt32()}:{plan.GetProperty("planType").GetString()}:{plan.GetProperty("isActive").GetBoolean()}"));
 
         var response = await admin.PutAsJsonAsync($"/api/v1/Payment/admin/plans/{CreativePlanId}",
             new { name = "Gói Sáng tạo", priceVnd = 120000, aiCredits = 6, isActive = true });
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest, (await admin.PutAsJsonAsync("/api/v1/Payment/admin/plans/1",
+        Assert.Equal(HttpStatusCode.NotFound, (await admin.PutAsJsonAsync("/api/v1/Payment/admin/plans/1",
             new { name = "Personal", priceVnd = 49000, aiCredits = 50, isActive = true })).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, (await admin.PutAsJsonAsync($"/api/v1/Payment/admin/plans/{CreativePlanId}",
             new { name = "Gói Sáng tạo", priceVnd = 0, aiCredits = 6, isActive = true })).StatusCode);

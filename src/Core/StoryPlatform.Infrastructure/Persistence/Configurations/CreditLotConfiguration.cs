@@ -50,6 +50,7 @@ public class CreditLotConfiguration : IEntityTypeConfiguration<CreditLot>
             .HasFilter("\"Source\" = 'Trial' AND NOT \"IsDeleted\"");
 
         builder.HasIndex(x => new { x.UserId, x.CreditType });
+        builder.HasIndex(x => x.EventId);
 
         builder.HasQueryFilter(x => !x.IsDeleted);
     }

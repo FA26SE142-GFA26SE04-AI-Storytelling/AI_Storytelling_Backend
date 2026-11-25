@@ -63,6 +63,10 @@ public class UnitOfWork : IUnitOfWork
         _currentTransaction = await _context.Database.BeginTransactionAsync(cancellationToken);
     }
 
+    internal static long StoryLockKey(int resourceId) => 0x53544F5200000000L | (uint)resourceId;
+
+    internal static long EventLockKey(int eventId) => 0x45564E5400000000L | (uint)eventId;
+
     public async Task AcquireTransactionLockAsync(int resourceId, CancellationToken cancellationToken = default)
     {
         if (_currentTransaction is null)
@@ -70,8 +74,20 @@ public class UnitOfWork : IUnitOfWork
             throw new InvalidOperationException("A transaction must be active before acquiring a workflow lock.");
         }
 
-        const long storyLockNamespace = 0x53544F5200000000L;
-        var lockKey = storyLockNamespace | (uint)resourceId;
+        var lockKey = StoryLockKey(resourceId);
+        await _context.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock({lockKey})",
+            cancellationToken);
+    }
+
+    public async Task AcquireEventLockAsync(int eventId, CancellationToken cancellationToken = default)
+    {
+        if (_currentTransaction is null)
+        {
+            throw new InvalidOperationException("A transaction must be active before acquiring an event lock.");
+        }
+
+        var lockKey = EventLockKey(eventId);
         await _context.Database.ExecuteSqlInterpolatedAsync(
             $"SELECT pg_advisory_xact_lock({lockKey})",
             cancellationToken);

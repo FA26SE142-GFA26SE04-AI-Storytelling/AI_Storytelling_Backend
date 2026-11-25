@@ -20,6 +20,7 @@ public interface IUnitOfWork : IDisposable, IAsyncDisposable
     bool HasActiveTransaction => false;
     Task BeginTransactionAsync(CancellationToken cancellationToken = default);
     Task AcquireTransactionLockAsync(int resourceId, CancellationToken cancellationToken = default);
+    Task AcquireEventLockAsync(int eventId, CancellationToken cancellationToken = default) => Task.CompletedTask;
     Task AcquireAccountAiActivityLockAsync(int accountUserId, CancellationToken cancellationToken = default) => Task.CompletedTask;
     Task CommitTransactionAsync(CancellationToken cancellationToken = default);
     Task RollbackTransactionAsync(CancellationToken cancellationToken = default);

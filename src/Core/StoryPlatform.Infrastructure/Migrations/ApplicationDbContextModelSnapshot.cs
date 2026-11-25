@@ -1292,6 +1292,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
+                    b.Property<int?>("EventId")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime?>("ExpiresAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1319,6 +1322,8 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("EventId");
 
                     b.HasIndex("UserId")
                         .IsUnique()
@@ -1395,6 +1400,997 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("credit_usages", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.Event", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("ApprovedByAdminId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("AssignedModeratorId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("BannerUrl")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<long>("BudgetVnd")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("ClosedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ClosesAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ConfigVersion")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("CreatedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("CreatorVotingScheduleJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("FinalAwardRankingSnapshotJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("FinalLeaderboardSnapshotJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Format")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("MainCategoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("MaxParentRegistrations")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("MinVotesPerSubmission")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("OpensAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("PublishedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ResultsFinalizedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ReviewCutoffAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ScoringMode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(220)
+                        .HasColumnType("character varying(220)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime?>("SubmissionCutoffAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SummaryReportJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("TargetAgeBands")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("VotingEndAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("VotingStartAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MainCategoryId");
+
+                    b.HasIndex("Slug")
+                        .IsUnique()
+                        .HasFilter("NOT \"IsDeleted\"");
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("events", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.EventActivity", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ActivityType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("AllowedAudience")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<bool>("AwardAllMissionCompleters")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("ClaimWindowHours")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ConfigJson")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("EndAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("EventId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("GrantAiCredits")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("MaxReallocationRounds")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("MaxRegistrations")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("MaxSubmissionsPerUser")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("MinVotesPerSubmission")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("RegistrationEndAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("RegistrationStartAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ReviewCutoffAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("StartAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("StorySource")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("WaiveWeeklyLibraryLimit")
+                        .HasColumnType("boolean");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventId", "ActivityType")
+                        .IsUnique()
+                        .HasFilter("NOT \"IsDeleted\"");
+
+                    b.ToTable("event_activities", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.EventAppeal", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AppellantUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("EventId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("EvidenceJson")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("ParticipationId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ReasonText")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("ResolutionNote")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("ReviewedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ParticipationId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_event_appeals_ActivePerParticipation")
+                        .HasFilter("\"Status\" IN ('Open', 'UnderReview', 'Escalated') AND NOT \"IsDeleted\"");
+
+                    b.ToTable("event_appeals", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.EventAward", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("ApprovedByAdminId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("ClaimDeadlineAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("CreditGrantAmount")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("EventActivityId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("EventId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int?>("ParticipationId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("RankOrTier")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int?>("ReallocatedFromAwardId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ReallocationRound")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ResultSource")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("RewardName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("RewardType")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<int>("SlotIndex")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int>("SubmitCreditGrantAmount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("TargetAudience")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int?>("TrackId")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("UnitValueVnd")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventActivityId");
+
+                    b.HasIndex("EventId", "EventActivityId", "RankOrTier", "SlotIndex")
+                        .IsUnique()
+                        .HasDatabaseName("IX_event_awards_ActiveActivitySlot")
+                        .HasFilter("\"EventActivityId\" IS NOT NULL AND \"Status\" NOT IN ('Expired', 'UnclaimedBudgetReturned', 'Failed') AND NOT \"IsDeleted\"");
+
+                    b.HasIndex("EventId", "TrackId", "RankOrTier", "SlotIndex")
+                        .IsUnique()
+                        .HasDatabaseName("IX_event_awards_ActiveSlot")
+                        .HasFilter("\"TrackId\" IS NOT NULL AND \"Status\" NOT IN ('Expired', 'UnclaimedBudgetReturned', 'Failed') AND NOT \"IsDeleted\"");
+
+                    b.ToTable("event_awards", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.EventEvaluation", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CriteriaScoresJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("EvaluatorUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("EventSubmissionId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("SubmittedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("TotalWeightedScore")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("numeric(6,2)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventSubmissionId", "EvaluatorUserId")
+                        .IsUnique()
+                        .HasFilter("NOT \"IsDeleted\"");
+
+                    b.ToTable("event_evaluations", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.EventModeratorAssignment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("EventId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("ModeratorId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ModeratorId");
+
+                    b.HasIndex("EventId", "ModeratorId")
+                        .IsUnique();
+
+                    b.ToTable("event_moderator_assignments", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.EventParticipation", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AcceptedRuleVersionId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("EventActivityId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("EventId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("MissionCompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int?>("TrackId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("VerificationNotesJson")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("VerifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventActivityId");
+
+                    b.HasIndex("TrackId");
+
+                    b.HasIndex("UserId", "Status");
+
+                    b.HasIndex("EventId", "EventActivityId", "UserId")
+                        .IsUnique()
+                        .HasFilter("\"EventActivityId\" IS NOT NULL AND NOT \"IsDeleted\"");
+
+                    b.HasIndex("EventId", "TrackId", "UserId")
+                        .IsUnique()
+                        .HasFilter("\"TrackId\" IS NOT NULL AND NOT \"IsDeleted\"");
+
+                    b.ToTable("event_participations", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.EventRuleVersion", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("ActivatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CompletionMode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatorRubricJson")
+                        .HasColumnType("text");
+
+                    b.Property<int>("EventId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("InsufficientVotesPolicyText")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int?>("RequiredPoints")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("RequiredTaskCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("RewardEligibilityText")
+                        .HasColumnType("text");
+
+                    b.Property<string>("RulesText")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("TieBreakerPolicyText")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("VersionNo")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventId", "VersionNo")
+                        .IsUnique()
+                        .HasFilter("NOT \"IsDeleted\"");
+
+                    b.ToTable("event_rule_versions", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.EventStory", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("EventId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("EventSubmissionId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int>("StoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("StoryVersionId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventId", "StoryId")
+                        .IsUnique()
+                        .HasFilter("NOT \"IsDeleted\"");
+
+                    b.ToTable("event_stories", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.EventSubmission", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("CreatorUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CurrentStoryVersionId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("EventActivityId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("EventId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int?>("LatestModerationItemId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("LockedStoryVersionId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ParentSubmissionText")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ParentSubmissionTitle")
+                        .HasColumnType("text");
+
+                    b.Property<int>("ParticipationId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("SimilarityReferenceStoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<double?>("SimilarityScore")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int>("StoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("SubmittedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventActivityId");
+
+                    b.HasIndex("ParticipationId");
+
+                    b.HasIndex("EventId", "CreatorUserId")
+                        .IsUnique()
+                        .HasFilter("\"EventActivityId\" IS NULL AND NOT \"IsDeleted\"");
+
+                    b.HasIndex("EventId", "StoryId")
+                        .IsUnique()
+                        .HasFilter("NOT \"IsDeleted\"");
+
+                    b.ToTable("event_submissions", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.EventTaskDefinition", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("AllowMultiplePerStory")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ConfigJson")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<int>("EventRuleVersionId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsMandatory")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("Points")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("TargetTrackType")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int>("TargetValue")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("TaskCode")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("VerifierType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventRuleVersionId", "TaskCode")
+                        .IsUnique()
+                        .HasFilter("NOT \"IsDeleted\"");
+
+                    b.ToTable("event_task_definitions", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.EventTaskProgress", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateOnly>("ActivityLocalDate")
+                        .HasColumnType("date");
+
+                    b.Property<int?>("ChildProfileId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("EventVoteId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("ParticipationId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ReadingSessionId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SelfDeclaredPayloadJson")
+                        .HasColumnType("text");
+
+                    b.Property<int?>("StoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("StoryRatingId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("TaskDefinitionId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TaskDefinitionId");
+
+                    b.HasIndex("ParticipationId", "ActivityLocalDate");
+
+                    b.HasIndex("ParticipationId", "TaskDefinitionId");
+
+                    b.ToTable("event_task_progress", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.EventTrack", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("AwardAllMissionCompleters")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("ClaimWindowHours")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("EventId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("ExecutionEndAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("ExecutionStartAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("GrantAiCredits")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("GrantSubmitCredits")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("MaxReallocationRounds")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("MaxSubmissionsPerUser")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("RegistrationEndAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("RegistrationStartAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TrackType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("WaiveWeeklyLibraryLimit")
+                        .HasColumnType("boolean");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventId", "TrackType")
+                        .IsUnique()
+                        .HasFilter("NOT \"IsDeleted\"");
+
+                    b.ToTable("event_tracks", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.EventVote", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("ChildProfileId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DisqualifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("DisqualifiedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("DisqualifiedReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int>("EventId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("EventSubmissionId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDisqualified")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("ParentUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ParticipationId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ReadingSessionId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Stars")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("StoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("StoryVersionId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventSubmissionId");
+
+                    b.HasIndex("ParticipationId");
+
+                    b.HasIndex("EventId", "EventSubmissionId", "IsDisqualified");
+
+                    b.HasIndex("EventId", "StoryId", "ParentUserId")
+                        .IsUnique()
+                        .HasFilter("NOT \"IsDeleted\"");
+
+                    b.ToTable("event_votes", (string)null);
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.IllustrationBeat", b =>
@@ -3603,6 +4599,60 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasIndex("UserAccountId");
 
                     b.ToTable("refresh_tokens", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.RewardFulfillment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AttemptNo")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeliveredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("EventAwardId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int?>("HandledByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("RecipientInfoProtectedJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<string>("TrackingOrBankTxCode")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventAwardId", "AttemptNo")
+                        .IsUnique()
+                        .HasFilter("NOT \"IsDeleted\"");
+
+                    b.ToTable("reward_fulfillments", (string)null);
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.SafetyPolicy", b =>
@@ -6156,6 +7206,223 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.Event", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.ContentCategory", "MainCategory")
+                        .WithMany()
+                        .HasForeignKey("MainCategoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("MainCategory");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.EventActivity", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.Event", "Event")
+                        .WithMany("Activities")
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Event");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.EventAppeal", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.EventParticipation", "Participation")
+                        .WithMany()
+                        .HasForeignKey("ParticipationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Participation");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.EventAward", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.EventActivity", "Activity")
+                        .WithMany()
+                        .HasForeignKey("EventActivityId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.Event", "Event")
+                        .WithMany()
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Activity");
+
+                    b.Navigation("Event");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.EventEvaluation", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.EventSubmission", "Submission")
+                        .WithMany()
+                        .HasForeignKey("EventSubmissionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Submission");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.EventModeratorAssignment", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.Event", null)
+                        .WithMany()
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", null)
+                        .WithMany()
+                        .HasForeignKey("ModeratorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.EventParticipation", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.EventActivity", "Activity")
+                        .WithMany()
+                        .HasForeignKey("EventActivityId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.Event", "Event")
+                        .WithMany()
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.EventTrack", "Track")
+                        .WithMany()
+                        .HasForeignKey("TrackId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Activity");
+
+                    b.Navigation("Event");
+
+                    b.Navigation("Track");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.EventRuleVersion", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.Event", "Event")
+                        .WithMany("RuleVersions")
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Event");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.EventStory", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.Event", "Event")
+                        .WithMany()
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Event");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.EventSubmission", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.EventActivity", "Activity")
+                        .WithMany()
+                        .HasForeignKey("EventActivityId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.Event", "Event")
+                        .WithMany()
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.EventParticipation", "Participation")
+                        .WithMany()
+                        .HasForeignKey("ParticipationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Activity");
+
+                    b.Navigation("Event");
+
+                    b.Navigation("Participation");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.EventTaskDefinition", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.EventRuleVersion", "RuleVersion")
+                        .WithMany("TaskDefinitions")
+                        .HasForeignKey("EventRuleVersionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("RuleVersion");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.EventTaskProgress", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.EventParticipation", "Participation")
+                        .WithMany()
+                        .HasForeignKey("ParticipationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.EventTaskDefinition", "TaskDefinition")
+                        .WithMany()
+                        .HasForeignKey("TaskDefinitionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Participation");
+
+                    b.Navigation("TaskDefinition");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.EventTrack", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.Event", "Event")
+                        .WithMany("Tracks")
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Event");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.EventVote", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.Event", "Event")
+                        .WithMany()
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.EventSubmission", "Submission")
+                        .WithMany()
+                        .HasForeignKey("EventSubmissionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.EventParticipation", "Participation")
+                        .WithMany()
+                        .HasForeignKey("ParticipationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Event");
+
+                    b.Navigation("Participation");
+
+                    b.Navigation("Submission");
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.IllustrationBeat", b =>
                 {
                     b.HasOne("StoryPlatform.Domain.Entities.StoryScene", "StoryScene")
@@ -6895,6 +8162,17 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("UserAccount");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.RewardFulfillment", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.EventAward", "Award")
+                        .WithMany()
+                        .HasForeignKey("EventAwardId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Award");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.SafetyPolicy", b =>
@@ -7672,6 +8950,20 @@ namespace StoryPlatform.Infrastructure.Migrations
             modelBuilder.Entity("StoryPlatform.Domain.Entities.CreatorEarningPeriod", b =>
                 {
                     b.Navigation("Entries");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.Event", b =>
+                {
+                    b.Navigation("Activities");
+
+                    b.Navigation("RuleVersions");
+
+                    b.Navigation("Tracks");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.EventRuleVersion", b =>
+                {
+                    b.Navigation("TaskDefinitions");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ReadingRoadmap", b =>

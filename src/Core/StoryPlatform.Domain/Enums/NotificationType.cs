@@ -52,5 +52,7 @@ public enum NotificationType
     /// <summary>Admin huỷ một lần chi, số dư được cộng lại (Luồng 5, 5h).</summary>
     CreatorPayoutCancelled = 39,
     /// <summary>Lượt AI đang giữ của một truyện bỏ dở đã được trả lại (Luồng 2, UC-L2-09).</summary>
-    StoryCreditReleased = 40
+    StoryCreditReleased = 40,
+    /// <summary>Người tham gia trúng giải sự kiện sau khi Admin phê duyệt danh sách trao giải.</summary>
+    EventAwardApproved = 41
 }

@@ -8,6 +8,7 @@ using StoryPlatform.Application.Features.ContentReports.Interfaces;
 using StoryPlatform.Application.Features.MediaStorage.Interfaces;
 using StoryPlatform.Application.Features.Moderation;
 using StoryPlatform.Application.Features.RoadmapTemplates;
+using StoryPlatform.Application.Features.Stories.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using StoryPlatform.Application.Features.AccessControl;
@@ -23,13 +24,16 @@ public class PublishedContentReviewService : IPublishedContentReviewService
     private readonly IAuditLogWriter _auditLogWriter;
     private readonly IMediaStorage? _mediaStorage;
     private readonly IAccessPolicy _accessPolicy;
+    private readonly IStoryCoverResolver? _covers;
 
     public PublishedContentReviewService(
         IUnitOfWork unitOfWork,
         IAuditLogWriter auditLogWriter,
         IMediaStorage? mediaStorage = null,
-        IAccessPolicy? accessPolicy = null)
+        IAccessPolicy? accessPolicy = null,
+        IStoryCoverResolver? covers = null)
     {
+        _covers = covers;
         _accessPolicy = accessPolicy ?? AccessPolicy.Default(unitOfWork);
         _unitOfWork = unitOfWork;
         _auditLogWriter = auditLogWriter;
@@ -208,8 +212,17 @@ public class PublishedContentReviewService : IPublishedContentReviewService
             link => storyIds.Contains(link.StoryId), cancellationToken: cancellationToken);
         var categories = await LoadCategoriesAsync(
             links.Select(link => link.ContentCategoryId).Distinct().ToList(), cancellationToken);
+        var authorIds = stories.Select(story => story.AuthorUserId).Distinct().ToList();
+        var authors = (await _unitOfWork.Repository<UserAccount>().FindAsync(
+                user => authorIds.Contains(user.Id), cancellationToken: cancellationToken))
+            .ToDictionary(user => user.Id);
+        var cover = _covers is null
+            ? value => value
+            : await _covers.ResolveAsync(stories.Select(story => story.CoverImageUrl), cancellationToken);
         var items = stories.Select(story => new PublishedContentItemDto
         {
+            CoverImageUrl = cover(story.CoverImageUrl),
+            AuthorName = ModerationQueuePolicy.DisplayName(authors.GetValueOrDefault(story.AuthorUserId)),
             Source = PublishedContentSource.PublicLibrary.ToString(),
             Id = story.Id,
             Title = story.Title ?? string.Empty,

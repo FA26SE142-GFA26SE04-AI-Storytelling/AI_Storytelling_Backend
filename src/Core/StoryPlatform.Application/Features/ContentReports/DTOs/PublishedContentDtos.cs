@@ -32,6 +32,10 @@ public class PublishedContentItemDto
     public DateTime? PublishedAt { get; set; }
     public int? StoryCount { get; set; }
     public bool NeedsUpdate { get; set; }
+
+    /// <summary>Ảnh bìa (link đã ký) và tên tác giả, chỉ có ở truyện; trả kèm để màn rà soát không phụ thuộc community.view.</summary>
+    public string? CoverImageUrl { get; set; }
+    public string? AuthorName { get; set; }
 }
 
 /// <summary>Nội dung một truyện đã công khai cho nhân sự kiểm duyệt.</summary>

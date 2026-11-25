@@ -69,8 +69,17 @@ public class ModerationQueueService : IModerationQueueService
         var pageIndex = Math.Max(query.PageIndex, 1);
         var pageSize = Math.Clamp(query.PageSize, 1, 100);
 
+        // Chỉ liệt kê loại mục role được nhận: Administrator không thấy báo cáo nội dung và đánh giá truyện.
+        var visibleTypes = new List<ModerationItemType>();
+        foreach (var type in Enum.GetValues<ModerationItemType>())
+        {
+            if (await _accessPolicy.RoleHoldsAsync(actor.Role.ToString(), ModerationQueuePolicy.ClaimPermission(type), cancellationToken))
+                visibleTypes.Add(type);
+        }
+
         Expression<Func<ModerationItem, bool>> filter = item =>
             item.Status == status
+            && visibleTypes.Contains(item.ItemType)
             && (itemType == null || item.ItemType == itemType)
             && (priority == null || item.Priority == priority)
             && (!onlyOverdue || (item.SlaDueAt != null && item.SlaDueAt < now))

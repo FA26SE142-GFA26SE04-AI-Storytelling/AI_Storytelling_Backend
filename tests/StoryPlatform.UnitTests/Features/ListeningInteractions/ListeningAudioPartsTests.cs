@@ -33,10 +33,10 @@ public sealed class ListeningAudioPartsTests
             new ListeningInteraction { Id = 2, Type = ListeningInteractionType.RolePlay, MatchFeedback = "Giỏi quá!" }, [])));
 
     [Fact]
-    public void FillBlank_DoesNotReadAnswers() =>
-        Assert.Equal(["i:hint:Một con vật.", "i:match:Đúng rồi!", "i:noMatch:Thử nghe lại nhé."], Keys(
+    public void FillBlank_ReadsShortSentenceHintAndFeedback_ButNotAcceptedAnswers() =>
+        Assert.Equal(["i:text:Thỏ gặp thỏ mẹ.", "i:hint:Một con vật.", "i:match:Đúng rồi!", "i:noMatch:Thử nghe lại nhé."], Keys(
             ListeningAudioParts.For(new ListeningInteraction { Id = 3, Type = ListeningInteractionType.FillBlank,
-                Hint = "Một con vật.", MatchFeedback = "Đúng rồi!", NoMatchFeedback = "Thử nghe lại nhé." },
+                SourceQuote = "Thỏ gặp thỏ mẹ.", Hint = "Một con vật.", MatchFeedback = "Đúng rồi!", NoMatchFeedback = "Thử nghe lại nhé." },
                 [Option(30, 3, 1, "thỏ")])));
 
     [Fact]

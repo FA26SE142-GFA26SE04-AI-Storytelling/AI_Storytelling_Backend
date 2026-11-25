@@ -1,3 +1,4 @@
+using StoryPlatform.Application.Abstractions.Caching;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ContentCategories.DTOs;
@@ -9,11 +10,28 @@ namespace StoryPlatform.Application.Features.ContentCategories.Services;
 
 public class ContentCategoryService : IContentCategoryService
 {
-    private readonly IUnitOfWork _unitOfWork;
+    public const string ListCacheKey = "content-categories:list";
+    public static string ItemCacheKey(int contentCategoryId) => $"content-categories:{contentCategoryId}";
 
-    public ContentCategoryService(IUnitOfWork unitOfWork)
+    // Chỉ Admin sửa và mọi thay đổi đều xoá cache ngay; TTL chỉ là giới hạn trên nếu lệnh xoá cache bị lỗi.
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(30);
+
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly IAppCache? _cache;
+
+    public ContentCategoryService(IUnitOfWork unitOfWork, IAppCache? cache = null)
     {
         _unitOfWork = unitOfWork;
+        _cache = cache;
+    }
+
+    private async Task InvalidateAsync(int? contentCategoryId, CancellationToken cancellationToken)
+    {
+        await _cache.RemoveIfConfiguredAsync(ListCacheKey, cancellationToken);
+        if (contentCategoryId.HasValue)
+        {
+            await _cache.RemoveIfConfiguredAsync(ItemCacheKey(contentCategoryId.Value), cancellationToken);
+        }
     }
 
     public async Task<ContentCategoryDto> CreateAsync(
@@ -30,6 +48,7 @@ public class ContentCategoryService : IContentCategoryService
         {
             Code = code,
             DisplayName = request.DisplayName.Trim(),
+            Group = ParseGroup(request.Group),
             IsActive = request.IsActive,
             CreatedByAdminId = currentUserId,
             DefaultBlockedAgeBands = NormalizeAgeBands(request.DefaultBlockedAgeBands)
@@ -37,6 +56,7 @@ public class ContentCategoryService : IContentCategoryService
 
         await repository.AddAsync(category, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await InvalidateAsync(null, cancellationToken);
         return MapCategory(category);
     }
 
@@ -50,7 +70,9 @@ public class ContentCategoryService : IContentCategoryService
             throw new NotFoundException("Content Category", contentCategoryId);
         }
 
+        var group = request.Group == null ? category.Group : ParseGroup(request.Group);
         category.DisplayName = request.DisplayName.Trim();
+        category.Group = group;
         category.IsActive = request.IsActive;
         if (request.DefaultBlockedAgeBands != null)
         {
@@ -60,6 +82,7 @@ public class ContentCategoryService : IContentCategoryService
         category.UpdatedAt = DateTime.UtcNow;
         repository.Update(category);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await InvalidateAsync(contentCategoryId, cancellationToken);
         return MapCategory(category);
     }
 
@@ -74,35 +97,51 @@ public class ContentCategoryService : IContentCategoryService
 
         repository.Delete(category);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await InvalidateAsync(contentCategoryId, cancellationToken);
     }
 
-    public async Task<ContentCategoryDto> GetByIdAsync(
-        int contentCategoryId, CancellationToken cancellationToken = default)
-    {
-        var category = await _unitOfWork.Repository<ContentCategory>()
-            .GetByIdAsync(contentCategoryId, cancellationToken);
-        if (category == null)
+    public Task<ContentCategoryDto> GetByIdAsync(
+        int contentCategoryId, CancellationToken cancellationToken = default) =>
+        _cache.GetOrSetOrLoadAsync(ItemCacheKey(contentCategoryId), async ct =>
         {
-            throw new NotFoundException("Content Category", contentCategoryId);
-        }
+            var category = await _unitOfWork.Repository<ContentCategory>().GetByIdAsync(contentCategoryId, ct);
+            if (category == null)
+            {
+                throw new NotFoundException("Content Category", contentCategoryId);
+            }
 
-        return MapCategory(category);
-    }
+            return MapCategory(category);
+        }, CacheTtl, cancellationToken);
 
-    public async Task<List<ContentCategoryDto>> ListAsync(CancellationToken cancellationToken = default)
-    {
-        var categories = await _unitOfWork.Repository<ContentCategory>().GetAllAsync(cancellationToken);
-        return categories.Select(MapCategory).ToList();
-    }
+    public Task<List<ContentCategoryDto>> ListAsync(CancellationToken cancellationToken = default) =>
+        _cache.GetOrSetOrLoadAsync(ListCacheKey, async ct =>
+        {
+            var categories = await _unitOfWork.Repository<ContentCategory>().GetAllAsync(ct);
+            return categories.Select(MapCategory).ToList();
+        }, CacheTtl, cancellationToken);
 
     private static ContentCategoryDto MapCategory(ContentCategory category) => new()
     {
         Id = category.Id,
         Code = category.Code,
         DisplayName = category.DisplayName,
+        Group = category.Group.ToString(),
         IsActive = category.IsActive,
         DefaultBlockedAgeBands = category.DefaultBlockedAgeBands.ToList()
     };
+
+    private static ContentCategoryGroup ParseGroup(string? value)
+    {
+        var trimmed = value?.Trim();
+        if (string.IsNullOrEmpty(trimmed) || char.IsDigit(trimmed[0])
+            || !Enum.TryParse<ContentCategoryGroup>(trimmed, ignoreCase: true, out var group)
+            || !Enum.IsDefined(group))
+        {
+            throw new BadRequestException("Nhóm nhãn không hợp lệ.");
+        }
+
+        return group;
+    }
 
     private static List<string> NormalizeAgeBands(IEnumerable<string>? values)
     {

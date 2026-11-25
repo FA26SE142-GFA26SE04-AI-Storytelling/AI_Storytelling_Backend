@@ -100,7 +100,7 @@ public class BusinessReportController : BaseApiController
         [FromQuery] DateTime periodStart, [FromQuery] DateTime periodEnd, CancellationToken cancellationToken)
     {
         var result = await _creatorStatisticsService.GetAdminOverviewAsync(periodStart, periodEnd, cancellationToken);
-        return HandleResult(result, "Lấy thống kê Creator thành công.");
+        return HandleResult(result, "Lấy thống kê nhà sáng tạo thành công.");
     }
 
     /// <summary>

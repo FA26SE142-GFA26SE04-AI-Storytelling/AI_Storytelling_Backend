@@ -131,10 +131,27 @@ public sealed class ChildListeningContentTests
 
         Assert.Equal("Thỏ gặp ____ trong rừng.", item.MaskedSentence);
         Assert.Equal("Một con vật to lớn.", item.Hint);
+        Assert.Equal("listen-3-i-text.mp3", item.AudioUrls["text"]);
         Assert.Empty(item.Options);
         var json = Json(item);
         Assert.Contains("Thỏ gặp ____ trong rừng.", json);
         Assert.DoesNotContain("Gấu", json);
+    }
+
+    [Fact]
+    public async Task FillBlank_WithoutShortSentenceAudio_IsHidden()
+    {
+        var interaction = Add(3, ListeningInteractionType.FillBlank, 0, x =>
+        {
+            x.SourceQuote = "Thỏ gặp Bác Gấu trong rừng.";
+            x.HiddenWord = "bác Gấu";
+            x.Hint = "Một con vật to lớn.";
+        });
+        Option(30, 3, 1, "bác Gấu");
+        _h.AddListeningMedia(interaction);
+        _h.Assets.RemoveAll(x => x.ListeningInteractionId == 3 && x.AudioPartKey == "text");
+
+        Assert.Null((await Content()).Scenes[0].Interaction);
     }
 
     [Fact]

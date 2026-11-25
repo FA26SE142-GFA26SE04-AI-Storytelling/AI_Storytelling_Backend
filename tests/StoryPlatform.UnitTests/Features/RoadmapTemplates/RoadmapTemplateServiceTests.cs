@@ -162,6 +162,7 @@ public class RoadmapTemplateServiceTests
         var story = Assert.Single(result.Items);
         Assert.Equal(10, story.StoryId);
         Assert.Equal("friendship", story.Labels.Single().Code);
+        Assert.Equal("LifeValue", story.Labels.Single().Group);
     }
 
     [Fact]

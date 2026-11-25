@@ -67,7 +67,7 @@ public class PublishedContentReviewService : IPublishedContentReviewService
         if (story.Scope != StoryScope.Creator || !story.IsPublished
             || story.Status == StoryStatus.Rejected || story.ArchivedAt != null)
         {
-            throw new BadRequestException("Chỉ xem được truyện Public Library đang công khai.");
+            throw new BadRequestException("Chỉ xem được truyện thư viện công khai đang công khai.");
         }
 
         string? Mask(string? text) => ModeratorTextMasker.Mask(text, null);
@@ -274,7 +274,8 @@ public class PublishedContentReviewService : IPublishedContentReviewService
             category => new ReportedLabelDto
             {
                 Code = category.Code,
-                DisplayName = category.DisplayName
+                DisplayName = category.DisplayName,
+                Group = category.Group.ToString()
             });
     }
 
@@ -285,7 +286,7 @@ public class PublishedContentReviewService : IPublishedContentReviewService
             || actor.Role is not (UserRole.Moderator or UserRole.Administrator))
         {
             throw new ForbiddenException(
-                "Chỉ Moderator hoặc Administrator đang hoạt động mới xem được nội dung đã công khai.");
+                "Chỉ kiểm duyệt viên hoặc quản trị viên đang hoạt động mới xem được nội dung đã công khai.");
         }
 
         return actor;

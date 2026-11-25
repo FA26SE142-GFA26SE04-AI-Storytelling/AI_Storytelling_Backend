@@ -131,7 +131,7 @@ public class TokenQuotaServiceCreatorTests
         var ensure = await Assert.ThrowsAsync<ConflictException>(() => _sut.EnsureCreatorWithinQuotaAsync(CreatorId));
         await Assert.ThrowsAsync<ConflictException>(() => _sut.IncrementCreatorUsageAsync(CreatorId, null));
 
-        Assert.Contains("Gói Creator", ensure.Message);
+        Assert.Contains("Gói nhà sáng tạo", ensure.Message);
     }
 
     [Fact]
@@ -170,7 +170,7 @@ public class TokenQuotaServiceCreatorTests
 
         var error = await Assert.ThrowsAsync<ConflictException>(() => _sut.ChargeSubmissionAsync(CreatorId, 1, null));
 
-        Assert.Contains("Gói Creator", error.Message);
+        Assert.Contains("Gói nhà sáng tạo", error.Message);
         Assert.Empty(_store.Items<CreditUsage>());
     }
 

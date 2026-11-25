@@ -96,21 +96,21 @@ public class PaymentService : IPaymentService
         var audience = AudienceOf(payer);
         if (audience == null)
         {
-            throw new ForbiddenException("Chỉ tài khoản phụ huynh hoặc Content Creator mới được mua gói.");
+            throw new ForbiddenException("Chỉ tài khoản phụ huynh hoặc nhà sáng tạo nội dung mới được mua gói.");
         }
 
         if (plan.Audience != audience)
         {
             throw new ForbiddenException(audience == PlanAudience.Creator
-                ? "Content Creator chỉ mua được Gói Creator."
-                : "Gói này chỉ dành cho Content Creator.");
+                ? "Nhà sáng tạo nội dung chỉ mua được Gói nhà sáng tạo."
+                : "Gói này chỉ dành cho nhà sáng tạo nội dung.");
         }
 
         // Phụ huynh phải đã xác thực email (tài khoản Active); Creator phải đã được Admin duyệt (Active).
         if (payer.Status != AccountStatus.Active)
         {
             throw new ForbiddenException(audience == PlanAudience.Creator
-                ? "Chỉ Content Creator đã được duyệt mới mua được Gói Creator."
+                ? "Chỉ nhà sáng tạo nội dung đã được duyệt mới mua được Gói nhà sáng tạo."
                 : "Hãy xác thực email để kích hoạt tài khoản trước khi mua gói.");
         }
 
@@ -137,7 +137,7 @@ public class PaymentService : IPaymentService
             throw new ConflictException(plan.PlanType switch
             {
                 PlanType.AddOn => "Bạn đang có một giao dịch Add-on chờ thanh toán. Hãy hoàn tất hoặc chờ giao dịch đó hết hạn.",
-                PlanType.CreatorPack => "Bạn đang có một giao dịch Gói Creator chờ thanh toán. Hãy hoàn tất hoặc chờ giao dịch đó hết hạn.",
+                PlanType.CreatorPack => "Bạn đang có một giao dịch Gói nhà sáng tạo chờ thanh toán. Hãy hoàn tất hoặc chờ giao dịch đó hết hạn.",
                 _ => "Bạn đang có một giao dịch gói chờ thanh toán. Hãy hoàn tất hoặc chờ giao dịch đó hết hạn."
             });
         }

@@ -62,7 +62,8 @@ public partial class RoadmapTemplateService
             {
                 Id = category.Id,
                 Code = category.Code,
-                DisplayName = category.DisplayName
+                DisplayName = category.DisplayName,
+                Group = category.Group.ToString()
             });
 
         var items = stories.Select(story => new CandidateStoryDto
@@ -119,7 +120,7 @@ public partial class RoadmapTemplateService
         if (ineligible.Count > 0)
         {
             throw new BadRequestException(
-                $"Truyện không phải Public Library đang công khai: {string.Join(", ", ineligible)}.");
+                $"Truyện không phải thư viện công khai đang công khai: {string.Join(", ", ineligible)}.");
         }
 
         var itemRepository = _unitOfWork.Repository<ReadingRoadmapItem>();

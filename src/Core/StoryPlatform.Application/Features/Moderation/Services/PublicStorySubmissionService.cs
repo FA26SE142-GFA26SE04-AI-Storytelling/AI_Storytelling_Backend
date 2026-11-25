@@ -218,7 +218,7 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
 
         if (item.ItemType != ModerationItemType.PublicStoryReview)
         {
-            throw new BadRequestException("Mục này không phải yêu cầu duyệt truyện Public Library.");
+            throw new BadRequestException("Mục này không phải yêu cầu duyệt truyện thư viện công khai.");
         }
         if (item.CreatedByUserId != actor.Id)
         {
@@ -294,7 +294,7 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
             || actor.LockedUntil > DateTime.UtcNow)
         {
             throw new ForbiddenException(
-                "Chỉ Content Creator đang hoạt động mới gửi duyệt truyện Public Library.");
+                "Chỉ nhà sáng tạo nội dung đang hoạt động mới gửi duyệt truyện thư viện công khai.");
         }
 
         return actor;

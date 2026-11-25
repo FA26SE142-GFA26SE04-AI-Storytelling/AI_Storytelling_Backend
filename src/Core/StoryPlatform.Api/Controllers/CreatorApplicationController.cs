@@ -28,7 +28,7 @@ public class CreatorApplicationController : BaseApiController
     public async Task<ActionResult<ApiResponse<CreatorApplicationDto>>> GetMine(CancellationToken cancellationToken)
     {
         var result = await _service.GetMineAsync(GetCurrentUserId(), cancellationToken);
-        return HandleResult(result, "Lấy đơn đăng ký Content Creator thành công.");
+        return HandleResult(result, "Lấy đơn đăng ký nhà sáng tạo nội dung thành công.");
     }
 
     /// <summary>Nộp lại đơn sau khi bị từ chối; tạo đơn chờ duyệt mới.</summary>
@@ -38,7 +38,7 @@ public class CreatorApplicationController : BaseApiController
         [FromBody] ResubmitCreatorApplicationRequestDto request, CancellationToken cancellationToken)
     {
         var result = await _service.ResubmitAsync(GetCurrentUserId(), request, cancellationToken);
-        return HandleResult(result, "Đã nộp lại đơn đăng ký Content Creator.");
+        return HandleResult(result, "Đã nộp lại đơn đăng ký nhà sáng tạo nội dung.");
     }
 
     /// <summary>Danh sách đơn; status = Pending, Approved hoặc Rejected để lọc (Pending: cũ nhất trước).</summary>
@@ -49,7 +49,7 @@ public class CreatorApplicationController : BaseApiController
         CancellationToken cancellationToken = default)
     {
         var result = await _service.ListAsync(status, pageIndex, pageSize, cancellationToken);
-        return HandleResult(result, "Lấy danh sách đơn đăng ký Content Creator thành công.");
+        return HandleResult(result, "Lấy danh sách đơn đăng ký nhà sáng tạo nội dung thành công.");
     }
 
     [HttpGet("/api/v1/admin/creator-applications/{applicationId:int}")]
@@ -58,7 +58,7 @@ public class CreatorApplicationController : BaseApiController
         int applicationId, CancellationToken cancellationToken)
     {
         var result = await _service.GetAsync(applicationId, cancellationToken);
-        return HandleResult(result, "Lấy đơn đăng ký Content Creator thành công.");
+        return HandleResult(result, "Lấy đơn đăng ký nhà sáng tạo nội dung thành công.");
     }
 
     /// <summary>Duyệt đơn: tài khoản Creator thành Active, Creator nhận thông báo và email.</summary>
@@ -68,7 +68,7 @@ public class CreatorApplicationController : BaseApiController
         int applicationId, CancellationToken cancellationToken)
     {
         var result = await _service.ApproveAsync(GetCurrentUserId(), applicationId, cancellationToken);
-        return HandleResult(result, "Đã duyệt đơn đăng ký Content Creator.");
+        return HandleResult(result, "Đã duyệt đơn đăng ký nhà sáng tạo nội dung.");
     }
 
     /// <summary>Từ chối đơn kèm lý do bắt buộc; Creator thấy lý do và có thể nộp lại.</summary>
@@ -78,6 +78,6 @@ public class CreatorApplicationController : BaseApiController
         int applicationId, [FromBody] RejectCreatorApplicationRequestDto request, CancellationToken cancellationToken)
     {
         var result = await _service.RejectAsync(GetCurrentUserId(), applicationId, request, cancellationToken);
-        return HandleResult(result, "Đã từ chối đơn đăng ký Content Creator.");
+        return HandleResult(result, "Đã từ chối đơn đăng ký nhà sáng tạo nội dung.");
     }
 }

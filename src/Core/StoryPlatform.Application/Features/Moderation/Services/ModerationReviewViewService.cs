@@ -30,7 +30,7 @@ public class ModerationReviewViewService : IModerationReviewViewService
             || actor.Status != AccountStatus.Active
             || actor.Role is not (UserRole.Moderator or UserRole.Administrator))
         {
-            throw new ForbiddenException("Chỉ Moderator hoặc Administrator đang hoạt động mới được xem để rà soát.");
+            throw new ForbiddenException("Chỉ kiểm duyệt viên hoặc quản trị viên đang hoạt động mới được xem để rà soát.");
         }
 
         await ValidateTargetAsync(request, cancellationToken);

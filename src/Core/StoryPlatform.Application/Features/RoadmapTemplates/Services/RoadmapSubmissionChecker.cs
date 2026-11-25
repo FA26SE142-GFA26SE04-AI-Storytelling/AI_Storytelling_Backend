@@ -35,9 +35,9 @@ public class RoadmapSubmissionChecker : IRoadmapSubmissionChecker
             .Where(item => !byId.TryGetValue(item.StoryId, out var story) || !RoadmapEligibility.IsEligible(story))
             .Select(item => item.StoryId).ToList();
         checks.Add(notReady.Count == 0
-            ? Pass(RoadmapCheckCodes.StoriesReady, "Mọi truyện là Public Library đang công khai.")
+            ? Pass(RoadmapCheckCodes.StoriesReady, "Mọi truyện là thư viện công khai đang công khai.")
             : Fail(RoadmapCheckCodes.StoriesReady,
-                $"Truyện không phải Public Library đang công khai: {Ids(notReady)}."));
+                $"Truyện không phải thư viện công khai đang công khai: {Ids(notReady)}."));
 
         var ageText = RoadmapAge.ToText(roadmap.AgeBand);
         var wrongAge = items

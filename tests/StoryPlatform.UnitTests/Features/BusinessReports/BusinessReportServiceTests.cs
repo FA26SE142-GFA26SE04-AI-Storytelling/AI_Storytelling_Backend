@@ -1,3 +1,4 @@
+using StoryPlatform.UnitTests.Infrastructure.Caching;
 using System.Linq.Expressions;
 using Moq;
 using StoryPlatform.Application.Abstractions.Persistence;
@@ -210,5 +211,41 @@ public class BusinessReportServiceTests
         var result = await _sut.GetLatestPublishedAsync();
 
         Assert.Equal(2, result.Id);
+    }
+
+    // ---------- Cache ----------
+
+    [Fact]
+    public async Task GetLatestPublishedAsync_WithCache_SecondCallSkipsDatabase()
+    {
+        var cache = new InMemoryAppCache();
+        var sut = new BusinessReportService(_unitOfWork.Object, _auditLogWriter.Object, _revenueStatistics.Object,
+            _accountStatistics.Object, cache: cache);
+        var report = MakeReport(3, ReportStatus.Published);
+        report.PublishedAt = new DateTime(2026, 3, 1);
+        _businessReportRepository.Setup(repo => repo.FindAsync(
+                It.IsAny<Expression<Func<BusinessReport, bool>>>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { report });
+
+        await sut.GetLatestPublishedAsync();
+        var second = await sut.GetLatestPublishedAsync();
+
+        Assert.Equal(3, second.Id);
+        _businessReportRepository.Verify(repo => repo.FindAsync(
+            It.IsAny<Expression<Func<BusinessReport, bool>>>(), null, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task PublishAsync_InvalidatesLatestPublishedCache()
+    {
+        var cache = new InMemoryAppCache();
+        var sut = new BusinessReportService(_unitOfWork.Object, _auditLogWriter.Object, _revenueStatistics.Object,
+            _accountStatistics.Object, cache: cache);
+        _businessReportRepository.Setup(repo => repo.GetByIdAsync(4, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeReport(4, ReportStatus.Compiling));
+
+        await sut.PublishAsync(10, 4);
+
+        Assert.Contains(BusinessReportService.LatestPublishedCacheKey, cache.RemovedKeys);
     }
 }

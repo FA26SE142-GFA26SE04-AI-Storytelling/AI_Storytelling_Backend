@@ -57,7 +57,7 @@ public sealed class OutlineServiceBranchTests
 
         var error = await Assert.ThrowsAsync<NotFoundException>(() => service.GetVersionAsync(1, 1, 9));
 
-        Assert.Equal("Không tìm thấy StoryVersion với mã định danh [9].", error.Message);
+        Assert.Equal("Không tìm thấy phiên bản truyện. Có thể dữ liệu đã bị xoá hoặc bạn không có quyền truy cập.", error.Message);
     }
 
     [Fact]
@@ -65,7 +65,7 @@ public sealed class OutlineServiceBranchTests
     {
         var error = await Assert.ThrowsAsync<NotFoundException>(() => Service(OutlineServiceTests.Seed()).GetCurrentAsync(1, 42));
 
-        Assert.Equal("Không tìm thấy Story với mã định danh [42].", error.Message);
+        Assert.Equal("Không tìm thấy truyện. Có thể dữ liệu đã bị xoá hoặc bạn không có quyền truy cập.", error.Message);
     }
 
     [Fact]

@@ -190,7 +190,7 @@ public class StoryRatingModerationService : IStoryRatingModerationService
         var actor = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(actorUserId, cancellationToken);
         if (actor == null || actor.IsDeleted || actor.Status != AccountStatus.Active || actor.Role != UserRole.Moderator)
         {
-            throw new ForbiddenException("Chỉ Moderator đang hoạt động mới kiểm duyệt được đánh giá.");
+            throw new ForbiddenException("Chỉ kiểm duyệt viên đang hoạt động mới kiểm duyệt được đánh giá.");
         }
 
         var item = await _unitOfWork.Repository<ModerationItem>().GetByIdAsync(itemId, cancellationToken);

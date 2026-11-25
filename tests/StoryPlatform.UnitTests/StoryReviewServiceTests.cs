@@ -542,7 +542,7 @@ public sealed class StoryReviewServiceTests
         var result = await service.ValidateAsync(1, 1);
 
         Assert.False(result.CanApprove);
-        Assert.Contains(result.Issues, i => i.Contains("Vocabulary"));
+        Assert.Contains(result.Issues, i => i.Contains("Từ vựng"));
     }
 
     [Fact]
@@ -554,7 +554,7 @@ public sealed class StoryReviewServiceTests
         var result = await service.ValidateAsync(1, 1);
 
         Assert.False(result.CanApprove);
-        Assert.Contains(result.Issues, i => i.Contains("Quiz"));
+        Assert.Contains(result.Issues, i => i.Contains("Câu hỏi đọc hiểu"));
     }
 
     #endregion

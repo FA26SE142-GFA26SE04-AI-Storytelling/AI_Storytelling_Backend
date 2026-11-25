@@ -126,11 +126,11 @@
         <ul>
           <li><b>Trước hết:</b> áp migration <span class="code">AddStoryRatings</span>, rồi chạy <span class="code">Database/Seed-Database.ps1</span>.</li>
           <li><b>Mật khẩu mọi tài khoản demo: Demo@123.</b> Đăng nhập bằng <span class="code">POST /api/v1/Auth/login</span> với <span class="code">{ "identifier": "tên-đăng-nhập", "password": "Demo@123" }</span>.</li>
-          <li>Tài khoản: <b>parent_demo1</b> (id 2, Trần Thị Hoa → "Phụ huynh H***", bé 1 đã đọc truyện 21 và 16) · <b>parent_demo2</b> (id 3, Nguyễn Văn Bình → "Phụ huynh B***", bé 3 đã đọc truyện 21) · <b>parent_demo3</b> (id 4, Lê Thị Cúc → "Phụ huynh C***", không có bé đọc 16 / 21) · <b>creator_demo</b> (id 13, tác giả truyện 13, 14, 16, 18, 20, 21) · <b>moderator_demo1</b> (id 11) · <b>moderator_demo2</b> (id 12) · <b>admin_demo</b> (id 1).</li>
+          <li>Tài khoản: <b>parent_demo1</b> (id 2, Trần Thị Hoa → "Phụ huynh H***", bé 1 đã đọc truyện 21 và 16) · <b>parent_demo2</b> (id 3, Nguyễn Văn Bình → "Phụ huynh B***", bé 3 đã đọc truyện 21 và 14, bé 11 đã đọc truyện 16 nhưng chưa đánh giá truyện 16) · <b>parent_demo3</b> (id 4, Lê Thị Cúc → "Phụ huynh C***", bé 6 đã đọc truyện 16) · <b>parent_demo4</b> (id 5, Phạm Văn Dũng → "Phụ huynh D***", bé 7 chỉ đọc truyện 14, chưa đọc 16 / 21) · <b>creator_demo</b> (id 13, tác giả truyện 13, 14, 16, 18, 20, 21) · <b>moderator_demo1</b> (id 11) · <b>moderator_demo2</b> (id 12) · <b>admin_demo</b> (id 1).</li>
           <li>Truyện Creator công khai: 13, 14, 16 "Chú mèo biết lắng nghe", 20, 21 "Cá heo tốt bụng". Truyện 18 của creator_demo chưa công khai. Truyện 1 là truyện riêng của gia đình.</li>
-          <li>Đánh giá: <b>1</b> parent_demo1 → truyện 21, 5 sao, Published, đã bị parent_demo2 báo cáo · <b>2</b> parent_demo2 → truyện 21, 2 sao "Kết truyện hơi vội…", PendingModeration · <b>3</b> parent_demo1 → truyện 16, 4 sao không chữ, Published · <b>4</b> parent_demo3 → truyện 16, 1 sao, Hidden (lý do "Nhận xét công kích, không góp ý cụ thể cho truyện").</li>
-          <li>Hàng đợi: mục <b>30</b> (rating 2, bị lọc giữ, LOW_RATING_WITH_TEXT, Pending) · <b>31</b> (rating 1, bị báo cáo, Pending) · 32 (rating 4, đã Rejected). Báo cáo 1: parent_demo2 → rating 1, Irrelevant, Open. Thông báo 29 (creator_demo, StoryRatingPublished), 30 (parent_demo3, StoryRatingModerated).</li>
-          <li>Id kế tiếp trên DB mới seed: mục hàng đợi <b>33</b>, đánh giá <b>5</b>, báo cáo <b>2</b>.</li>
+          <li>Đánh giá: <b>1</b> parent_demo1 → truyện 21, 5 sao, Published, đã bị parent_demo2 báo cáo · <b>2</b> parent_demo2 → truyện 21, 2 sao "Kết truyện hơi vội…", PendingModeration · <b>3</b> parent_demo1 → truyện 16, 4 sao không chữ, Published (đã bị parent_demo3 báo cáo, moderator_demo2 giữ lại) · <b>4</b> parent_demo3 → truyện 16, 1 sao, Hidden (lý do "Nhận xét công kích, không góp ý cụ thể cho truyện") · <b>5</b> parent_demo4 → truyện 14, 5 sao, Published, nhận xét đã che "… gọi [số điện thoại] hoặc gửi [email] nhé." · <b>6</b> parent_demo2 → truyện 14, 3 sao "Truyện ngắn, bé đọc nhanh…", Published (truyện 14: trung bình 4, 2 lượt).</li>
+          <li>Hàng đợi: mục <b>30</b> (rating 2, bị lọc giữ, LOW_RATING_WITH_TEXT, Pending) · <b>31</b> (rating 1, bị báo cáo, Pending) · 32 (rating 4, đã Rejected) · 33 (rating 3, bị báo cáo, moderator_demo2 đã Approved). Báo cáo 1: parent_demo2 → rating 1, Irrelevant, Open · Báo cáo 2: parent_demo3 → rating 3, Other, Approved. Thông báo 29, 31, 32 (creator_demo, StoryRatingPublished cho rating 1, 5, 6, chưa đọc), 33 (creator_demo, rating 3, đã đọc), 30 (parent_demo3, StoryRatingModerated). Audit log 11–22: StoryRatingCreated cho rating 1–6, StoryRatingReported cho báo cáo 1–2, StoryRatingOpened / StoryRatingHidden mục 32, StoryRatingOpened / StoryRatingApproved mục 33.</li>
+          <li>Id kế tiếp trên DB mới seed: mục hàng đợi <b>34</b>, đánh giá <b>7</b>, báo cáo <b>3</b>.</li>
           <li><b>Lưu ý:</b> test làm đổi dữ liệu. <b>Mỗi Task bắt đầu từ DB vừa nạp seed</b> và chạy các test trong Task theo đúng thứ tự trên trang; kết quả mong đợi tính theo cách chạy đó.</li>
         </ul>
       </div>
@@ -154,7 +154,7 @@
 const COPY = [];
 const J = o => JSON.stringify(o, null, 2);
 const A = (n, c = "a") => c.repeat(n);
-const P1 = "parent_demo1", P2 = "parent_demo2", P3 = "parent_demo3", MOD1 = "moderator_demo1", MOD2 = "moderator_demo2", CR = "creator_demo";
+const P1 = "parent_demo1", P2 = "parent_demo2", P3 = "parent_demo3", P4 = "parent_demo4", MOD1 = "moderator_demo1", MOD2 = "moderator_demo2", CR = "creator_demo";
 
 // Test case: [loại, tình huống, kết quả mong đợi, dữ liệu (tùy chọn: "Đăng nhập x. METHOD /api/... với {json}"), body (tùy chọn)]
 const STEPS = [
@@ -259,8 +259,10 @@ const STEPS = [
     tests: [
       ["ok", "Phụ huynh có đánh giá đang hiện xem truyện 21", "200; summary averageRating 5, ratingCount 1, distribution 5:1; myRating ratingId 1 status Published; canRate true; ratings.items chỉ có rating 1 (rating 2 đang chờ không hiện)", `Đăng nhập ${P1}. GET /api/v1/StoryRating/story/21`],
       ["ok", "Phụ huynh thấy đánh giá đang chờ của chính mình", "200; myRating ratingId 2, status PendingModeration, rating 2, reviewerName Phụ huynh B***; ratings.items chỉ có rating 1; canRate true", `Đăng nhập ${P2}. GET /api/v1/StoryRating/story/21`],
-      ["ok", "Phụ huynh thấy đánh giá bị ẩn và lý do", "200; myRating ratingId 4, status Hidden, hiddenReason \"Nhận xét công kích, không góp ý cụ thể cho truyện\"; canRate false; summary averageRating 4, ratingCount 1; ratings.items = [rating 3, Phụ huynh H***, comment null]", `Đăng nhập ${P3}. GET /api/v1/StoryRating/story/16`],
+      ["ok", "Phụ huynh thấy đánh giá bị ẩn và lý do", "200; myRating ratingId 4, status Hidden, hiddenReason \"Nhận xét công kích, không góp ý cụ thể cho truyện\"; canRate true (bé 6 đã đọc truyện 16); summary averageRating 4, ratingCount 1; ratings.items = [rating 3, Phụ huynh H***, comment null]", `Đăng nhập ${P3}. GET /api/v1/StoryRating/story/16`],
       ["edge", "pageSize=100", "200; ratings.pageSize = 50", `Đăng nhập ${P1}. GET /api/v1/StoryRating/story/21?pageSize=100`],
+      ["ok", "Nhiều đánh giá, điểm cao trước", "200; summary averageRating 4, ratingCount 2, distribution 3:1, 5:1; ratings.items theo thứ tự ratingId 5 (5 sao, Phụ huynh D***, comment chứa [số điện thoại] và [email], không lộ số / email thật), 6 (3 sao, Phụ huynh B***); myRating ratingId 5; canRate true", `Đăng nhập ${P4}. GET /api/v1/StoryRating/story/14?orderBy=highest`],
+      ["ok", "Nhiều đánh giá, điểm thấp trước", "200; ratings.items theo thứ tự ratingId 6, 5; myRating ratingId 6 status Published; canRate true", `Đăng nhập ${P2}. GET /api/v1/StoryRating/story/14?orderBy=lowest`],
       ["edge", "pageSize=0 và pageIndex=-3", "200; ratings.pageSize = 10, ratings.pageIndex = 1", `Đăng nhập ${P1}. GET /api/v1/StoryRating/story/21?pageSize=0&pageIndex=-3`],
       ["edge", "orderBy viết hoa hoặc giá trị lạ", "200 cho HIGHEST / lowest / abc; abc xếp như newest", `Đăng nhập ${P1}. GET /api/v1/StoryRating/story/21?orderBy=HIGHEST`],
       ["neg", "Truyện riêng của gia đình", "404 \"Không tìm thấy Truyện với mã định danh [1].\"", `Đăng nhập ${P1}. GET /api/v1/StoryRating/story/1`],
@@ -284,20 +286,21 @@ const STEPS = [
       ["neg", "rating = 6", "400 \"Số sao phải từ 1 đến 5.\"", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me`, J({ rating: 6, comment: "Hay" })],
       ["neg", "comment 1001 ký tự", "400 \"Nhận xét tối đa 1000 ký tự.\"", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me`, J({ rating: 5, comment: A(1001) })],
       ["neg", "rating không phải số", "400 \"Dữ liệu đầu vào không hợp lệ.\" (errors có lỗi parse)", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me`, '{ "rating": "năm" }'],
-      ["neg", "Phụ huynh không có bé đã đọc truyện", "403 \"RATING_REQUIRES_READING\"", `Đăng nhập ${P3}. PUT /api/v1/StoryRating/story/16/me với { "rating": 5 }`],
+      ["neg", "Phụ huynh không có bé đã đọc truyện", "403 \"RATING_REQUIRES_READING\" (bé 7 của parent_demo4 chỉ đọc truyện 14)", `Đăng nhập ${P4}. PUT /api/v1/StoryRating/story/16/me với { "rating": 5 }`],
       ["neg", "Truyện riêng của gia đình", "404 \"Không tìm thấy Truyện với mã định danh [1].\"", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/1/me với { "rating": 5 }`],
       ["neg", "Gọi bằng token ContentCreator", "403 (body rỗng)"],
       ["ok", "Sửa đánh giá đang hiện, nội dung sạch", "200 \"Đã lưu đánh giá.\"; ratingId 3 (sửa, không tạo mới); status Published; comment \"Bé rất thích Mèo Mun, gọi mình [số điện thoại]\" (đã cắt khoảng trắng); creator_demo KHÔNG nhận thông báo mới", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me với { "rating": 5, "comment": "  Bé rất thích Mèo Mun, gọi mình 0912 345 678  " }`],
-      ["edge", "Sửa thành 1 sao kèm chữ → chờ Moderator", "200; ratingId 3, status PendingModeration; GET /api/v1/ModerationQueue?itemType=StoryRating (moderator_demo1) có mục mới Pending, storyId 16 (id 33 trên DB mới seed); GET của phụ huynh khác không còn thấy rating 3", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me với { "rating": 1, "comment": "Kết hơi vội" }`],
+      ["edge", "Sửa thành 1 sao kèm chữ → chờ Moderator", "200; ratingId 3, status PendingModeration; GET /api/v1/ModerationQueue?itemType=StoryRating (moderator_demo1) có mục mới Pending, storyId 16 (id 34 trên DB mới seed); GET của phụ huynh khác không còn thấy rating 3", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me với { "rating": 1, "comment": "Kết hơi vội" }`],
       ["edge", "Sửa tiếp thành 5 sao sạch: vẫn chờ, không tạo mục thứ hai", "200; status vẫn PendingModeration; vẫn chỉ 1 mục mở cho rating 3", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me với { "rating": 5, "comment": "Đọc lại thấy hay" }`]
     ] },
   { m: "DELETE", p: "/api/v1/StoryRating/story/{storyId}/me", role: "User (phụ huynh)",
     what: "Xóa mềm đánh giá của chính mình. Mục kiểm duyệt đang mở của đánh giá chuyển Closed (ClosedReason RatingDeleted). Đánh giá lại sau đó tạo dòng mới.",
     tests: [
-      ["ok", "Xóa đánh giá đang chờ", "200 \"Đã xóa đánh giá.\", data true; SQL: rating 3 IsDeleted = true, mục 33 Status Closed, ClosedReason RatingDeleted; GET truyện 16 (parent_demo1): myRating null, canRate true, summary ratingCount 0, averageRating null", `Đăng nhập ${P1}. DELETE /api/v1/StoryRating/story/16/me`],
+      ["ok", "Xóa đánh giá đang chờ", "200 \"Đã xóa đánh giá.\", data true; SQL: rating 3 IsDeleted = true, mục 34 Status Closed, ClosedReason RatingDeleted; GET truyện 16 (parent_demo1): myRating null, canRate true, summary ratingCount 0, averageRating null", `Đăng nhập ${P1}. DELETE /api/v1/StoryRating/story/16/me`],
       ["neg", "Xóa lần hai", "404 \"Không tìm thấy Đánh giá của bạn cho truyện với mã định danh [16].\"", `Đăng nhập ${P1}. DELETE /api/v1/StoryRating/story/16/me`],
-      ["ok", "Đánh giá lại sau khi xóa", "200; ratingId mới (5 trên DB mới seed), status Published; creator_demo nhận thông báo StoryRatingPublished payload {\"storyId\":16,\"ratingId\":5,\"rating\":4}", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me với { "rating": 4, "comment": "Đọc lại vẫn thấy hay" }`],
-      ["neg", "Gọi bằng token Moderator", "403 (body rỗng)"]
+      ["ok", "Đánh giá lại sau khi xóa", "200; ratingId mới (7 trên DB mới seed), status Published; creator_demo nhận thông báo StoryRatingPublished payload {\"storyId\":16,\"ratingId\":7,\"rating\":4}", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me với { "rating": 4, "comment": "Đọc lại vẫn thấy hay" }`],
+      ["neg", "Gọi bằng token Moderator", "403 (body rỗng)"],
+      ["ok", "Phụ huynh khác đủ điều kiện tạo mới đánh giá (PUT)", "200 \"Đã lưu đánh giá.\"; ratingId mới (8 trên DB mới seed, sau test \"Đánh giá lại sau khi xóa\"), reviewerName Phụ huynh B***, status Published; creator_demo nhận StoryRatingPublished {\"storyId\":16,\"ratingId\":8,\"rating\":4}; GET truyện 16: summary ratingCount 2 (đánh giá mới của parent_demo1 và parent_demo2)", `Đăng nhập ${P2}. PUT /api/v1/StoryRating/story/16/me với { "rating": 4, "comment": "Bé Lâm thích Mèo Mun" }`]
     ] }
   ]
 },
@@ -323,7 +326,7 @@ const STEPS = [
     tests: [
       ["neg", "Báo cáo lần hai cùng người", "409 \"Bạn đã báo cáo đánh giá này.\" (seed đã có báo cáo của parent_demo2)", `Đăng nhập ${P2}. POST /api/v1/StoryRating/1/reports với { "reason": "Spam" }`],
       ["ok", "Người khác báo cáo: gộp vào mục đang mở", "200 {\"ratingId\":1,\"status\":\"Received\"}; SQL: rating 1 có 2 báo cáo Open, cùng ModerationItemId 31, note mới chứa [số điện thoại]; vẫn chỉ 1 mục mở cho rating 1; rating 1 vẫn Published", `Đăng nhập ${P3}. POST /api/v1/StoryRating/1/reports với { "reason": "Offensive", "note": "Nhận xét không phù hợp, liên hệ 0912345678" }`],
-      ["ok", "Creator báo cáo đánh giá truyện của mình: tạo mục mới", "200 {\"ratingId\":3,\"status\":\"Received\"}; hàng đợi có mục StoryRating mới Pending, storyId 16, Flags source Report (id 33 trên DB mới seed)", `Đăng nhập ${CR}. POST /api/v1/StoryRating/3/reports với { "reason": "Irrelevant" }`],
+      ["ok", "Creator báo cáo đánh giá truyện của mình: tạo mục mới", "200 {\"ratingId\":3,\"status\":\"Received\"}; hàng đợi có mục StoryRating mới Pending, storyId 16, Flags source Report (id 34 trên DB mới seed; mục 33 của báo cáo cũ đã Approved nên không gộp)", `Đăng nhập ${CR}. POST /api/v1/StoryRating/3/reports với { "reason": "Irrelevant" }`],
       ["neg", "Tự báo cáo đánh giá của mình", "400 \"Không thể báo cáo đánh giá của chính mình.\"", `Đăng nhập ${P1}. POST /api/v1/StoryRating/1/reports với { "reason": "Spam" }`],
       ["neg", "Đánh giá đang chờ duyệt", "400 \"Chỉ báo cáo được đánh giá đang hiển thị.\"", `Đăng nhập ${P1}. POST /api/v1/StoryRating/2/reports với { "reason": "Spam" }`],
       ["neg", "Đánh giá đã bị ẩn", "400 \"Chỉ báo cáo được đánh giá đang hiển thị.\"", `Đăng nhập ${P1}. POST /api/v1/StoryRating/4/reports với { "reason": "Spam" }`],
@@ -420,11 +423,11 @@ const STEPS = [
   apis: [
   { m: "GET", p: "/api/v1/Story/community?authorUserId=&orderBy=&isDescending=&pageIndex=1&pageSize=20", role: "User, ContentCreator, Moderator, Administrator",
     what: "Thư viện cộng đồng (truyện Creator đã công khai) kèm viewCount, favoriteCount, averageRating, ratingCount.",
-    resp: J({ success: true, message: "…", data: { items: [{ id: 21, title: "Cá heo tốt bụng", viewCount: 2, favoriteCount: 0, averageRating: 5, ratingCount: 1 }, { id: 16, title: "Chú mèo biết lắng nghe", viewCount: 1, favoriteCount: 0, averageRating: 4, ratingCount: 1 }, { id: 20, title: "Voi con biết xin lỗi", viewCount: 0, favoriteCount: 0, averageRating: null, ratingCount: 0 }], pageIndex: 1, pageSize: 20, totalCount: 5 }, errors: null }),
+    resp: J({ success: true, message: "…", data: { items: [{ id: 21, title: "Cá heo tốt bụng", viewCount: 2, favoriteCount: 0, averageRating: 5, ratingCount: 1 }, { id: 14, title: "Ngọn đèn trong đêm", viewCount: 2, favoriteCount: 0, averageRating: 4, ratingCount: 2 }, { id: 16, title: "Chú mèo biết lắng nghe", viewCount: 4, favoriteCount: 0, averageRating: 4, ratingCount: 1 }, { id: 20, title: "Voi con biết xin lỗi", viewCount: 0, favoriteCount: 0, averageRating: null, ratingCount: 0 }], pageIndex: 1, pageSize: 20, totalCount: 5 }, errors: null }),
     tests: [
-      ["ok", "Thư viện có điểm", "200; truyện 21: averageRating 5, ratingCount 1; truyện 16: averageRating 4, ratingCount 1 (rating 4 bị ẩn không tính); truyện 13 / 14 / 20: averageRating null, ratingCount 0", `Đăng nhập ${P1}. GET /api/v1/Story/community?authorUserId=13`],
-      ["ok", "Điểm cao trước", "200; thứ tự id: 21, 16, rồi các truyện chưa có đánh giá (mới tạo trước)", `Đăng nhập ${P1}. GET /api/v1/Story/community?authorUserId=13&orderBy=rating&isDescending=true`],
-      ["ok", "Điểm thấp trước", "200; các truyện chưa có đánh giá đứng đầu, rồi 16, cuối cùng 21", `Đăng nhập ${P1}. GET /api/v1/Story/community?authorUserId=13&orderBy=rating&isDescending=false`],
+      ["ok", "Thư viện có điểm", "200; truyện 21: averageRating 5, ratingCount 1; truyện 14: averageRating 4, ratingCount 2; truyện 16: averageRating 4, ratingCount 1 (rating 4 bị ẩn không tính); truyện 13 / 20: averageRating null, ratingCount 0", `Đăng nhập ${P1}. GET /api/v1/Story/community?authorUserId=13`],
+      ["ok", "Điểm cao trước", "200; thứ tự id: 21, 14, 16 (14 và 16 cùng điểm 4, 14 nhiều lượt hơn nên đứng trước), rồi các truyện chưa có đánh giá (mới tạo trước)", `Đăng nhập ${P1}. GET /api/v1/Story/community?authorUserId=13&orderBy=rating&isDescending=true`],
+      ["ok", "Điểm thấp trước", "200; các truyện chưa có đánh giá đứng đầu, rồi 16, 14 (cùng điểm 4, ít lượt hơn trước), cuối cùng 21", `Đăng nhập ${P1}. GET /api/v1/Story/community?authorUserId=13&orderBy=rating&isDescending=false`],
       ["edge", "orderBy viết hoa", "200; kết quả giống \"Điểm cao trước\"", `Đăng nhập ${P1}. GET /api/v1/Story/community?authorUserId=13&orderBy=RATING&isDescending=true`],
       ["edge", "Đánh giá đang chờ không làm đổi điểm", "Truyện 21 vẫn averageRating 5 dù có rating 2 (2 sao, PendingModeration); sau khi Moderator duyệt mục 30 → averageRating 3.5, ratingCount 2", `Đăng nhập ${P1}. GET /api/v1/Story/community?authorUserId=13`],
       ["ok", "Các orderBy cũ vẫn chạy", "200 cho orderBy=views và orderBy=favorites", `Đăng nhập ${P1}. GET /api/v1/Story/community?authorUserId=13&orderBy=views&isDescending=true`]
@@ -454,7 +457,7 @@ const STEPS = [
     tests: [["ok", "Duyệt đánh giá đã sửa", "200; rating 2 Published, 4 sao; truyện 21 averageRating 4.5, ratingCount 2", `Đăng nhập ${MOD1}. POST /api/v1/StoryRatingModeration/30/approve (claim trước: POST /api/v1/ModerationQueue/30/claim)`]] },
   { m: "POST", p: "/api/v1/StoryRating/2/reports", role: "User (parent_demo3)",
     what: "Bước 3: phụ huynh khác báo cáo đánh giá vừa hiện.",
-    tests: [["ok", "Báo cáo đánh giá vừa hiện", "200 {\"ratingId\":2,\"status\":\"Received\"}; hàng đợi có mục mới source Report (<NEW_ITEM_ID>, 33 trên DB mới seed)", `Đăng nhập ${P3}. POST /api/v1/StoryRating/2/reports với { "reason": "Spam" }`]] },
+    tests: [["ok", "Báo cáo đánh giá vừa hiện", "200 {\"ratingId\":2,\"status\":\"Received\"}; hàng đợi có mục mới source Report (<NEW_ITEM_ID>, 34 trên DB mới seed)", `Đăng nhập ${P3}. POST /api/v1/StoryRating/2/reports với { "reason": "Spam" }`]] },
   { m: "POST", p: "/api/v1/StoryRatingModeration/{itemId}/hide", role: "Moderator (moderator_demo2)",
     what: "Bước 4: Moderator khác claim mục mới rồi ẩn.",
     tests: [["ok", "Ẩn đánh giá bị báo cáo", "200; rating 2 Hidden; parent_demo2 nhận StoryRatingModerated (Hidden, reason Spam)", `Đăng nhập ${MOD2}. POST /api/v1/StoryRatingModeration/<NEW_ITEM_ID>/hide với { "reason": "Spam" } (claim trước: POST /api/v1/ModerationQueue/<NEW_ITEM_ID>/claim)`]] },
@@ -467,7 +470,7 @@ const STEPS = [
   { m: "GET", p: "/api/v1/Notification?group=stories", role: "Mọi người dùng",
     what: "Thông báo đánh giá thuộc nhóm stories.",
     tests: [
-      ["ok", "Creator thấy thông báo đánh giá mới", "200; có StoryRatingPublished (seed sẵn id 29 + thông báo của bước 2)", `Đăng nhập ${CR}. GET /api/v1/Notification?group=stories`],
+      ["ok", "Creator thấy thông báo đánh giá mới", "200; có StoryRatingPublished (seed sẵn id 29, 31, 32 chưa đọc, 33 đã đọc + thông báo của bước 2)", `Đăng nhập ${CR}. GET /api/v1/Notification?group=stories`],
       ["ok", "Phụ huynh thấy kết quả kiểm duyệt", "200; parent_demo2 có StoryRatingModerated Approved (bước 2) và Hidden (bước 4)", `Đăng nhập ${P2}. GET /api/v1/Notification?group=stories`],
       ["edge", "Không lẫn vào nhóm moderation", "200; không có StoryRatingPublished / StoryRatingModerated", `Đăng nhập ${CR}. GET /api/v1/Notification?group=moderation`]
     ] },
@@ -500,8 +503,8 @@ const OVERRIDES = [];
 // ---------- DỮ LIỆU THẬT TỪ SEED (Database/Seed) ----------
 // Mỗi mục: [khóa khớp "METHOD đường-dẫn", { as, url, body?, note }]
 const SEEDAPI = [
-  ["GET /api/v1/StoryRating/story/", { as: P1, url: "GET /api/v1/StoryRating/story/21", note: "Truyện 21 Cá heo tốt bụng: rating 1 (parent_demo1, 5 sao, Published, bị báo cáo), rating 2 (parent_demo2, 2 sao, PendingModeration). Truyện 16: rating 3 (parent_demo1, 4 sao, Published), rating 4 (parent_demo3, 1 sao, Hidden)." }],
-  ["PUT /api/v1/StoryRating/story/{storyId}/me", { as: P1, url: "PUT /api/v1/StoryRating/story/16/me", body: J({ rating: 5, comment: "Bé rất thích Mèo Mun" }), note: "Bé 1 của parent_demo1 đã đọc truyện 16 và 21 (reading_sessions 13, 11). Bé 3 của parent_demo2 đã đọc truyện 21. parent_demo3 không có bé nào đọc 16 / 21." }],
+  ["GET /api/v1/StoryRating/story/", { as: P1, url: "GET /api/v1/StoryRating/story/21", note: "Truyện 21 Cá heo tốt bụng: rating 1 (parent_demo1, 5 sao, Published, bị báo cáo), rating 2 (parent_demo2, 2 sao, PendingModeration). Truyện 16: rating 3 (parent_demo1, 4 sao, Published, báo cáo đã được giữ), rating 4 (parent_demo3, 1 sao, Hidden). Truyện 14: rating 5 (parent_demo4, 5 sao), rating 6 (parent_demo2, 3 sao), cả hai Published." }],
+  ["PUT /api/v1/StoryRating/story/{storyId}/me", { as: P1, url: "PUT /api/v1/StoryRating/story/16/me", body: J({ rating: 5, comment: "Bé rất thích Mèo Mun" }), note: "Bé 1 của parent_demo1 đã đọc truyện 16 và 21 (reading_sessions 13, 11). Bé 3 của parent_demo2 đã đọc truyện 21 và 14, bé 11 đã đọc truyện 16 (parent_demo2 chưa đánh giá truyện 16). Bé 6 của parent_demo3 đã đọc truyện 16. parent_demo4 (bé 7) chỉ đọc truyện 14." }],
   ["DELETE /api/v1/StoryRating/story/{storyId}/me", { as: P1, url: "DELETE /api/v1/StoryRating/story/16/me", note: "Xóa rating 3 của parent_demo1 trên truyện 16." }],
   ["/reports", { as: P3, url: "POST /api/v1/StoryRating/1/reports", body: J({ reason: "Offensive", note: "Nhận xét không phù hợp" }), note: "Rating 1 đã có báo cáo của parent_demo2 (mục 31 đang mở). parent_demo3 chưa báo cáo." }],
   ["/ratings", { as: CR, url: "GET /api/v1/creator/stories/21/ratings", note: "creator_demo (id 13) là tác giả truyện 13, 14, 16, 18, 20, 21." }],
@@ -512,7 +515,7 @@ const SEEDAPI = [
   ["/hide", { as: MOD1, url: "POST /api/v1/StoryRatingModeration/31/hide", body: J({ reason: "Nhận xét không liên quan đến nội dung truyện" }), note: "Claim mục 31 trước." }],
   ["GET /api/v1/Story/community", { as: P1, url: "GET /api/v1/Story/community?authorUserId=13&orderBy=rating&isDescending=true", note: "Truyện công khai của creator_demo: 13, 14, 16, 20, 21. Điểm seed: 21 = 5.0 (1 lượt), 16 = 4.0 (1 lượt)." }],
   ["creator/stories/published", { as: CR, url: "GET /api/v1/creator/stories/published?orderBy=rating&isDescending=true", note: "Cùng dữ liệu với thư viện, chỉ truyện của creator_demo." }],
-  ["/api/v1/Notification", { as: CR, url: "GET /api/v1/Notification?group=stories", note: "Seed: thông báo 29 (creator_demo, StoryRatingPublished), 30 (parent_demo3, StoryRatingModerated Hidden)." }]
+  ["/api/v1/Notification", { as: CR, url: "GET /api/v1/Notification?group=stories", note: "Seed: thông báo 29, 31, 32, 33 (creator_demo, StoryRatingPublished cho rating 1, 5, 6, 3; 33 đã đọc), 30 (parent_demo3, StoryRatingModerated Hidden)." }]
 ];
 const TESTDATA = [];
 const GENERIC = [
@@ -526,7 +529,7 @@ const GENERIC = [
 
 // ---------- GIÁ TRỊ ĐỘNG ----------
 const VAR_DEFS = [
-  ["NEW_ITEM_ID", "33", "Id mục hàng đợi StoryRating vừa tạo (mục mới đầu tiên trên DB mới seed là 33)"],
+  ["NEW_ITEM_ID", "34", "Id mục hàng đợi StoryRating vừa tạo (mục mới đầu tiên trên DB mới seed là 34)"],
   ["NEW_RATING_ID", "5", "Id đánh giá vừa tạo (đánh giá mới đầu tiên trên DB mới seed là 5)"]
 ];
 

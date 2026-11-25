@@ -34,6 +34,8 @@ public static class ListeningAudioParts
                 Add(null, Match, interaction.MatchFeedback);
                 break;
             case ListeningInteractionType.FillBlank:
+                // Đọc nguyên câu ngắn (câu trích ≤ 15 từ) để bé nghe lại câu rồi điền, không phải nghe lại cả đoạn.
+                Add(null, Text, interaction.SourceQuote);
                 Add(null, Hint, interaction.Hint);
                 Add(null, Match, interaction.MatchFeedback);
                 Add(null, NoMatch, interaction.NoMatchFeedback);
@@ -47,7 +49,7 @@ public static class ListeningAudioParts
                 Add(null, Wait, interaction.WaitFeedback);
                 break;
         }
-        // RolePlay dùng audio segment; đáp án FillBlank không cần đọc riêng; ReadAloud không có option.
+        // RolePlay dùng audio segment; đáp án chấp nhận của FillBlank không đọc riêng; ReadAloud không có option.
         if (interaction.Type is ListeningInteractionType.RolePlay or ListeningInteractionType.FillBlank or ListeningInteractionType.ReadAloud) return parts;
 
         var readsFeedback = interaction.Type is ListeningInteractionType.Checkpoint or ListeningInteractionType.PicturePrediction;

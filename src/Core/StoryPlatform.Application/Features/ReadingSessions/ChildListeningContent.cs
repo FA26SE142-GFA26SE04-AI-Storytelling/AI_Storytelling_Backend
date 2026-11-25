@@ -97,7 +97,7 @@ public static class ChildListeningContent
                 ? scenes.FirstOrDefault(scene => scene.TextRangeEnd == reveal)?.SceneIndex : null
         };
         foreach (var key in new[] { ListeningAudioParts.Prompt, ListeningAudioParts.Wait, ListeningAudioParts.Match,
-                     ListeningAudioParts.NoMatch, ListeningAudioParts.Hint })
+                     ListeningAudioParts.NoMatch, ListeningAudioParts.Hint, ListeningAudioParts.Text })
             if (ListeningMediaRequirements.FindAudio(assets, interaction.Id, null, key)?.Url is { } url)
                 dto.AudioUrls[key] = url;
 

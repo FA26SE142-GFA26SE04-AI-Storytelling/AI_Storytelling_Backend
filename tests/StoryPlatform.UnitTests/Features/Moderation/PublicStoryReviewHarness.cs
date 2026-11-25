@@ -156,7 +156,7 @@ public sealed class PublicStoryReviewHarness
             CreatedByUserId = CreatorId,
             ProposedContentCategoryIds = "[5]"
         });
-        ContentCategories.Add(new ContentCategory { Id = 5, Code = "friendship", DisplayName = "Tình bạn", IsActive = true });
+        ContentCategories.Add(new ContentCategory { Id = 5, Code = "friendship", DisplayName = "Tình bạn", Group = ContentCategoryGroup.LifeValue, IsActive = true });
 
         Quota = new TokenQuotaService(UnitOfWork.Object);
         Sut = new PublicStoryReviewService(UnitOfWork.Object, Audit.Object, Notifications.Object, tokenQuotaService: Quota);

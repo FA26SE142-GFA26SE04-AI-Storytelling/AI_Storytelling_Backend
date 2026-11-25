@@ -202,6 +202,8 @@ public sealed class StoryPlatformCoreStack : Stack
             // DF06: only the production web may call the API from a browser.
             ["Cors__AllowedOrigins__0"] = "https://www.taletale.site",
             ["Cors__AllowedOrigins__1"] = "https://taletale.site",
+            // Link kích hoạt trong email mời staff; thiếu thì SendStaffInviteEmailAsync ném lỗi.
+            ["ResendSettings__StaffActivationUrl"] = "https://taletale.site/?auth=activate",
             ["Logging__LogLevel__Default"] = "Warning",
             ["SeedData__RunOnStartup"] = seedDatabaseOnStart ? "true" : "false",
             ["FixMigrationHistory__RunOnStartup"] = fixMigrationHistoryOnStart ? "true" : "false",
@@ -257,6 +259,13 @@ public sealed class StoryPlatformCoreStack : Stack
             apiEnvironment["AIService__IdTokenAudience"] = aiServiceBaseUrl;
             apiSecrets["AIService__InternalApiKey"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "AiInternalApiKey");
             apiSecrets["AIService__GoogleCredentialsJson"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "AiGoogleCredentialsJson");
+
+            // Quét vùng xám bằng AI (Vertex qua AI API): thiếu Provider thì bước quét bị bỏ qua và màn kiểm duyệt
+            // luôn báo "Chưa có kết quả quét AI". Điểm >= 30 vào hàng chờ kiểm duyệt vùng xám, >= 70 bị chặn.
+            apiEnvironment["GrayZoneModeration__Provider"] = "Vertex";
+            apiEnvironment["GrayZoneModeration__WarningThreshold"] = "30";
+            apiEnvironment["GrayZoneModeration__BlockThreshold"] = "70";
+            apiEnvironment["GrayZoneModeration__MaximumRiskScore"] = "100";
         }
 
         // Kho media (ảnh, âm thanh) trên Supabase Storage. Chỉ bật khi truyền --context supabaseUrl=https://...;
@@ -384,6 +393,8 @@ public sealed class StoryPlatformCoreStack : Stack
             apiEnvironment["AI__MediaGeneration__WorkerEnabled"] = "true";
             apiEnvironment["AI__Vertex__UseVertex"] = "true";
             apiEnvironment["AI__Vertex__ProjectId"] = vertexProjectId;
+            // appsettings.json không có trong image (gitignore), nên bật word timings cho TTS qua env.
+            apiEnvironment["AI__TTS__EnableWordTimings"] = "true";
             // Mặc định "global": các model đang dùng (gemini-3.8-flash, gemini-3.1-flash-image) không có ở
             // us-central1 và trả 404 tại đó.
             apiEnvironment["AI__Vertex__Location"] = string.IsNullOrEmpty(vertexLocation) ? "global" : vertexLocation;

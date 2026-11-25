@@ -334,7 +334,7 @@ public class SubscriptionServiceTests
     {
         _store.Seed(new SubscriptionPlan
         {
-            Id = 5, Name = "Gói Creator", PlanType = PlanType.CreatorPack, Audience = PlanAudience.Creator,
+            Id = 5, Name = "Gói nhà sáng tạo", PlanType = PlanType.CreatorPack, Audience = PlanAudience.Creator,
             PriceVnd = 99000, AiCredits = 6, SubmitCredits = 20
         });
         var transaction = PaidTransaction(5);

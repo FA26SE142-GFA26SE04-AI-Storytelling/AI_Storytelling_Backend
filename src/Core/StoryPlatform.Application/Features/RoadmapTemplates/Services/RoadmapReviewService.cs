@@ -64,7 +64,8 @@ public partial class RoadmapReviewService : IRoadmapReviewService
                     {
                         Id = category.Id,
                         Code = category.Code,
-                        DisplayName = category.DisplayName
+                        DisplayName = category.DisplayName,
+                        Group = category.Group.ToString()
                     },
                 ReadingLevelMin = roadmap.ReadingLevelMin,
                 ReadingLevelMax = roadmap.ReadingLevelMax,
@@ -156,7 +157,7 @@ public partial class RoadmapReviewService : IRoadmapReviewService
             || actor.Role is not (UserRole.Moderator or UserRole.Administrator))
         {
             throw new ForbiddenException(
-                "Chỉ Moderator hoặc Administrator đang hoạt động mới duyệt được bộ truyện mẫu.");
+                "Chỉ kiểm duyệt viên hoặc quản trị viên đang hoạt động mới duyệt được bộ truyện mẫu.");
         }
 
         var item = await _unitOfWork.Repository<ModerationItem>().GetByIdAsync(itemId, cancellationToken)

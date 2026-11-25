@@ -171,6 +171,15 @@ public sealed class SeedDataAlignmentTests
         // Khóa Data Protection do ứng dụng tự sinh lúc chạy; seed khóa vào SQL sẽ đưa khóa vào mã nguồn.
         // Read-aloud recordings require an actual child upload; SQL seed cannot create its storage object.
         string[] generatedAtRuntime = ["data_protection_keys", "read_aloud_recordings", "story_reflections"];
+        var root = new DirectoryInfo(AppContext.BaseDirectory);
+        while (root is not null && !File.Exists(Path.Combine(root.FullName, "StoryPlatform.sln"))) root = root.Parent;
+        Assert.NotNull(root);
+        var runner = File.ReadAllText(Path.Combine(root!.FullName, "Database", "Seed-Database.ps1"));
+        var runtimeExclusions = Regex.Match(runner, @"\$generatedAtRuntime\s*=\s*@\((?<tables>[^)]*)\)");
+        Assert.True(runtimeExclusions.Success, "Seed runner must declare its runtime-generated table exclusions.");
+        var runnerRuntimeTables = Regex.Matches(runtimeExclusions.Groups["tables"].Value, "'([^']+)'")
+            .Select(match => match.Groups[1].Value).OrderBy(name => name, StringComparer.Ordinal).ToArray();
+        Assert.Equal(generatedAtRuntime.OrderBy(name => name, StringComparer.Ordinal).ToArray(), runnerRuntimeTables);
         var modelTables = model.Tables.Select(t => t.Name)
             .Where(name => !seededByCode.Contains(name) && !generatedAtRuntime.Contains(name))
             .OrderBy(x => x, StringComparer.Ordinal).ToArray();

@@ -1,10 +1,12 @@
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using Amazon.Runtime;
 using Amazon.S3;
 using Amazon.S3.Model;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using StoryPlatform.Application.Features.MediaGeneration;
 using StoryPlatform.Infrastructure.Storage;
 using Xunit;
 
@@ -139,6 +141,44 @@ public sealed class S3MediaStorageTests
         await CreateStorage(s3.Object).DeleteAsync("/1/a.webp");
 
         s3.Verify(x => x.DeleteObjectAsync("story-media-test", "1/a.webp", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task S3Upload_AmazonClientException_IsTransient()
+    {
+        var s3 = new Mock<IAmazonS3>();
+        s3.Setup(x => x.PutObjectAsync(It.IsAny<PutObjectRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new AmazonClientException("network"));
+
+        var ex = await Assert.ThrowsAsync<TransientMediaGenerationException>(() =>
+            CreateStorage(s3.Object).UploadAsync("1/a.webp", new MemoryStream(ValidWebp), "image/webp"));
+
+        Assert.Equal("MEDIA_STORAGE_UPLOAD_UNAVAILABLE", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task S3Upload_BucketNotConfigured_IsPermanent()
+    {
+        var storage = new S3MediaStorage(new Mock<IAmazonS3>().Object,
+            new S3StorageOptions(), NullLogger<S3MediaStorage>.Instance);
+
+        var ex = await Assert.ThrowsAsync<PermanentMediaGenerationException>(() =>
+            storage.UploadAsync("1/a.webp", new MemoryStream(ValidWebp), "image/webp"));
+
+        Assert.Equal("MEDIA_STORAGE_UPLOAD_NOT_CONFIGURED", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task S3Upload_Forbidden403_KeepsCurrentMapping()
+    {
+        var s3 = new Mock<IAmazonS3>();
+        s3.Setup(x => x.PutObjectAsync(It.IsAny<PutObjectRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new AmazonS3Exception("forbidden") { StatusCode = HttpStatusCode.Forbidden });
+
+        var ex = await Assert.ThrowsAsync<PermanentMediaGenerationException>(() =>
+            CreateStorage(s3.Object).UploadAsync("1/a.webp", new MemoryStream(ValidWebp), "image/webp"));
+
+        Assert.Equal("MEDIA_STORAGE_UPLOAD_ACCESS_DENIED", ex.ErrorCode);
     }
 
     private static S3MediaStorage CreateStorage(IAmazonS3 s3, string? privateKeyPem = null)

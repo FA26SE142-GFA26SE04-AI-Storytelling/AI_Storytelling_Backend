@@ -344,8 +344,9 @@ public sealed class MediaProviderPhase2HttpAndLoggingTests
             logger);
 
         using var stream = new MemoryStream(ValidPngBytes);
-        var ex = await Assert.ThrowsAsync<HttpRequestException>(() =>
+        var ex = await Assert.ThrowsAsync<TransientMediaGenerationException>(() =>
             storage.UploadAsync("stories/1/img.png", stream, "image/png"));
+        Assert.Equal("MEDIA_STORAGE_UPLOAD_UNAVAILABLE", ex.ErrorCode);
 
         Assert.DoesNotContain("sb_secret_", ex.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("token=", ex.Message, StringComparison.Ordinal);

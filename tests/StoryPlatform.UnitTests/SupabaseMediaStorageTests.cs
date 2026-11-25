@@ -34,6 +34,25 @@ public sealed class SupabaseMediaStorageTests
     }
 
     [Fact]
+    public async Task UploadAsync_ReportsProviderThrottlingAndKeepsRetryAfter()
+    {
+        var storage = CreateStorage(_ =>
+        {
+            var response = JsonResponse(HttpStatusCode.TooManyRequests, "internal details");
+            response.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromSeconds(41));
+            return Task.FromResult(response);
+        });
+        using var content = new MemoryStream([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 1, 2]);
+
+        var failure = await Assert.ThrowsAsync<StoryPlatform.Application.Features.MediaGeneration.TransientMediaGenerationException>(
+            () => storage.UploadAsync("123/scene-1.webp", content, "image/webp"));
+
+        Assert.Equal("MEDIA_STORAGE_UPLOAD_RATE_LIMITED", failure.ErrorCode);
+        Assert.Equal(TimeSpan.FromSeconds(41), failure.RetryAfter);
+        Assert.Null(failure.InnerException);
+    }
+
+    [Fact]
     public async Task UploadAsync_SendsPrivateBackendRequestAndReturnsStoragePath()
     {
         HttpRequestMessage? captured = null;

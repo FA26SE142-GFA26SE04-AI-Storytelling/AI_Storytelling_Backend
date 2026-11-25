@@ -370,8 +370,9 @@ public sealed class MediaPayloadLoggingAndPrivacyTests
             logger);
 
         using var ms = new MemoryStream(MinimalPng);
-        var ex = await Assert.ThrowsAsync<HttpRequestException>(() =>
+        var ex = await Assert.ThrowsAsync<PermanentMediaGenerationException>(() =>
             storage.UploadAsync("stories/1/img.png", ms, "image/png"));
+        Assert.Equal("MEDIA_STORAGE_UPLOAD_ACCESS_DENIED", ex.ErrorCode);
 
         Assert.DoesNotContain("SENTINEL_SUPABASE_SECRET", ex.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("token=eyJ", ex.ToString(), StringComparison.Ordinal);

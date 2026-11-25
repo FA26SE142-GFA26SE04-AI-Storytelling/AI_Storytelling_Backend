@@ -214,7 +214,7 @@ public sealed partial class MediaGenerationService
             var attempts = assets.Where(x => x.Status != MediaStatus.Ready).Select(x => x.AttemptCount).DefaultIfEmpty(0).Max();
             var invalidated = IsStale(ex) || ex is ForbiddenException or ConflictException or NotFoundException;
             var retry = !invalidated && !IsTerminalBranchFailure(ex) && attempts < _assetMaxAttempts;
-            if (ex is TransientMediaGenerationException { ErrorCode: "MEDIA_CIRCUIT_OPEN" })
+            if (!invalidated && ex is TransientMediaGenerationException { ErrorCode: "MEDIA_CIRCUIT_OPEN" or "MEDIA_PROVIDER_COOLDOWN" })
             {
                 // No upstream request was made; do not consume the generation budget.
                 var blocked = assets.FirstOrDefault(x => x.Status != MediaStatus.Ready && x.AttemptCount > 0);

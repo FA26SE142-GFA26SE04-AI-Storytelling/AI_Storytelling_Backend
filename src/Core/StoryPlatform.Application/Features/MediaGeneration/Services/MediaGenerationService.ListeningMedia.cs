@@ -92,9 +92,8 @@ public sealed partial class MediaGenerationService
             await AssertFreshAsync(jobId, claimedToken, versionId, mediaContext.Id, ct);
             var owner = part.OptionId is int optionId ? $"o{optionId}" : "i";
             var storagePath = $"{storyId}/versions/{versionId}/v{mediaContext.Revision}/listening-{interaction.Id}-{owner}-{part.PartKey}-asset-{asset.Id}-{Guid.NewGuid():N}-a{attempt + 1}{audio.SuggestedExtension}";
-            await using var content = audio.OpenReadStream();
-            asset.Url = await MeasureMediaStageAsync("ListeningAudioUpload", jobId, asset,
-                () => _mediaStorage.UploadAsync(storagePath, content, audio.MimeType, ct));
+            asset.Url = await UploadGeneratedMediaAsync("ListeningAudioUpload", jobId, claimedToken, mediaContext.Id, asset,
+                storagePath, audio, ct);
             asset.MimeType = audio.MimeType;
             asset.Provider = audio.GetMetadata("provider") ?? "GoogleCloud";
             asset.Model = audio.GetMetadata("model") ?? "unknown";

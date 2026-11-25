@@ -152,7 +152,7 @@ public sealed class GeminiTtsProvider : ITtsProvider
 
         var validation = MagicByteValidators.ValidateAudio(bytes);
         if (!validation.IsValid)
-            throw new PermanentMediaGenerationException($"GEMINI_TTS_VALIDATION_FAILED: {validation.Reason}");
+            throw new PermanentMediaGenerationException("AUDIO_QUALITY_GATE_FAILED");
 
         var mimeType = detectedMime ?? validation.DetectedMime ?? "audio/wav";
 

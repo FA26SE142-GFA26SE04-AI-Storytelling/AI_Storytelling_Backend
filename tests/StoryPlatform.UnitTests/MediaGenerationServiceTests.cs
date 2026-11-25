@@ -17,6 +17,120 @@ namespace StoryPlatform.UnitTests;
 public sealed partial class MediaGenerationServiceTests
 {
     [Fact]
+    public async Task Diagnostics_FailedAssetWithFailedValidation_ReportsTtsFailedNotManualReview()
+    {
+        var store = Seed();
+        store.Seed(new StoryScene { Id = 100, StoryVersionId = 10, SceneIndex = 1 });
+        store.Seed(new StorySegment { Id = 200, StorySceneId = 100, SegmentOrder = 1 });
+        store.Seed(new MediaAsset
+        {
+            Id = 300,
+            StoryVersionId = 10,
+            StorySceneId = 100,
+            StorySegmentId = 200,
+            Type = MediaType.TtsAudio,
+            IsCurrent = true,
+            Status = MediaStatus.Failed,
+            ValidationStatus = ValidationStatus.Failed
+        });
+
+        var progress = await Create(store).GetProgressAsync(1, 1);
+
+        var issue = Assert.Single(progress.Issues);
+        Assert.Equal("Failed", issue.Status);
+        Assert.Equal("TTS_GENERATION_FAILED", issue.ErrorCode);
+    }
+
+    [Theory]
+    [InlineData(ValidationStatus.Failed)]
+    [InlineData(ValidationStatus.Pending)]
+    public async Task Diagnostics_ManualReviewReportsManualReview(ValidationStatus validationStatus)
+    {
+        var store = Seed();
+        store.Seed(new StoryScene { Id = 100, StoryVersionId = 10, SceneIndex = 1 });
+        store.Seed(new StorySegment { Id = 200, StorySceneId = 100, SegmentOrder = 1 });
+        store.Seed(new MediaAsset
+        {
+            Id = 300,
+            StoryVersionId = 10,
+            StorySceneId = 100,
+            StorySegmentId = 200,
+            Type = MediaType.TtsAudio,
+            IsCurrent = true,
+            Status = MediaStatus.ManualReview,
+            ValidationStatus = validationStatus
+        });
+
+        var progress = await Create(store).GetProgressAsync(1, 1);
+
+        var issue = Assert.Single(progress.Issues);
+        Assert.Equal("ManualReview", issue.Status);
+        Assert.Equal("MEDIA_MANUAL_REVIEW_REQUIRED", issue.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Diagnostics_ManualReviewAssetWithPendingBranch_ReportsManualReview()
+    {
+        var store = Seed();
+        store.Seed(new StoryGenerationJob
+        {
+            Id = 2,
+            ParentJobId = 20,
+            MediaPackageRevision = 0,
+            Operation = GenerationJobOperation.GenerateTts,
+            Status = GenerationJobStatus.Pending
+        });
+        store.Seed(new StoryScene { Id = 100, StoryVersionId = 10, SceneIndex = 1 });
+        store.Seed(new StorySegment { Id = 200, StorySceneId = 100, SegmentOrder = 1 });
+        store.Seed(new MediaAsset
+        {
+            Id = 300,
+            StoryVersionId = 10,
+            StorySceneId = 100,
+            StorySegmentId = 200,
+            Type = MediaType.TtsAudio,
+            IsCurrent = true,
+            Status = MediaStatus.ManualReview,
+            ValidationStatus = ValidationStatus.Failed
+        });
+
+        var progress = await Create(store).GetProgressAsync(1, 1);
+
+        var issue = Assert.Single(progress.Issues);
+        Assert.Equal("ManualReview", issue.Status);
+        Assert.Equal("MEDIA_MANUAL_REVIEW_REQUIRED", issue.ErrorCode);
+    }
+
+    [Fact]
+    public async Task TransientUploadRetriesWithTheSameImageAndObjectKey()
+    {
+        var store = Seed();
+        var storage = new Mock<IMediaStorage>();
+        var imageUploads = new List<(string Path, byte[] Bytes)>();
+        storage.Setup(x => x.UploadAsync(It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(async (string path, Stream content, string mime, CancellationToken ct) =>
+            {
+                if (mime.StartsWith("image/", StringComparison.Ordinal))
+                {
+                    using var buffer = new MemoryStream();
+                    await content.CopyToAsync(buffer, ct);
+                    imageUploads.Add((path, buffer.ToArray()));
+                    if (imageUploads.Count == 1)
+                        throw new TransientMediaGenerationException("MEDIA_STORAGE_UPLOAD_UNAVAILABLE");
+                }
+                return path;
+            });
+
+        Assert.True((await Create(store, storage: storage.Object).RunPackageAsync()).Success);
+
+        Assert.True(imageUploads.Count >= 2);
+        Assert.Equal(imageUploads[0].Path, imageUploads[1].Path);
+        Assert.Equal(imageUploads[0].Bytes, imageUploads[1].Bytes);
+        Assert.All(store.Items<MediaAsset>().Where(x => x.Type == MediaType.Illustration),
+            asset => Assert.Equal(1, asset.AttemptCount));
+    }
+
+    [Fact]
     public async Task ManualReadySubmitsTheSameVersionToModeratorWithoutPublishing()
     {
         var (store, confirm, _) = CreatorManualMediaTests.Setup();
@@ -431,7 +545,7 @@ public sealed partial class MediaGenerationServiceTests
         var audioAsset = uow.Items<MediaAsset>().Single(x => x.Type == MediaType.TtsAudio);
         Assert.Equal(MediaStatus.ManualReview, audioAsset.Status);
         Assert.Equal(ValidationStatus.Failed, audioAsset.ValidationStatus);
-        Assert.Equal("TTS_RETRY_EXHAUSTED", result.ErrorCode);
+        Assert.Equal("AUDIO_QUALITY_GATE_FAILED", result.ErrorCode);
     }
 
     [Fact]

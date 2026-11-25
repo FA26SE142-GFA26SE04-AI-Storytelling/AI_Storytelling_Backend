@@ -823,9 +823,8 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
 
             await AssertFreshAsync(jobId, claimedToken, versionId, mediaContext.Id, cancellationToken);
             var storagePath = $"{storyId}/versions/{versionId}/v{mediaContext.Revision}/{pathStem}-asset-{asset.Id}-{Guid.NewGuid():N}-a{attempt + 1}{illustration.SuggestedExtension}";
-            await using var content = illustration.OpenReadStream();
-            asset.Url = await MeasureMediaStageAsync("ImageUpload", jobId, asset,
-                () => _mediaStorage.UploadAsync(storagePath, content, illustration.MimeType, cancellationToken));
+            asset.Url = await UploadGeneratedMediaAsync("ImageUpload", jobId, claimedToken, mediaContext.Id, asset,
+                storagePath, illustration, cancellationToken);
             asset.MimeType = illustration.MimeType;
             asset.Provider = illustration.GetMetadata("provider") ?? "Gemini";
             asset.Model = illustration.GetMetadata("model") ?? "unknown";
@@ -931,9 +930,8 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
 
             await AssertFreshAsync(jobId, claimedToken, versionId, mediaContext.Id, cancellationToken);
             var storagePath = $"{storyId}/versions/{versionId}/v{mediaContext.Revision}/audio-s{scene.SceneIndex}-{segment.SegmentOrder}-asset-{asset.Id}-{Guid.NewGuid():N}-a{attempt + 1}{audio.SuggestedExtension}";
-            await using var content = audio.OpenReadStream();
-            asset.Url = await MeasureMediaStageAsync("AudioUpload", jobId, asset,
-                () => _mediaStorage.UploadAsync(storagePath, content, audio.MimeType, cancellationToken));
+            asset.Url = await UploadGeneratedMediaAsync("AudioUpload", jobId, claimedToken, mediaContext.Id, asset,
+                storagePath, audio, cancellationToken);
             asset.MimeType = audio.MimeType;
             asset.WordTimings = audio.GetMetadata("wordTimingsJson");
             asset.Provider = audio.GetMetadata("provider") ?? "GoogleCloud";
@@ -1193,7 +1191,8 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
             "ILLUSTRATION_RETRY_EXHAUSTED" => "ILLUSTRATION_RETRY_EXHAUSTED",
             "TTS_SEGMENT_RETRY_EXHAUSTED" => "TTS_RETRY_EXHAUSTED",
             _ when unwrapped.Message.StartsWith("TTS_SEGMENT_RETRY_EXHAUSTED") => "TTS_RETRY_EXHAUSTED",
-            _ when unwrapped.Message.StartsWith("AUDIO_QUALITY_GATE_DETERMINISTIC_FAILURE") => "TTS_RETRY_EXHAUSTED",
+            "AUDIO_QUALITY_GATE_FAILED" => "AUDIO_QUALITY_GATE_FAILED",
+            _ when unwrapped.Message.StartsWith("AUDIO_QUALITY_GATE_DETERMINISTIC_FAILURE", StringComparison.Ordinal) => "AUDIO_QUALITY_GATE_FAILED",
             "INTERACTION_BOUNDARY_UNRESOLVED" => "INTERACTION_BOUNDARY_UNRESOLVED",
             "INTERACTION_SCENE_UNRESOLVED" => "INTERACTION_SCENE_UNRESOLVED",
             "LISTENING_AUDIO_RETRY_EXHAUSTED" => "LISTENING_AUDIO_RETRY_EXHAUSTED",

@@ -70,14 +70,14 @@
   "AuthController.GetDeleteAccountPreview#GET me/delete-preview": [
     "User"
   ],
-  "AuthController.GetMyAuditLog#GET me/audit-log": [
+  "AuthController.GetMyAccess#GET me/access": [
     "Administrator",
     "ContentCreator",
     "CreatorApplicant",
     "Moderator",
     "User"
   ],
-  "AuthController.GetMyPermissions#GET me/permissions": [
+  "AuthController.GetMyAuditLog#GET me/audit-log": [
     "Administrator",
     "ContentCreator",
     "CreatorApplicant",

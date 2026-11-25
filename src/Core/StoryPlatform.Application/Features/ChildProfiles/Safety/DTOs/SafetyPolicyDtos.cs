@@ -9,6 +9,7 @@ public class SafetyPolicyDto
     public int Id { get; set; }
     public int ChildProfileId { get; set; }
     public int MaxStoryLength { get; set; }
+    public int? StoryLengthTarget { get; set; }
     public string RequiredApprovalMode { get; set; } = string.Empty;
     public bool ParentalGateEnabled { get; set; }
     public bool ConsentRecorded { get; set; }
@@ -28,6 +29,11 @@ public class SafetyPolicyDto
     public bool VoiceConsentRequired { get; set; }
     public bool ConsentOutdated { get; set; }
     public bool EffectiveVoiceAnswersEnabled { get; set; }
+    public bool QuizEnabled { get; set; }
+    public bool NotebookEnabled { get; set; }
+    public bool LibraryBrowseEnabled { get; set; }
+    public bool ReflectionEnabled { get; set; }
+    public bool RewardsEnabled { get; set; }
     public List<SafetyPolicyCategoryDto> Categories { get; set; } = new();
 }
 
@@ -41,6 +47,10 @@ public class SetSafetyPolicyRequestDto
 {
     [Range(100, 20000, ErrorMessage = "Độ dài truyện tối đa phải từ 100 đến 20000 đơn vị từ.")]
     public int MaxStoryLength { get; set; } = 2000;
+
+    /// <summary>Độ dài truyện phụ huynh tự chỉnh; null = theo mức đọc. Khi có giá trị, trần MaxStoryLength tự nâng lên ít nhất 110% số này.</summary>
+    [Range(100, 9000, ErrorMessage = "Độ dài truyện mong muốn phải từ 100 đến 9000 từ.")]
+    public int? StoryLengthTarget { get; set; }
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public ApprovalMode RequiredApprovalMode { get; set; } = ApprovalMode.AlwaysManual;
@@ -69,6 +79,13 @@ public class SetSafetyPolicyRequestDto
     public ChildCreationMode ChildCreationMode { get; set; } = ChildCreationMode.ReviewFirst;
 
     public bool VoiceAnswersEnabled { get; set; }
+
+    /// <summary>Quyền của bé; null (client cũ không gửi) = giữ giá trị đang lưu.</summary>
+    public bool? QuizEnabled { get; set; }
+    public bool? NotebookEnabled { get; set; }
+    public bool? LibraryBrowseEnabled { get; set; }
+    public bool? ReflectionEnabled { get; set; }
+    public bool? RewardsEnabled { get; set; }
 
     /// <summary>Owner đồng ý mục (e) giọng nói khi bật lần đầu.</summary>
     public bool VoiceConsentAccepted { get; set; }

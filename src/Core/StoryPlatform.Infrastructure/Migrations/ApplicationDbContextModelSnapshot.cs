@@ -562,6 +562,9 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<int?>("Age")
+                        .HasColumnType("integer");
+
                     b.Property<string>("AgeBand")
                         .IsRequired()
                         .HasMaxLength(30)
@@ -834,7 +837,7 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<int?>("CreatedByAdminId")
+                    b.Property<int?>("CreatedByModeratorId")
                         .HasColumnType("integer");
 
                     b.Property<List<string>>("DefaultBlockedAgeBands")
@@ -867,7 +870,7 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasIndex("Code")
                         .IsUnique();
 
-                    b.HasIndex("CreatedByAdminId");
+                    b.HasIndex("CreatedByModeratorId");
 
                     b.ToTable("content_categories", (string)null);
                 });
@@ -3922,6 +3925,49 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.ToTable("payment_transactions", (string)null);
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.Permission", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("Group")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsStaffGrantable")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("permissions", (string)null);
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.PlanSettings", b =>
                 {
                     b.Property<int>("Id")
@@ -4462,6 +4508,142 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.ToTable("reading_roadmap_items", (string)null);
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.ReadingSchedule", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<TimeOnly?>("BedtimeWeekday")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<TimeOnly?>("BedtimeWeekend")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<int>("BreakAfterMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("BreakDurationMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("BreakEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("BreakRemindEyes")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("BreakRemindMove")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("BreakRemindWater")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("BreakUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("ChildProfileId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("ContinuousReadingSince")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("HabitEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int?>("LastBreakActivity")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("LastReadingSeenAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<TimeOnly?>("ReadingReminderWeekday")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<TimeOnly?>("ReadingReminderWeekend")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<bool>("ScreenLimitEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("ScreenLimitWeekdayMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ScreenLimitWeekendMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly?>("UsageDate")
+                        .HasColumnType("date");
+
+                    b.Property<int>("UsageSeconds")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("WeeklyGoalDays")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChildProfileId")
+                        .IsUnique();
+
+                    b.ToTable("reading_schedules", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.ReadingScheduleWindow", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DayType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<TimeOnly>("EndTime")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("ReadingScheduleId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Slot")
+                        .HasColumnType("integer");
+
+                    b.Property<TimeOnly>("StartTime")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReadingScheduleId", "DayType", "Slot")
+                        .IsUnique();
+
+                    b.ToTable("reading_schedule_windows", (string)null);
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ReadingSession", b =>
                 {
                     b.Property<int>("Id")
@@ -4660,6 +4842,65 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.ToTable("reward_fulfillments", (string)null);
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.Role", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsStaff")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsSystem")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("roles", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.RolePermission", b =>
+                {
+                    b.Property<int>("RoleId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("PermissionId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("RoleId", "PermissionId");
+
+                    b.HasIndex("PermissionId");
+
+                    b.ToTable("role_permissions", (string)null);
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.SafetyPolicy", b =>
                 {
                     b.Property<int>("Id")
@@ -4714,22 +4955,50 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("LibraryBrowseEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
                     b.Property<int>("MaxStoryLength")
                         .HasColumnType("integer");
+
+                    b.Property<bool>("NotebookEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
 
                     b.Property<bool>("ParentalGateEnabled")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("QuizEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
                     b.Property<decimal?>("ReadabilityScoreThreshold")
                         .HasColumnType("decimal(5,2)");
+
+                    b.Property<bool>("ReflectionEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
 
                     b.Property<string>("RequiredApprovalMode")
                         .IsRequired()
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)");
 
+                    b.Property<bool>("RewardsEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
                     b.Property<decimal?>("SafetyScoreThreshold")
                         .HasColumnType("decimal(5,2)");
+
+                    b.Property<int?>("StoryLengthTarget")
+                        .HasColumnType("integer");
 
                     b.Property<bool>("StoryWishesEnabled")
                         .ValueGeneratedOnAdd()
@@ -6385,7 +6654,7 @@ namespace StoryPlatform.Infrastructure.Migrations
                             CanCopyRoadmapTemplates = false,
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = false,
-                            IsDeleted = false,
+                            IsDeleted = true,
                             MaxChildProfiles = 0,
                             Name = "Personal",
                             PlanType = "Legacy",
@@ -7028,12 +7297,12 @@ namespace StoryPlatform.Infrastructure.Migrations
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ContentCategory", b =>
                 {
-                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "CreatedByAdmin")
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "CreatedByModerator")
                         .WithMany()
-                        .HasForeignKey("CreatedByAdminId")
+                        .HasForeignKey("CreatedByModeratorId")
                         .OnDelete(DeleteBehavior.Restrict);
 
-                    b.Navigation("CreatedByAdmin");
+                    b.Navigation("CreatedByModerator");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ContentReport", b =>
@@ -8101,6 +8370,28 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("Story");
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.ReadingSchedule", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", "ChildProfile")
+                        .WithMany()
+                        .HasForeignKey("ChildProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ChildProfile");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.ReadingScheduleWindow", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.ReadingSchedule", "ReadingSchedule")
+                        .WithMany()
+                        .HasForeignKey("ReadingScheduleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ReadingSchedule");
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ReadingSession", b =>
                 {
                     b.HasOne("StoryPlatform.Domain.Entities.ChildAccessCredential", "ChildAccessCredential")
@@ -8178,6 +8469,25 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Award");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.RolePermission", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.Permission", "Permission")
+                        .WithMany()
+                        .HasForeignKey("PermissionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.Role", "Role")
+                        .WithMany("Permissions")
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Permission");
+
+                    b.Navigation("Role");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.SafetyPolicy", b =>
@@ -8974,6 +9284,11 @@ namespace StoryPlatform.Infrastructure.Migrations
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ReadingRoadmap", b =>
                 {
                     b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.Role", b =>
+                {
+                    b.Navigation("Permissions");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryVersion", b =>

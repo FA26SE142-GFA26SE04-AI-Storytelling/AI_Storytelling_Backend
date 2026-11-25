@@ -5,6 +5,8 @@ using StoryPlatform.Application.Features.BusinessReports.DTOs;
 using StoryPlatform.Application.Features.BusinessReports.Interfaces;
 using StoryPlatform.Application.Features.CreatorStatistics.DTOs;
 using StoryPlatform.Application.Features.CreatorStatistics.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
@@ -33,7 +35,7 @@ public class BusinessReportController : BaseApiController
     /// Kỳ tính trọn ngày theo UTC, gồm cả ngày PeriodEnd, và không được chồng lên báo cáo đã có.
     /// </summary>
     [HttpPost("generate")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.BusinessReportView)]
     public async Task<ActionResult<ApiResponse<AdminBusinessReportDto>>> Generate(
         [FromBody] GenerateBusinessReportRequestDto request, CancellationToken cancellationToken)
     {
@@ -46,7 +48,7 @@ public class BusinessReportController : BaseApiController
     /// Publish một Business Report đang Compiling để hiển thị trên Parent Dashboard.
     /// </summary>
     [HttpPost("{reportId:int}/publish")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.BusinessReportView)]
     public async Task<ActionResult<ApiResponse<AdminBusinessReportDto>>> Publish(
         int reportId, CancellationToken cancellationToken)
     {
@@ -70,7 +72,7 @@ public class BusinessReportController : BaseApiController
     /// Administrator xem doanh thu của một kỳ bất kỳ, tính trực tiếp từ giao dịch Paid (theo PaidAt) và sổ lượt.
     /// </summary>
     [HttpGet("admin/revenue")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.BusinessReportView)]
     public async Task<ActionResult<ApiResponse<RevenueStatisticsDto>>> GetRevenue(
         [FromQuery] DateTime periodStart, [FromQuery] DateTime periodEnd, CancellationToken cancellationToken)
     {
@@ -82,7 +84,7 @@ public class BusinessReportController : BaseApiController
     /// Administrator xem thống kê tài khoản phụ huynh của một kỳ bất kỳ: tổng số, mới đăng ký, đang hoạt động, bị vô hiệu, số hồ sơ trẻ.
     /// </summary>
     [HttpGet("admin/accounts")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.BusinessReportView)]
     public async Task<ActionResult<ApiResponse<UserAccountStatisticsDto>>> GetAccounts(
         [FromQuery] DateTime periodStart, [FromQuery] DateTime periodEnd, CancellationToken cancellationToken)
     {
@@ -95,7 +97,7 @@ public class BusinessReportController : BaseApiController
     /// kỳ, truyện đang Published, lượt xem, lượt yêu thích, lượt đọc hợp lệ, cấp Creator và thu nhập dự kiến từ quỹ.
     /// </summary>
     [HttpGet("admin/creators")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.BusinessReportView)]
     public async Task<ActionResult<ApiResponse<AdminCreatorStatisticsDto>>> GetCreators(
         [FromQuery] DateTime periodStart, [FromQuery] DateTime periodEnd, CancellationToken cancellationToken)
     {
@@ -107,7 +109,7 @@ public class BusinessReportController : BaseApiController
     /// Administrator xem mọi Business Report, kỳ mới nhất trước, kèm số liệu doanh thu đã chụp.
     /// </summary>
     [HttpGet("admin")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.BusinessReportView)]
     public async Task<ActionResult<ApiResponse<PagedResult<AdminBusinessReportDto>>>> List(
         [FromQuery] int pageIndex = 1, [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default)
     {
@@ -119,7 +121,7 @@ public class BusinessReportController : BaseApiController
     /// Administrator xem chi tiết một Business Report, kèm số liệu doanh thu đã chụp.
     /// </summary>
     [HttpGet("admin/{reportId:int}")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.BusinessReportView)]
     public async Task<ActionResult<ApiResponse<AdminBusinessReportDto>>> GetById(
         int reportId, CancellationToken cancellationToken)
     {

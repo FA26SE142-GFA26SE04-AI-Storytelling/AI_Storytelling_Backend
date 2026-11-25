@@ -3,11 +3,13 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.AuthoringGuideManagement.DTOs;
 using StoryPlatform.Application.Features.AuthoringGuideManagement.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>Moderator / Administrator quản lý hướng dẫn sáng tác của Parent (bản nháp → xem trước → phát hành cả bộ).</summary>
-[Authorize(Roles = "Moderator,Administrator")]
+[HasPermission(Permissions.Review.GuideManage)]
 [Route("api/v1/moderation/authoring-guides")]
 public sealed class AuthoringGuideManagementController(IAuthoringGuideManagementService service) : BaseApiController
 {

@@ -10,6 +10,9 @@ using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Application.Features.TokenQuota.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Application.Features.AccessControl.Services;
 
 namespace StoryPlatform.Application.Features.Administration.Services;
 
@@ -27,10 +30,14 @@ public class CreatorAccountService : ICreatorAccountService
     private readonly INotificationService _notificationService;
     private readonly ITokenQuotaService? _tokenQuotaService;
 
+    private readonly IAccessPolicy _accessPolicy;
+
     public CreatorAccountService(
         IUnitOfWork unitOfWork, IAuditLogWriter auditLogWriter, INotificationService notificationService,
-        ITokenQuotaService? tokenQuotaService = null)
+        ITokenQuotaService? tokenQuotaService = null,
+        IAccessPolicy? accessPolicy = null)
     {
+        _accessPolicy = accessPolicy ?? AccessPolicy.Default(unitOfWork);
         _unitOfWork = unitOfWork;
         _auditLogWriter = auditLogWriter;
         _notificationService = notificationService;
@@ -292,16 +299,11 @@ public class CreatorAccountService : ICreatorAccountService
         return published.GroupBy(story => story.AuthorUserId).ToDictionary(group => group.Key, group => group.Count());
     }
 
-    private async Task<UserAccount> RequireAdministratorAsync(int adminUserId, CancellationToken cancellationToken)
-    {
-        var admin = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(adminUserId, cancellationToken);
-        if (admin is not { Role: UserRole.Administrator, Status: AccountStatus.Active } || admin.IsDeleted)
-        {
-            throw new ForbiddenException("Chỉ quản trị viên đang hoạt động mới quản lý được tài khoản nhà sáng tạo nội dung.");
-        }
-
-        return admin;
-    }
+    private Task<UserAccount> RequireAdministratorAsync(int adminUserId, CancellationToken cancellationToken) =>
+        _accessPolicy.EnsureAsync(
+            adminUserId, Permissions.Admin.CreatorAccountManage,
+            deniedMessage: "Chỉ quản trị viên đang hoạt động mới quản lý được tài khoản nhà sáng tạo nội dung.",
+            cancellationToken: cancellationToken);
 
     private async Task<UserAccount> RequireCreatorAsync(int creatorUserId, CancellationToken cancellationToken)
     {

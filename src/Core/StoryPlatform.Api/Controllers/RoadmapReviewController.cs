@@ -3,10 +3,12 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.RoadmapTemplates.DTOs;
 using StoryPlatform.Application.Features.RoadmapTemplates.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
-[Authorize(Roles = "Moderator,Administrator")]
+[HasPermission(Permissions.Review.Roadmap)]
 public class RoadmapReviewController : BaseApiController
 {
     private readonly IRoadmapReviewService _reviewService;

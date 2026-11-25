@@ -550,7 +550,7 @@ public class StaffAccountServiceTests
             .GetCustomAttribute<AuthorizeAttribute>();
 
         Assert.NotNull(authorize);
-        Assert.Equal("Administrator", authorize!.Roles);
+        Assert.Equal("Administrator", authorize!.GrantedRoles());
     }
 
     [Theory]

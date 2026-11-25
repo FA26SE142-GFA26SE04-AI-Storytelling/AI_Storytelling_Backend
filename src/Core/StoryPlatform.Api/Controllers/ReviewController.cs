@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.StoryReview.DTOs;
 using StoryPlatform.Application.Features.StoryReview.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
@@ -234,7 +236,7 @@ public sealed class ReviewController : ControllerBase
 
     /// <summary>Creator xác nhận bản nội dung hiện tại và xếp hàng media; không duyệt công khai.</summary>
     [HttpPost("/api/v1/creator/stories/{storyId:int}/generation/confirm-content")]
-    [Authorize(Roles = "ContentCreator")]
+    [HasPermission(Permissions.Creator.Studio)]
     public async Task<ActionResult<ApiResponse<ConfirmCreatorContentResponseDto>>> ConfirmCreatorContent(
         int storyId, [FromBody] ConfirmCreatorContentRequestDto input, CancellationToken cancellationToken)
     {
@@ -244,7 +246,7 @@ public sealed class ReviewController : ControllerBase
     }
 
     [HttpPost("approve")]
-    [Authorize(Roles = "User,Administrator")]
+    [HasPermission(Permissions.Shared.StoryReviewApprove)]
     public async Task<ActionResult<ApiResponse<ApproveResponseDto>>> Approve(
         int storyId, CancellationToken cancellationToken)
     {
@@ -253,7 +255,7 @@ public sealed class ReviewController : ControllerBase
     }
 
     [HttpPost("reject")]
-    [Authorize(Roles = "User,Administrator")]
+    [HasPermission(Permissions.Shared.StoryReviewApprove)]
     public async Task<ActionResult<ApiResponse<RejectStoryResponseDto>>> Reject(
         int storyId, [FromBody] RejectStoryRequestDto input, CancellationToken cancellationToken)
     {

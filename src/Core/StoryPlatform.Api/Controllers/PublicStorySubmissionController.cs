@@ -3,11 +3,13 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.Moderation.DTOs;
 using StoryPlatform.Application.Features.Moderation.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>API cho Content Creator gửi, gửi lại hoặc rút yêu cầu duyệt truyện Public Library.</summary>
-[Authorize(Roles = "ContentCreator")]
+[HasPermission(Permissions.Creator.Studio)]
 public class PublicStorySubmissionController : BaseApiController
 {
     private readonly IPublicStorySubmissionService _submissionService;

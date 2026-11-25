@@ -115,7 +115,8 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
             normalized.VocabularyLevel,
             normalized.Language,
             cancellationToken);
-        var profile = _learningOptions.Profile(context.AgeBand, normalized.TargetLength, context.ReadingLevel);
+        var profile = _learningOptions.Profile(context.AgeBand,
+            normalized.TargetLength > 0 ? normalized.TargetLength : context.DefaultTargetLength ?? 0, context.ReadingLevel);
         if (quick && outputMode == StoryOutputMode.Learning)
             profile = profile with { QuizTarget = request.QuizQuestionCount ?? 3 };
         normalized = normalized with { VocabularyLevel = context.VocabularyLevel, Language = context.Language, TargetLength = profile.TargetWords };
@@ -785,13 +786,17 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
             cancellationToken: cancellationToken);
         var interests = topics.Select(item => item.Topic.Trim()).Where(item => item.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).Order().ToArray();
         var ageBand = child.AgeBand == AgeBand.Age_6_8 ? "6-8" : "9-10";
+        var storyLength = StoryLengthRules.ForGeneration(
+            safety.StoryLengthTarget,
+            safety.MaxStoryLength,
+            _learningOptions.Profile(ageBand, readingLevel: learning.ReadingLevel).TargetWords);
         var snapshot = new AIStoryInputContextSnapshot(
             child.Id,
             ageBand,
             learning.ReadingLevel,
             vocabularyLevel,
             language,
-            maximumLength,
+            storyLength.Cap,
             ToApprovalModeValue(approvalMode),
             interests,
             categoryRules.Where(item => item.Value == PolicyRule.Allowed).Select(item => item.Key).Order().ToArray(),
@@ -815,12 +820,13 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
             learning.ReadingLevel,
             vocabularyLevel,
             language,
-            maximumLength,
+            storyLength.Cap,
             approvalMode,
             snapshot,
             Fingerprint(snapshot),
             blockedTerms,
-            restrictedTerms);
+            restrictedTerms,
+            storyLength.Target);
     }
 
     private async Task EnsureGeneratePermissionAsync(int userId, int childProfileId, CancellationToken cancellationToken)
@@ -964,7 +970,7 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
         DefaultLanguage = context.Language,
         AvailableLanguages = [context.Language],
         MaximumLength = context.MaximumLength,
-        RecommendedTargetLength = _learningOptions.Profile(context.AgeBand, readingLevel: context.ReadingLevel).TargetWords,
+        RecommendedTargetLength = _learningOptions.Profile(context.AgeBand, context.DefaultTargetLength ?? 0, context.ReadingLevel).TargetWords,
         RequiredApprovalMode = ToApprovalModeValue(context.ApprovalMode),
         ParentalGateEnabled = context.Snapshot.ParentalGateEnabled,
         SafetyScoreThreshold = context.Snapshot.SafetyScoreThreshold,
@@ -1015,5 +1021,6 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
         AIStoryInputContextSnapshot Snapshot,
         string Fingerprint,
         IReadOnlyList<string> BlockedTerms,
-        IReadOnlyList<string> RestrictedTerms);
+        IReadOnlyList<string> RestrictedTerms,
+        int? DefaultTargetLength = null);
 }

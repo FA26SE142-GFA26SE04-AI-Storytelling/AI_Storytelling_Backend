@@ -57,14 +57,14 @@ public sealed class AuthoringGuideManagementApiTests
         var created = await host.SendAsync(HttpMethod.Post, Base + "/draft", null, host.Moderator, HttpStatusCode.Created);
         var token = created.GetProperty("revisionToken").GetString()!;
         Assert.Equal("parent-vi-2", created.GetProperty("draft").GetProperty("catalogVersion").GetString());
-        await host.SendAsync(HttpMethod.Post, Base + "/draft", new { }, host.Administrator, HttpStatusCode.Conflict);
+        await host.SendAsync(HttpMethod.Post, Base + "/draft", new { }, host.Moderator, HttpStatusCode.Conflict);
 
         var added = await host.SendAsync(HttpMethod.Put, Base + "/draft/items/opening-9", NewItem(token), host.Moderator, HttpStatusCode.OK);
         var token2 = added.GetProperty("revisionToken").GetString()!;
         Assert.NotEqual(token, token2);
         Assert.Equal(31, added.GetProperty("draft").GetProperty("itemCount").GetInt32());
 
-        await host.SendAsync(HttpMethod.Put, Base + "/draft/items/opening-8", NewItem(token), host.Administrator, HttpStatusCode.Conflict);
+        await host.SendAsync(HttpMethod.Put, Base + "/draft/items/opening-8", NewItem(token), host.Moderator, HttpStatusCode.Conflict);
         await host.SendAsync(HttpMethod.Put, Base + "/draft/items/opening-8",
             new { revisionToken = token2, purposes = new[] { "free" }, supportGroup = "opening", itemType = "template", title = "x",
                   instruction = "y", templateText = "Xin chào {{person}}", placeholderDefinitions = new[] { new { key = "place", label = "Ở đâu?" } }, order = 32 },
@@ -128,9 +128,9 @@ public sealed class AuthoringGuideManagementApiTests
         var versions = await host.SendAsync(HttpMethod.Get, Base + "/versions", null, host.Moderator, HttpStatusCode.OK);
         var v1 = versions.GetProperty("items").EnumerateArray().Single(x => x.GetProperty("catalogVersion").GetString() == "parent-vi-1")
             .GetProperty("versionId").GetInt32();
-        var restore = await host.SendAsync(HttpMethod.Post, Base + "/draft", new { sourceVersionId = v1 }, host.Administrator, HttpStatusCode.Created);
+        var restore = await host.SendAsync(HttpMethod.Post, Base + "/draft", new { sourceVersionId = v1 }, host.Moderator, HttpStatusCode.Created);
         await host.SendAsync(HttpMethod.Post, Base + "/draft/publish",
-            new { revisionToken = restore.GetProperty("revisionToken").GetString() }, host.Administrator, HttpStatusCode.OK);
+            new { revisionToken = restore.GetProperty("revisionToken").GetString() }, host.Moderator, HttpStatusCode.OK);
         var restored = await host.SendAsync(HttpMethod.Get, ParentList, null, host.Parent, HttpStatusCode.OK);
         Assert.Equal(("parent-vi-3", 21), (restored.GetProperty("catalogVersion").GetString(), restored.GetProperty("totalCount").GetInt32()));
     }
@@ -148,7 +148,7 @@ public sealed class AuthoringGuideManagementApiTests
         await host.SendAsync(HttpMethod.Delete, Base + "/draft", null, host.Moderator, HttpStatusCode.BadRequest);
         await host.SendAsync(HttpMethod.Delete, Base + "/draft?revisionToken=stale", null, host.Moderator, HttpStatusCode.Conflict);
 
-        var discarded = await host.SendAsync(HttpMethod.Delete, Base + "/draft?revisionToken=" + token, null, host.Administrator, HttpStatusCode.OK);
+        var discarded = await host.SendAsync(HttpMethod.Delete, Base + "/draft?revisionToken=" + token, null, host.Moderator, HttpStatusCode.OK);
         Assert.Equal("parent-vi-2", discarded.GetProperty("discardedCatalogVersion").GetString());
         var newToken = discarded.GetProperty("revisionToken").GetString()!;
         Assert.NotEqual(token, newToken);

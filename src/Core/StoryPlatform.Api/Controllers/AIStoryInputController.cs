@@ -6,11 +6,13 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.AIStoryInput.DTOs;
 using StoryPlatform.Application.Features.AIStoryInput.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
 [ApiController]
-[Authorize(Roles = "User")]
+[HasPermission(Permissions.Parent.StoryAuthor)]
 [Route("api/v1/ai-story-input")]
 public sealed class AIStoryInputController : ControllerBase
 {

@@ -355,7 +355,7 @@ public class RoadmapTemplateServiceTests
     }
 
     [Fact]
-    public void Controller_IsRestrictedToStaffAndWriteEndpointsRequireModerator()
+    public void Controller_IsRestrictedToStaffAndWriteEndpointsRequireTemplateAuthors()
     {
         var authorize = typeof(RoadmapTemplateController).GetCustomAttribute<AuthorizeAttribute>();
         var methods = typeof(RoadmapTemplateController)
@@ -363,7 +363,7 @@ public class RoadmapTemplateServiceTests
             .OrderBy(method => method.Name).ToArray();
 
         Assert.NotNull(authorize);
-        Assert.Equal("Moderator,Administrator", authorize!.Roles);
+        Assert.Equal("Moderator,Administrator", authorize!.GrantedRoles());
         Assert.Equal(new[]
         {
             "Archive", "Clone", "Create", "Get", "List", "ListCandidates", "SetItems", "Submit", "Update",
@@ -371,7 +371,8 @@ public class RoadmapTemplateServiceTests
         }, methods.Select(method => method.Name));
         Assert.All(methods.Where(method => method.Name is
                 "Archive" or "Clone" or "Create" or "SetItems" or "Submit" or "Update" or "Withdraw"),
-            method => Assert.Equal("Moderator",
-                method.GetCustomAttribute<AuthorizeAttribute>()?.Roles));
+            // Administrator giữ quyền soạn nhưng service chỉ cho ghi khi không còn Moderator (NoActiveModerator).
+            method => Assert.Equal("Moderator,Administrator",
+                method.GetCustomAttribute<AuthorizeAttribute>()?.GrantedRoles()));
     }
 }

@@ -72,7 +72,9 @@ public sealed class AuthoringGuideManagementPostgresTests(AuthoringGuidePostgres
         }
         await using (var s = db.NewScope())
         {
-            var published = await s.Management.PublishAsync(db.AdministratorId, new(token));
+            // Còn kiểm duyệt viên hoạt động thì Administrator chỉ được xem.
+            await Assert.ThrowsAsync<ForbiddenException>(() => s.Management.PublishAsync(db.AdministratorId, new(token)));
+            var published = await s.Management.PublishAsync(db.SecondModeratorId, new(token));
             Assert.Equal(("Published", "parent-vi-2", 31), (published.Published.Status, published.Published.CatalogVersion, published.Published.ItemCount));
             var parent = await s.Parent.GetAsync("vi", "free", null, 1, 100);
             Assert.Equal(("parent-vi-2", 22), (parent.CatalogVersion, parent.TotalCount));
@@ -136,7 +138,7 @@ public sealed class AuthoringGuideManagementPostgresTests(AuthoringGuidePostgres
             await using var b = db.NewScope();
             var results = await Task.WhenAll(
                 TryAsync(() => a.Management.CreateDraftAsync(db.ModeratorId, new(null))),
-                TryAsync(() => b.Management.CreateDraftAsync(db.AdministratorId, new(null))));
+                TryAsync(() => b.Management.CreateDraftAsync(db.SecondModeratorId, new(null))));
 
             Assert.Single(results, r => r.Error is null);
             AssertLostRace(Assert.Single(results, r => r.Error is not null).Error, "GUIDE_REVISION_CONFLICT", "GUIDE_DRAFT_EXISTS");
@@ -159,7 +161,7 @@ public sealed class AuthoringGuideManagementPostgresTests(AuthoringGuidePostgres
         await using var b = db.NewScope();
         var results = await Task.WhenAll(
             TryAsync(() => a.Management.UpsertItemAsync(db.ModeratorId, "race-a", Item(token))),
-            TryAsync(() => b.Management.UpsertItemAsync(db.AdministratorId, "race-b", Item(token))));
+            TryAsync(() => b.Management.UpsertItemAsync(db.SecondModeratorId, "race-b", Item(token))));
 
         Assert.Single(results, r => r.Error is null);
         AssertLostRace(Assert.Single(results, r => r.Error is not null).Error, "GUIDE_REVISION_CONFLICT");
@@ -185,7 +187,7 @@ public sealed class AuthoringGuideManagementPostgresTests(AuthoringGuidePostgres
         await using var b = db.NewScope();
         var results = await Task.WhenAll(
             TryAsync(() => a.Management.PublishAsync(db.ModeratorId, new(token))),
-            TryAsync(() => b.Management.PublishAsync(db.AdministratorId, new(token))));
+            TryAsync(() => b.Management.PublishAsync(db.SecondModeratorId, new(token))));
 
         Assert.Single(results, r => r.Error is null);
         AssertLostRace(Assert.Single(results, r => r.Error is not null).Error, "GUIDE_REVISION_CONFLICT", "GUIDE_DRAFT_NOT_FOUND");
@@ -330,8 +332,8 @@ public sealed class AuthoringGuideManagementPostgresTests(AuthoringGuidePostgres
             var items = (await s.Management.GetVersionAsync(db.ModeratorId, versionId)).Items;
             Assert.Equal(["legacy-t", "legacy-q"], items.Select(x => x.Id));
             var template = items[0];
-            Assert.Equal((new[] { "free", "message" }, "Ví dụ", "{{person}} ở {{place}}"),
-                (template.Purposes, template.Example, template.TemplateText));
+            Assert.Equal(["free", "message"], template.Purposes);
+            Assert.Equal(("Ví dụ", "{{person}} ở {{place}}"), (template.Example, template.TemplateText));
             Assert.Equal([new GuidePlaceholder("person", null, null), new GuidePlaceholder("place", null, null)], template.PlaceholderDefinitions);
             Assert.Empty(items[1].PlaceholderDefinitions);
             Assert.Equal(2, await s.Context.AuthoringGuideItems.CountAsync(x => x.CatalogVersionId == versionId));

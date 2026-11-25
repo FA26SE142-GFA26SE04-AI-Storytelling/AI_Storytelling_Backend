@@ -36,6 +36,12 @@ public class CommunityStoryDto : StoryDto
 
     /// <summary>Số đánh giá đang hiện.</summary>
     public int RatingCount { get; set; }
+
+    /// <summary>Bản hiện hành (bản bé đọc) có câu hỏi quiz chung; không xét cài đặt quiz của từng bé.</summary>
+    public bool HasQuiz { get; set; }
+
+    /// <summary>Bản hiện hành có audio đọc kèm mốc thời gian từng chữ, nên bé được tô sáng chữ khi nghe.</summary>
+    public bool HasWordHighlight { get; set; }
 }
 
 public class CreateStoryRequestDto

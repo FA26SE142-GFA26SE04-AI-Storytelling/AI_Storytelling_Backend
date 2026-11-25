@@ -121,10 +121,30 @@ public class StoryService : IStoryService
                 Average: Math.Round(group.Average(rating => rating.Rating), 1, MidpointRounding.AwayFromZero),
                 Count: group.Count()));
 
+        // Giống luồng bé: bản IsCurrent (ChildStoryLookup) và quiz chung ParentStoryPackageId == null (ChildQuizService).
+        var quizItems = _unitOfWork.Repository<QuizItem>().Query();
+        var withQuiz = (await _unitOfWork.Repository<StoryVersion>().FindAsync(
+                version => version.IsCurrent && !version.IsDeleted && storyIds.Contains(version.StoryId)
+                           && quizItems.Any(item => item.StoryVersionId == version.Id && item.ParentStoryPackageId == null && !item.IsDeleted),
+                cancellationToken: cancellationToken))
+            .Select(version => version.StoryId).ToHashSet();
+
+        // Giống ChildReadingService: audio TtsAudio Ready của bản hiện hành (không thuộc gói phụ huynh) có mốc thời gian từng chữ thì bé được tô sáng chữ.
+        var mediaAssets = _unitOfWork.Repository<MediaAsset>().Query();
+        var withHighlight = (await _unitOfWork.Repository<StoryVersion>().FindAsync(
+                version => version.IsCurrent && !version.IsDeleted && storyIds.Contains(version.StoryId)
+                           && mediaAssets.Any(asset => asset.StoryVersionId == version.Id && asset.Type == MediaType.TtsAudio
+                                                       && asset.ParentStoryPackageId == null && asset.Status == MediaStatus.Ready
+                                                       && !asset.IsDeleted && asset.WordTimings != null && asset.WordTimings != ""),
+                cancellationToken: cancellationToken))
+            .Select(version => version.StoryId).ToHashSet();
+
         var cover = await CoverResolverAsync(items, cancellationToken);
         var dtos = items.Select(story =>
         {
             var dto = Fill(new CommunityStoryDto(), story, cover);
+            dto.HasQuiz = withQuiz.Contains(story.Id);
+            dto.HasWordHighlight = withHighlight.Contains(story.Id);
             dto.ViewCount = views.GetValueOrDefault(story.Id);
             dto.FavoriteCount = favorites.GetValueOrDefault(story.Id);
             if (ratings.TryGetValue(story.Id, out var rated))

@@ -2692,7 +2692,7 @@ Administrator quản lý tài khoản vận hành **Moderator và Administrator 
 <a id="controller-contentcategory"></a>
 ### ContentCategory — 5 route
 
-Admin ghi, adult đọc. ID danh mục/enum tuổi thật; frontend có thể chọn ẩn bằng PUT thay DELETE.
+Moderator ghi (tạo/sửa/xoá); mọi tài khoản đăng nhập đọc danh mục đang hoạt động, Moderator/Administrator xem được cả danh mục đã tắt. DELETE chỉ xoá được danh mục chưa dùng ở đâu, đang dùng thì 409 — hãy ẩn bằng PUT `isActive=false`.
 
 | Method + route | Mapping |
 |---|---|
@@ -2705,8 +2705,8 @@ Admin ghi, adult đọc. ID danh mục/enum tuổi thật; frontend có thể ch
 <a id="ep-contentcategory-createcontentcategory-post"></a>
 #### POST /api/v1/ContentCategory
 
-- Action/chức năng: **CreateContentCategory** — Tạo mới một danh mục nội dung.. [ContentCategoryController](../src/Core/StoryPlatform.Api/Controllers/ContentCategoryController.cs#L26).
-- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
+- Action/chức năng: **CreateContentCategory** — Tạo mới một danh mục nội dung.. [ContentCategoryController](../src/Core/StoryPlatform.Api/Controllers/ContentCategoryController.cs#L29).
+- Quyền: (Moderator); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [CreateContentCategoryRequestDto](#dto-createcontentcategoryrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ContentCategoryDto](#dto-contentcategorydto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **GỌI_API** — [staffService.createCategory](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L37); nơi dùng: [AdminCatalog.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminCatalog.tsx#L67)
@@ -2714,8 +2714,8 @@ Admin ghi, adult đọc. ID danh mục/enum tuổi thật; frontend có thể ch
 <a id="ep-contentcategory-updatecontentcategory-put"></a>
 #### PUT /api/v1/ContentCategory/{contentCategoryId}
 
-- Action/chức năng: **UpdateContentCategory** — Cập nhật tên hiển thị và trạng thái hoạt động của danh mục nội dung.. [ContentCategoryController](../src/Core/StoryPlatform.Api/Controllers/ContentCategoryController.cs#L39).
-- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
+- Action/chức năng: **UpdateContentCategory** — Cập nhật tên hiển thị và trạng thái hoạt động của danh mục nội dung.. [ContentCategoryController](../src/Core/StoryPlatform.Api/Controllers/ContentCategoryController.cs#L42).
+- Quyền: (Moderator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** contentCategoryId: `int`; bắt buộc<br>**body** request: [UpdateContentCategoryRequestDto](#dto-updatecontentcategoryrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ContentCategoryDto](#dto-contentcategorydto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [staffService.updateCategory](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L40); nơi dùng: [AdminCatalog.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminCatalog.tsx#L51)
@@ -2723,8 +2723,8 @@ Admin ghi, adult đọc. ID danh mục/enum tuổi thật; frontend có thể ch
 <a id="ep-contentcategory-deletecontentcategory-delete"></a>
 #### DELETE /api/v1/ContentCategory/{contentCategoryId}
 
-- Action/chức năng: **DeleteContentCategory** — Xoá hẳn một danh mục nội dung.. [ContentCategoryController](../src/Core/StoryPlatform.Api/Controllers/ContentCategoryController.cs#L52).
-- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
+- Action/chức năng: **DeleteContentCategory** — Xoá hẳn một danh mục nội dung chưa được dùng. Còn được dùng ở truyện, chính sách an toàn, thẻ điều ước, lộ trình đọc hoặc nhãn đề xuất của hồ sơ gửi duyệt → 409 "Không thể xoá Content Category đang được dùng trong: …. Hãy tắt danh mục (IsActive = false) thay vì xoá.". [ContentCategoryController](../src/Core/StoryPlatform.Api/Controllers/ContentCategoryController.cs#L55).
+- Quyền: (Moderator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** contentCategoryId: `int`; bắt buộc.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2732,7 +2732,7 @@ Admin ghi, adult đọc. ID danh mục/enum tuổi thật; frontend có thể ch
 <a id="ep-contentcategory-getcontentcategory-get"></a>
 #### GET /api/v1/ContentCategory/{contentCategoryId}
 
-- Action/chức năng: **GetContentCategory** — Lấy chi tiết một danh mục nội dung theo mã định danh.. [ContentCategoryController](../src/Core/StoryPlatform.Api/Controllers/ContentCategoryController.cs#L64).
+- Action/chức năng: **GetContentCategory** — Lấy chi tiết một danh mục nội dung theo mã định danh. Danh mục đã tắt: User nhận 404, Moderator/Administrator vẫn xem được. [ContentCategoryController](../src/Core/StoryPlatform.Api/Controllers/ContentCategoryController.cs#L67).
 - Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** contentCategoryId: `int`; bắt buộc.
 - Response: ApiResponse.data: [ContentCategoryDto](#dto-contentcategorydto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
@@ -2741,9 +2741,9 @@ Admin ghi, adult đọc. ID danh mục/enum tuổi thật; frontend có thể ch
 <a id="ep-contentcategory-listcontentcategories-get"></a>
 #### GET /api/v1/ContentCategory
 
-- Action/chức năng: **ListContentCategories** — Lấy danh sách toàn bộ danh mục nội dung.. [ContentCategoryController](../src/Core/StoryPlatform.Api/Controllers/ContentCategoryController.cs#L76).
+- Action/chức năng: **ListContentCategories** — Lấy danh sách danh mục đang hoạt động; Moderator/Administrator truyền `includeInactive=true` để lấy cả danh mục đã tắt (role khác truyền cũng bị bỏ qua). [ContentCategoryController](../src/Core/StoryPlatform.Api/Controllers/ContentCategoryController.cs#L79).
 - Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
-- Request: Không có tham số action; dùng token/header theo quyền..
+- Request: **query** includeInactive: `bool`; mặc định false.
 - Response: ApiResponse.data: [List&lt;ContentCategoryDto&gt;](#dto-contentcategorydto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.getContentCategories](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L101); nơi dùng: [CreateChildWizard.tsx](../../AI_Storytelling_Frontend/src/app/features/children/CreateChildWizard.tsx#L29); [SafetyWorkspace.tsx](../../AI_Storytelling_Frontend/src/app/features/safety/SafetyWorkspace.tsx#L82)
 

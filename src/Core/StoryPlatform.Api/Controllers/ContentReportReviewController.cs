@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.ContentReports.DTOs;
 using StoryPlatform.Application.Features.ContentReports.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
@@ -10,7 +12,7 @@ namespace StoryPlatform.Api.Controllers;
 /// Moderator xử lý report truyện (WF-L4E, UC-L4E-02). itemId là mục ContentReport mà người gọi đang nhận.
 /// Chỉ Moderator; Administrator không xử lý report.
 /// </summary>
-[Authorize(Roles = "Moderator")]
+[HasPermission(Permissions.Moderation.ReportReview)]
 public class ContentReportReviewController : BaseApiController
 {
     private readonly IContentReportReviewService _reviewService;

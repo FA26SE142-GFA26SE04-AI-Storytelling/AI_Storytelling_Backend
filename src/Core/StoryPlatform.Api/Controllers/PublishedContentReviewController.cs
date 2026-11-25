@@ -3,11 +3,13 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.ContentReports.DTOs;
 using StoryPlatform.Application.Features.ContentReports.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>Tab "Nội dung đã công khai" của Moderation view.</summary>
-[Authorize(Roles = "Moderator,Administrator")]
+[HasPermission(Permissions.Moderation.PublishedView)]
 public class PublishedContentReviewController : BaseApiController
 {
     private readonly IPublishedContentReviewService _publishedContentService;
@@ -48,7 +50,7 @@ public class PublishedContentReviewController : BaseApiController
         return HandleResult(result, "Mở bộ truyện mẫu thành công.");
     }
 
-    [Authorize(Roles = "Moderator")]
+    [HasPermission(Permissions.Moderation.PublishedReview)]
     [HttpPost("review-items")]
     public async Task<ActionResult<ApiResponse<ContentReportResultDto>>> CreateReviewItem(
         [FromBody] CreateReviewItemRequestDto request, CancellationToken cancellationToken)

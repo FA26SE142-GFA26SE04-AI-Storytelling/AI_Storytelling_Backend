@@ -8,10 +8,12 @@ using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
 using StoryPlatform.Application.Features.MediaStorage.Models;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
-[Authorize(Roles = "ContentCreator")]
+[HasPermission(Permissions.Creator.Studio)]
 [EnableRateLimiting(RateLimitPolicies.Ai)]
 [Route("api/v1/creator/stories/{storyId:int}/media")]
 public sealed class CreatorMediaUploadsController(IMediaGenerationService media) : BaseApiController

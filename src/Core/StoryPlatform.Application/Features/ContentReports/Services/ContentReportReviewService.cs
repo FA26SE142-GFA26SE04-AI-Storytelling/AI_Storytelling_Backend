@@ -8,6 +8,9 @@ using StoryPlatform.Application.Features.Moderation;
 using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Application.Features.AccessControl.Services;
 
 namespace StoryPlatform.Application.Features.ContentReports.Services;
 
@@ -17,13 +20,16 @@ public partial class ContentReportReviewService : IContentReportReviewService
     private readonly IAuditLogWriter _auditLogWriter;
     private readonly INotificationService _notificationService;
     private readonly IStoryArchiveConsequences _archiveConsequences;
+    private readonly IAccessPolicy _accessPolicy;
 
     public ContentReportReviewService(
         IUnitOfWork unitOfWork,
         IAuditLogWriter auditLogWriter,
         INotificationService notificationService,
-        IStoryArchiveConsequences archiveConsequences)
+        IStoryArchiveConsequences archiveConsequences,
+        IAccessPolicy? accessPolicy = null)
     {
+        _accessPolicy = accessPolicy ?? AccessPolicy.Default(unitOfWork);
         _unitOfWork = unitOfWork;
         _auditLogWriter = auditLogWriter;
         _notificationService = notificationService;
@@ -131,15 +137,10 @@ public partial class ContentReportReviewService : IContentReportReviewService
     private async Task<ReportContext> LoadClaimedContextAsync(
         int actorUserId, int itemId, CancellationToken cancellationToken)
     {
-        var actor = await _unitOfWork.Repository<UserAccount>()
-            .GetByIdAsync(actorUserId, cancellationToken);
-        if (actor == null
-            || actor.IsDeleted
-            || actor.Status != AccountStatus.Active
-            || actor.Role != UserRole.Moderator)
-        {
-            throw new ForbiddenException("Chỉ kiểm duyệt viên đang hoạt động mới xử lý được báo cáo.");
-        }
+        var actor = await _accessPolicy.EnsureAsync(
+            actorUserId, Permissions.Moderation.ReportReview, mode: AccessMode.Read,
+            deniedMessage: "Chỉ kiểm duyệt viên đang hoạt động mới xử lý được báo cáo.",
+            cancellationToken: cancellationToken);
 
         var item = await _unitOfWork.Repository<ModerationItem>()
             .GetByIdAsync(itemId, cancellationToken);

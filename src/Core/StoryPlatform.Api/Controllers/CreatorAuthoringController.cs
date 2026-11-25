@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.CreatorAuthoring.DTOs;
 using StoryPlatform.Application.Features.CreatorAuthoring.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
@@ -12,7 +14,7 @@ namespace StoryPlatform.Api.Controllers;
 public sealed class CreatorAuthoringController(ICreatorAuthoringService service) : BaseApiController
 {
     /// <summary>Chốt bản thủ công và xếp hàng Phase 5 ảnh/audio; không duyệt công khai.</summary>
-    [Authorize(Roles = "ContentCreator")]
+    [HasPermission(Permissions.Creator.Studio)]
     [HttpPost("{storyId:int}/manual/confirm-content")]
     [ProducesResponseType(typeof(ApiResponse<StoryPlatform.Application.Features.CreatorAuthoring.Services.ConfirmManualContentResult>), StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]

@@ -13,6 +13,9 @@ using StoryPlatform.Application.Features.Moderation.Interfaces;
 using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Application.Features.AccessControl.Services;
 
 namespace StoryPlatform.Application.Features.Administration.Services;
 
@@ -28,6 +31,8 @@ public class StaffAccountService : IStaffAccountService
     private readonly INotificationService _notificationService;
     private readonly IModerationSweepService _sweepService;
 
+    private readonly IAccessPolicy _accessPolicy;
+
     public StaffAccountService(
         IUnitOfWork unitOfWork,
         IUserProvisioningService userProvisioningService,
@@ -35,8 +40,10 @@ public class StaffAccountService : IStaffAccountService
         IEmailSender emailSender,
         IAuditLogWriter auditLogWriter,
         INotificationService notificationService,
-        IModerationSweepService sweepService)
+        IModerationSweepService sweepService,
+        IAccessPolicy? accessPolicy = null)
     {
+        _accessPolicy = accessPolicy ?? AccessPolicy.Default(unitOfWork);
         _unitOfWork = unitOfWork;
         _userProvisioningService = userProvisioningService;
         _jwtTokenGenerator = jwtTokenGenerator;
@@ -289,20 +296,12 @@ public class StaffAccountService : IStaffAccountService
         }
     }
 
-    private async Task<UserAccount> RequireActorAsync(
-        int actorAdminUserId, CancellationToken cancellationToken)
-    {
-        var actor = await _unitOfWork.Repository<UserAccount>()
-            .GetByIdAsync(actorAdminUserId, cancellationToken);
-        if (actor == null || actor.Role != UserRole.Administrator
-            || actor.Status != AccountStatus.Active)
-        {
-            throw new ForbiddenException(
-                "Chỉ quản trị viên đang hoạt động mới được quản lý tài khoản vận hành.");
-        }
-
-        return actor;
-    }
+    private Task<UserAccount> RequireActorAsync(
+        int actorAdminUserId, CancellationToken cancellationToken) =>
+        _accessPolicy.EnsureAsync(
+            actorAdminUserId, Permissions.Admin.StaffAccountManage,
+            deniedMessage: "Chỉ quản trị viên đang hoạt động mới được quản lý tài khoản vận hành.",
+            cancellationToken: cancellationToken);
 
     private async Task<UserAccount> RequireStaffAsync(
         int targetUserId, CancellationToken cancellationToken)

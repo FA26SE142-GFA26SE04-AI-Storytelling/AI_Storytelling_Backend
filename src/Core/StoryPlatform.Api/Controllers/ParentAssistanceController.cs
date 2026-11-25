@@ -5,10 +5,12 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.CreatorAssistance.DTOs;
 using StoryPlatform.Application.Features.ParentAuthoring;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
-[Authorize(Roles = "User")]
+[HasPermission(Permissions.Parent.StoryAuthor)]
 [Route("api/v1/parent/stories/{storyId:int}/assistance-tasks")]
 [RequestSizeLimit(1_000_000)]
 [ProducesResponseType(typeof(ApiResponse<object>), 400)]

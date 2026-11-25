@@ -1,5 +1,6 @@
 using StoryPlatform.Api.Extensions;
 using Microsoft.AspNetCore.RateLimiting;
+using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
@@ -9,6 +10,10 @@ using StoryPlatform.Application.Features.Auth.DTOs;
 using StoryPlatform.Application.Features.Auth.Interfaces;
 using StoryPlatform.Application.Features.AuditLogs.DTOs;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.DTOs;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
 
 namespace StoryPlatform.Api.Controllers;
 
@@ -184,6 +189,19 @@ public class AuthController : BaseApiController
         return HandleResult(profile, "Lấy thông tin tài khoản thành công.");
     }
 
+    /// <summary>
+    /// Quyền role của tài khoản đang đăng nhập đang giữ, kèm trạng thái và lý do, để giao diện ẩn hoặc khoá nút.
+    /// Chỉ phục vụ hiển thị; mỗi API vẫn tự kiểm quyền.
+    /// </summary>
+    [HttpGet("me/access")]
+    [Authorize]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<PermissionAccessDto>>>> GetMyAccess(
+        [FromServices] IAccessPolicy accessPolicy, CancellationToken cancellationToken)
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        return HandleResult(await accessPolicy.DescribeAsync(role, cancellationToken), "Lấy quyền của tài khoản thành công.");
+    }
+
     /// <summary>Sửa họ tên và ảnh đại diện của tài khoản đang đăng nhập.</summary>
     [HttpPut("me")]
     [Authorize]
@@ -197,7 +215,7 @@ public class AuthController : BaseApiController
 
     /// <summary>Yêu cầu đổi email Parent; OTP được gửi tới email mới.</summary>
     [HttpPost("change-email")]
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.AccountSelfManage)]
     public async Task<ActionResult<ApiResponse<object?>>> RequestEmailChange(
         [FromBody] RequestEmailChangeRequestDto request,
         CancellationToken cancellationToken)
@@ -209,7 +227,7 @@ public class AuthController : BaseApiController
 
     /// <summary>Xác nhận đổi email bằng OTP gửi tới email mới.</summary>
     [HttpPost("change-email/confirm")]
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.AccountSelfManage)]
     public async Task<ActionResult<ApiResponse<object?>>> ConfirmEmailChange(
         [FromBody] ConfirmEmailChangeRequestDto request,
         CancellationToken cancellationToken)
@@ -221,7 +239,7 @@ public class AuthController : BaseApiController
 
     /// <summary>Xem mọi hồ sơ trẻ sẽ bị xóa cùng tài khoản User.</summary>
     [HttpGet("me/delete-preview")]
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.AccountSelfManage)]
     public async Task<ActionResult<ApiResponse<DeleteAccountPreviewDto>>> GetDeleteAccountPreview(
         CancellationToken cancellationToken)
     {
@@ -232,7 +250,7 @@ public class AuthController : BaseApiController
 
     /// <summary>Xóa và ẩn danh hóa tài khoản User.</summary>
     [HttpDelete("me")]
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.AccountSelfManage)]
     public async Task<ActionResult<ApiResponse<object?>>> DeleteAccount(
         [FromBody] DeleteAccountRequestDto request, CancellationToken cancellationToken)
     {

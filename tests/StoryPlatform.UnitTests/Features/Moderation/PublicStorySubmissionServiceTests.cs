@@ -425,7 +425,7 @@ public class PublicStorySubmissionServiceTests
             .Select(method => method.Name).OrderBy(name => name).ToArray();
 
         Assert.NotNull(authorize);
-        Assert.Equal("ContentCreator", authorize!.Roles);
+        Assert.Equal("ContentCreator", authorize!.GrantedRoles());
         Assert.Equal(new[] { "Submit", "Withdraw" }, methods);
     }
 

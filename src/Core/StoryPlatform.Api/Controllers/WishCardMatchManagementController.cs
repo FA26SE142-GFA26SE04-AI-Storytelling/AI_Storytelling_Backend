@@ -4,11 +4,13 @@ using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.WishCards;
 using StoryPlatform.Application.Features.WishCards.Interfaces;
 using StoryPlatform.Application.Features.WishCards.Services;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>Moderator quản lý thẻ ước và yêu cầu AI đối chiếu truyện với danh mục thẻ.</summary>
-[Authorize(Roles = "Moderator,Administrator")]
+[HasPermission(Permissions.Review.WishCardManage)]
 [Route("api/v1/moderation/stories/{storyId:int}/wish-cards")]
 public sealed class WishCardMatchManagementController(IWishCardMatchService service) : BaseApiController
 {

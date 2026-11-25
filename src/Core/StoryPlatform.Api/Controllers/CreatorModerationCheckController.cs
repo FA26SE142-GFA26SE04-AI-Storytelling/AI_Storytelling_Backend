@@ -1,10 +1,12 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Features.Moderation.Services;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
-[Authorize(Roles = "ContentCreator")]
+[HasPermission(Permissions.Creator.Studio)]
 [Route("api/v1/creator/stories")]
 public sealed class CreatorModerationCheckController(GrayZoneContentCheckService checks) : BaseApiController
 {

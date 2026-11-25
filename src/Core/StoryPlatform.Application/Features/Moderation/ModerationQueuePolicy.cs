@@ -1,3 +1,4 @@
+using StoryPlatform.Application.Features.AccessControl;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -20,6 +21,21 @@ public static class ModerationQueuePolicy
     public static readonly TimeSpan ReviewViewLifetime = TimeSpan.FromHours(2);
 
     public static readonly TimeSpan ResubmissionPriorityWindow = TimeSpan.FromHours(24);
+
+    /// <summary>
+    /// Quyền cần có để nhận một loại mục. Báo cáo nội dung và đánh giá truyện đòi quyền chỉ Moderator giữ, nên
+    /// Administrator không nhận được kể cả khi không còn Moderator (Luồng 5).
+    /// </summary>
+    public static string ClaimPermission(ModerationItemType itemType) => itemType switch
+    {
+        ModerationItemType.PublicStoryReview => Permissions.Review.PublicStory,
+        ModerationItemType.GrayZoneStory => Permissions.Review.GrayZone,
+        ModerationItemType.ContentReport => Permissions.Moderation.ReportReview,
+        ModerationItemType.RoadmapTemplateReview => Permissions.Review.Roadmap,
+        ModerationItemType.PublicStoryRemoval => Permissions.Review.CreatorPublication,
+        ModerationItemType.StoryRating => Permissions.Moderation.RatingModerate,
+        _ => Permissions.Moderation.QueueProcess,
+    };
 
     public static TimeSpan GetSla(ModerationItemType itemType) => itemType switch
     {

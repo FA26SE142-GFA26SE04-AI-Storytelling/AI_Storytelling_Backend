@@ -8,6 +8,8 @@ using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.ReadingSessions;
 using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
 using StoryPlatform.Domain.Entities;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.ChildProfiles.Safety;
 
 namespace StoryPlatform.Api.Controllers;
 
@@ -173,6 +175,7 @@ public sealed class ChildReadingController : ControllerBase
     [RequestSizeLimit(ReadAloudPolicy.MaxAudioBytes + 100_000)]
     [RequestFormLimits(MemoryBufferThreshold = ReadAloudPolicy.MaxAudioBytes + 100_000,
         MultipartBodyLengthLimit = ReadAloudPolicy.MaxAudioBytes + 100_000)]
+    [RequireChildFeature(ChildFeatures.Voice)]
     public async Task<ActionResult<ApiResponse<ReadAloudResultDto>>> ReadAloud(
         int sessionId, int segmentId, [FromForm] ReadAloudForm form, CancellationToken ct)
     {
@@ -186,6 +189,7 @@ public sealed class ChildReadingController : ControllerBase
     [RequestSizeLimit(ReadAloudPolicy.MaxAudioBytes + 100_000)]
     [RequestFormLimits(MemoryBufferThreshold = ReadAloudPolicy.MaxAudioBytes + 100_000,
         MultipartBodyLengthLimit = ReadAloudPolicy.MaxAudioBytes + 100_000)]
+    [RequireChildFeature(ChildFeatures.Voice)]
     public async Task<ActionResult<ApiResponse<ReadAloudResultDto>>> ReadAloudPractice(
         int sessionId, int interactionId, [FromForm] ReadAloudForm form, CancellationToken ct)
     {

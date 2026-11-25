@@ -15,8 +15,8 @@
     tao them trong luc test se bi xoa. Bang __EFMigrationsHistory va cac bang do
     AuthoringGuideCatalogSeeder nap khong bi dong toi. Bang data_protection_keys
     chua khoa do ung dung tu sinh luc chay, khong seed va khong truncate.
-    Hai bang read_aloud_recordings va story_reflections duoc tao tu thao tac cua tre,
-    khong co file seed SQL (ghi am can doi tuong luu tru that).
+    Seed read_aloud_recordings va story_reflections dung duong dan ghi am GIA (khong co file
+    that trong storage), nen link nghe cac ban ghi seed se loi khi mo.
 
     Moi file seed phai co ten "<thu-tu-2-chu-so>_<ten-bang>.sql" va cac so
     phai lien tuc tu 01 den dung tong so bang can seed trong EF Core model snapshot.
@@ -184,14 +184,14 @@ function Assert-EfModelSeedCoverage {
         throw "Khong tim thay EF model snapshot de kiem tra coverage: $SnapshotPath"
     }
 
-    # Cac bang nay duoc AuthoringGuideCatalogSeeder nap luc ung dung khoi dong (JSON nhung),
+    # Cac bang nay duoc AuthoringGuideCatalogSeeder (JSON nhung) va PermissionCatalogSeeder nap luc ung dung khoi dong,
     # khong qua file seed SQL. Giu dong bo voi SeedDataAlignmentTests.seededByCode.
     $seededByCode = @('authoring_guide_catalog_versions', 'authoring_guide_catalogs',
-        'authoring_guide_items', 'authoring_guide_placeholders')
+        'authoring_guide_items', 'authoring_guide_placeholders',
+        'roles', 'permissions', 'role_permissions')
     # Khoa Data Protection do ung dung tu sinh; khong dua khoa vao file seed SQL.
-    # Ghi am va cam nhan duoc tao khi tre su dung ung dung; khong seed file am thanh gia.
     # Giu dong bo voi SeedDataAlignmentTests.generatedAtRuntime.
-    $generatedAtRuntime = @('data_protection_keys', 'read_aloud_recordings', 'story_reflections')
+    $generatedAtRuntime = @('data_protection_keys')
 
     $snapshot = [System.IO.File]::ReadAllText($SnapshotPath)
     $mappedTables = @([regex]::Matches($snapshot, '\.ToTable\("(?<table>[a-z][a-z0-9_]*)"') |
@@ -329,6 +329,8 @@ END
 $seed_preflight$;
 
 -- Xoa du lieu cu cua moi bang seed de nap lai tu dau (cung transaction, loi thi rollback).
+-- An NOTICE "truncate cascades to table ..." (bang khong seed nhung co FK toi bang seed cung bi xoa); loi/canh bao van hien.
+SET LOCAL client_min_messages = warning;
 TRUNCATE TABLE __SEED_TABLE_IDENTIFIERS__ RESTART IDENTITY CASCADE;
 
 '@

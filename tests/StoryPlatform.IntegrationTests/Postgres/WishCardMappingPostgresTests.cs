@@ -33,7 +33,10 @@ public sealed class WishCardMappingPostgresTests(AuthoringGuidePostgresFixture f
             var version = new StoryVersion { Story = story, VersionNo = 1, IsCurrent = true, Title = "Mèo Mun", Content = content };
             var card = new WishCard { Group = WishCardGroup.Character, Label = "Mèo Mun", IsActive = true,
                 ImageUrl = "https://test.invalid/cat.png" };
-            seed.AddRange(story, version, card);
+            // Như code thật: lưu truyện trước để metadata của phiên bản có StoryId.
+            seed.Add(story);
+            await seed.SaveChangesAsync();
+            seed.AddRange(version, card);
             await seed.SaveChangesAsync();
             (storyId, versionId, cardId) = (story.Id, version.Id, card.Id);
             if (initialMapping)

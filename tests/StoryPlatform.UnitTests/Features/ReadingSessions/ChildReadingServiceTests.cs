@@ -3,6 +3,9 @@ using System.Linq.Expressions;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using StoryPlatform.Application.Common.Exceptions;
+using StoryPlatform.Application.Features.ChildProfiles.ReadingTime;
+using StoryPlatform.Application.Features.ChildProfiles.ReadingTime.DTOs;
+using StoryPlatform.Application.Features.ChildProfiles.ReadingTime.Interfaces;
 using StoryPlatform.Application.Features.ChildRoadmaps;
 using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
 using StoryPlatform.Application.Features.ChildRoadmaps.Services;
@@ -1215,6 +1218,119 @@ public class ChildReadingServiceTests
     }
 
     // ---- GetSignalAsync ----
+
+    private readonly Mock<IReadingTimeGate> _readingTime = new();
+
+    private ChildReadingService SutWithReadingTime() => new(
+        _h.UnitOfWork.Object, _eligibility.Object, _recorder.Object, _rewards.Object, readingTime: _readingTime.Object);
+
+    private void ReadingTimeIs(string state, string? message = null) => _readingTime
+        .Setup(gate => gate.TrackReadingAsync(ReadingHarness.Child, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+        .ReturnsAsync(new ReadingTimeStatusDto { State = state, Message = message });
+
+    [Fact]
+    public async Task StartAsync_BlockedByReadingTime_CreatesNoSession()
+    {
+        _readingTime.Setup(gate => gate.EnsureCanStartAsync(ReadingHarness.Child, true, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ForbiddenException(ReadingSchedulePolicy.ChildScreenLimitMessage, ReadingSchedulePolicy.ScreenLimitErrorCode));
+
+        var error = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            SutWithReadingTime().StartAsync(ReadingHarness.Child, ReadingHarness.SessionKey, Start()));
+
+        Assert.Equal(ReadingSchedulePolicy.ScreenLimitErrorCode, error.ErrorCode);
+        Assert.Empty(_h.Sessions);
+    }
+
+    [Theory]
+    [InlineData("Outside", ReadingSchedulePolicy.ChildOutsideMessage)]
+    [InlineData("Bedtime", ReadingSchedulePolicy.ChildBedtimeMessage)]
+    [InlineData("ScreenLimitReached", ReadingSchedulePolicy.ChildScreenLimitMessage)]
+    public async Task GetSignalAsync_TimeUp_ExitsWithStatusMessage(string state, string message)
+    {
+        var session = _h.AddSession();
+        ReadingTimeIs(state, message);
+
+        var signal = await SutWithReadingTime().GetSignalAsync(ReadingHarness.Child, session.Id);
+
+        Assert.True(signal.ShouldExit);
+        Assert.Equal(ReadingSessionInterruptPolicy.ReturnToJourneyMap, signal.ReturnTo);
+        Assert.Equal(message, signal.Message);
+        Assert.Equal(state, signal.ReadingTime!.State);
+        Assert.Equal(SessionStatus.ForceExited, session.Status);
+        _readingTime.Verify(gate => gate.TrackReadingAsync(ReadingHarness.Child, session.StartedAt, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetSignalAsync_AfterTimeUpExit_StaysExitedWithoutTracking()
+    {
+        var session = _h.AddSession(SessionStatus.ForceExited);
+
+        var signal = await SutWithReadingTime().GetSignalAsync(ReadingHarness.Child, session.Id);
+
+        Assert.True(signal.ShouldExit);
+        Assert.Equal(ReadingSchedulePolicy.ChildTimeUpMessage, signal.Message);
+        _readingTime.Verify(gate => gate.TrackReadingAsync(It.IsAny<int>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetSignalAsync_AfterTimeUpExit_StillBlocked_ReturnsCurrentStatusMessage()
+    {
+        var session = _h.AddSession(SessionStatus.ForceExited);
+        _readingTime.Setup(gate => gate.GetStatusAsync(ReadingHarness.Child, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ReadingTimeStatusDto { State = "Bedtime", Message = ReadingSchedulePolicy.ChildBedtimeMessage });
+
+        var signal = await SutWithReadingTime().GetSignalAsync(ReadingHarness.Child, session.Id);
+
+        Assert.True(signal.ShouldExit);
+        Assert.Equal(ReadingSchedulePolicy.ChildBedtimeMessage, signal.Message);
+        Assert.Equal("Bedtime", signal.ReadingTime!.State);
+        _readingTime.Verify(gate => gate.TrackReadingAsync(It.IsAny<int>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetSignalAsync_AfterTimeUpExit_AllowedAgain_KeepsTimeUpMessage()
+    {
+        var session = _h.AddSession(SessionStatus.ForceExited);
+        _readingTime.Setup(gate => gate.GetStatusAsync(ReadingHarness.Child, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ReadingTimeStatusDto { State = "Allowed" });
+
+        var signal = await SutWithReadingTime().GetSignalAsync(ReadingHarness.Child, session.Id);
+
+        Assert.True(signal.ShouldExit);
+        Assert.Equal(ReadingSchedulePolicy.ChildTimeUpMessage, signal.Message);
+        _readingTime.Verify(gate => gate.TrackReadingAsync(It.IsAny<int>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData("Break")]
+    [InlineData("Grace")]
+    [InlineData("EndingSoon")]
+    [InlineData("Allowed")]
+    public async Task GetSignalAsync_NotBlocking_KeepsReading(string state)
+    {
+        var session = _h.AddSession();
+        ReadingTimeIs(state, "câu báo");
+
+        var signal = await SutWithReadingTime().GetSignalAsync(ReadingHarness.Child, session.Id);
+
+        Assert.False(signal.ShouldExit);
+        Assert.Null(signal.Message);
+        Assert.Equal(state, signal.ReadingTime!.State);
+        Assert.Equal(SessionStatus.Reading, session.Status);
+    }
+
+    [Fact]
+    public async Task GetSignalAsync_InterruptedByParent_SkipsReadingTime()
+    {
+        var session = _h.AddSession();
+        session.ForceExitRequestedAt = DateTime.UtcNow;
+
+        var signal = await SutWithReadingTime().GetSignalAsync(ReadingHarness.Child, session.Id);
+
+        Assert.Equal(ReadingSessionInterruptPolicy.ChildMessage, signal.Message);
+        Assert.Null(signal.ReadingTime);
+        _readingTime.Verify(gate => gate.TrackReadingAsync(It.IsAny<int>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
 
     [Fact]
     public async Task GetSignalAsync_NoInterrupt_SaysKeepReading()

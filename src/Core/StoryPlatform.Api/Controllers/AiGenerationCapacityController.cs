@@ -3,11 +3,13 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Common.Models;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
 [ApiController]
-[Authorize(Roles = "User,ContentCreator")]
+[HasPermission(Permissions.Shared.MediaGenerate)]
 [Route("api/v1/ai-generation")]
 public sealed class AiGenerationCapacityController(IAccountAiActivityService aiActivityService) : ControllerBase
 {

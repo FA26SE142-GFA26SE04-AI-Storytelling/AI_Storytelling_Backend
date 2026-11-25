@@ -20,6 +20,7 @@ public class WishCardManagementServiceTests
 
     public WishCardManagementServiceTests()
     {
+        _h.AddUser(Moderator).Role = UserRole.Moderator;
         _sut = new WishCardManagementService(_h.UnitOfWork.Object, _audit.Object);
     }
 

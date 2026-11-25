@@ -15,6 +15,7 @@ using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
 using StoryPlatform.Application.Features.ChildProfiles.ReadingSlots;
+using StoryPlatform.Application.Features.ChildProfiles.ReadingTime.Interfaces;
 
 namespace StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.Services;
 
@@ -40,8 +41,14 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
     private readonly IChildRoadmapEligibility _eligibility;
     private readonly IEasyLoginSecretProtector _secretProtector;
     private readonly IReadingSlotService? _readingSlots;
+    private readonly IReadingTimeGate? _readingTime;
+    private readonly IReadingHabitService? _readingHabit;
+
+    private readonly StoryPlatform.Application.Features.ChildProfiles.Safety.Interfaces.IChildFeatureService? _childFeatures;
 
     /// <param name="readingSlots">Chặn hồ sơ đang chỉ xem khi vượt số hồ sơ của gói; null thì không chặn.</param>
+    /// <param name="readingTime">Chặn theo "Thời gian &amp; thói quen" (nghỉ mắt, giờ ngủ, hết phút, ngoài giờ); null thì không chặn.</param>
+    /// <param name="readingHabit">Khối thói quen đọc trong /me; null thì không trả.</param>
     public ChildAccessCredentialService(
         IUnitOfWork unitOfWork,
         IChildProfileAccessGuard accessGuard,
@@ -50,9 +57,15 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
         IAuditLogWriter auditLogWriter,
         IChildRoadmapEligibility eligibility,
         IEasyLoginSecretProtector secretProtector,
-        IReadingSlotService? readingSlots = null)
+        IReadingSlotService? readingSlots = null,
+        IReadingTimeGate? readingTime = null,
+        StoryPlatform.Application.Features.ChildProfiles.Safety.Interfaces.IChildFeatureService? childFeatures = null,
+        IReadingHabitService? readingHabit = null)
     {
+        _readingHabit = readingHabit;
         _readingSlots = readingSlots;
+        _readingTime = readingTime;
+        _childFeatures = childFeatures;
         _secretProtector = secretProtector;
         _unitOfWork = unitOfWork;
         _accessGuard = accessGuard;
@@ -323,7 +336,16 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
         {
             ChildProfileId = profile.Id,
             Nickname = profile.Nickname,
-            AgeBand = profile.AgeBand.ToString()
+            AgeBand = profile.AgeBand.ToString(),
+            ReadingTime = _readingTime == null
+                ? null
+                : await _readingTime.GetStatusAsync(profile.Id, cancellationToken),
+            DisabledFeatures = _childFeatures is null
+                ? new List<string>()
+                : (await _childFeatures.GetDisabledAsync(profile.Id, cancellationToken)).ToList(),
+            Habit = _readingHabit == null
+                ? null
+                : await _readingHabit.GetChildHabitAsync(profile.Id, cancellationToken)
         };
     }
 
@@ -343,6 +365,12 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
             && !(await _readingSlots.GetReadableProfileIdsAsync(profile.OwnerUserId, cancellationToken)).Contains(profile.Id))
         {
             throw new ForbiddenException(childFacing ? ChildEntryBlockedMessage : ReadingSlotService.ViewOnlyMessage);
+        }
+
+        // Thời gian & thói quen: nghỉ mắt, giờ ngủ, hết phút màn hình, ngoài khung → không vào được.
+        if (_readingTime != null)
+        {
+            await _readingTime.EnsureCanStartAsync(profile.Id, childFacing, cancellationToken);
         }
 
         return profile;

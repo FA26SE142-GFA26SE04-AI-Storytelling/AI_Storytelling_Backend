@@ -42,6 +42,8 @@ using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.Services;
 using StoryPlatform.Application.Features.ChildProfiles.Safety.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Safety.Services;
+using StoryPlatform.Application.Features.ChildProfiles.ReadingTime.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.ReadingTime.Services;
 using StoryPlatform.Application.Features.ChildProfiles.Sessions.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Sessions.Services;
 using StoryPlatform.Application.Features.ContentCategories.Interfaces;
@@ -87,6 +89,12 @@ public static class DependencyInjection
         services.AddScoped<StoryPlatform.Application.Features.AuthoringGuideManagement.Interfaces.IAuthoringGuideManagementService,
             StoryPlatform.Application.Features.AuthoringGuideManagement.Services.AuthoringGuideManagementService>();
         services.AddScoped<StoryPlatform.Application.Features.ParentAuthoring.AuthoringGuideCatalogSeeder>();
+        services.AddScoped<Features.AccessControl.Services.PermissionCatalogSeeder>();
+        services.AddScoped<Features.ChildProfiles.Safety.Interfaces.IChildFeatureService, Features.ChildProfiles.Safety.Services.ChildFeatureService>();
+        // Thay bản tĩnh do AddAppAuthorization đăng ký trước: runtime đọc quyền từ DB (đăng ký sau thắng khi resolve).
+        services.AddScoped<Features.AccessControl.Interfaces.IPermissionService, Features.AccessControl.Services.PermissionService>();
+        services.AddScoped<Features.AccessControl.Interfaces.IRolePermissionAdminService, Features.AccessControl.Services.RolePermissionAdminService>();
+        services.AddScoped<Features.AccessControl.Interfaces.IAccessPolicy, Features.AccessControl.Services.AccessPolicy>();
         services.AddScoped<Features.CreatorAssistance.Interfaces.ICreatorAssistanceService, Features.CreatorAssistance.Services.CreatorAssistanceService>();
         services.AddSingleton<Features.CreatorAssistance.Services.AssistanceCancellationRegistry>();
         services.AddScoped<IUserProvisioningService, UserProvisioningService>();
@@ -102,6 +110,11 @@ public static class DependencyInjection
         services.AddScoped<IChildProfileEraser, ChildProfileEraser>();
         services.AddScoped<ILearningProfileService, LearningProfileService>();
         services.AddScoped<ISafetyPolicyService, SafetyPolicyService>();
+        services.AddScoped<ReadingScheduleService>();
+        services.AddScoped<IReadingScheduleService>(provider => provider.GetRequiredService<ReadingScheduleService>());
+        services.AddScoped<IReadingTimeGate>(provider => provider.GetRequiredService<ReadingScheduleService>());
+        services.AddScoped<IScreenTimeRecorder>(provider => provider.GetRequiredService<ReadingScheduleService>());
+        services.AddScoped<IReadingHabitService, ReadingHabitService>();
         services.AddScoped<IChildAccessCredentialService, ChildAccessCredentialService>();
         services.AddScoped<IChildSessionRevoker, ChildSessionRevoker>();
         services.AddScoped<IParentalGateService, ParentalGateService>();

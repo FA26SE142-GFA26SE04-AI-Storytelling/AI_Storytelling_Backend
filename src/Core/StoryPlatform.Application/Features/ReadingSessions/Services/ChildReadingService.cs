@@ -9,6 +9,9 @@ using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using StoryPlatform.Application.Features.ChildProfiles.ReadingSlots;
 using StoryPlatform.Application.Features.Events.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.ReadingTime;
+using StoryPlatform.Application.Features.ChildProfiles.ReadingTime.DTOs;
+using StoryPlatform.Application.Features.ChildProfiles.ReadingTime.Interfaces;
 using StoryPlatform.Application.Features.PlanBenefits.Interfaces;
 
 namespace StoryPlatform.Application.Features.ReadingSessions.Services;
@@ -25,6 +28,7 @@ public class ChildReadingService : IChildReadingService
     private readonly IPlanUsageService? _planUsage;
     private readonly IEventIntegrationHooks? _eventHooks;
     private readonly ILogger<ChildReadingService>? _logger;
+    private readonly IReadingTimeGate? _readingTime;
 
     /// <param name="readingSlots">Hồ sơ đang chỉ xem (vượt số hồ sơ của gói) không mở được phiên đọc; null thì không chặn.</param>
     public ChildReadingService(
@@ -37,8 +41,10 @@ public class ChildReadingService : IChildReadingService
         IPlanBenefitService? planBenefits = null,
         IPlanUsageService? planUsage = null,
         IEventIntegrationHooks? eventHooks = null,
-        ILogger<ChildReadingService>? logger = null)
+        ILogger<ChildReadingService>? logger = null,
+        IReadingTimeGate? readingTime = null)
     {
+        _readingTime = readingTime;
         _readingSlots = readingSlots;
         _planBenefits = planBenefits;
         _planUsage = planUsage;
@@ -70,6 +76,11 @@ public class ChildReadingService : IChildReadingService
             && !(await _readingSlots.GetReadableProfileIdsAsync(child.OwnerUserId, ct)).Contains(child.Id))
         {
             throw new ForbiddenException(ChildReadingPolicy.ProfileUnavailableMessage);
+        }
+
+        if (_readingTime != null)
+        {
+            await _readingTime.EnsureCanStartAsync(childProfileId, childFacing: true, ct);
         }
 
         var childSession = await _unitOfWork.Repository<ChildSession>().FirstOrDefaultAsync(
@@ -694,7 +705,24 @@ public class ChildReadingService : IChildReadingService
     public async Task<ForceExitSignalDto> GetSignalAsync(int childProfileId, int sessionId, CancellationToken ct = default)
     {
         var session = await RequireSessionAsync(childProfileId, sessionId, ct);
-        var shouldExit = session.ForceExitRequestedAt != null || session.Status == SessionStatus.ForceExited;
+        var interrupted = session.ForceExitRequestedAt != null;
+        // ReadingSessionInterruptService chỉ đặt ForceExited khi có ForceExitRequestedAt, nên ForceExited không kèm
+        // ForceExitRequestedAt nghĩa là phiên đã thoát vì hết giờ ở lần signal trước.
+        var timeUpEarlier = !interrupted && session.Status == SessionStatus.ForceExited;
+
+        ReadingTimeStatusDto? readingTime = null;
+        if (_readingTime != null && !interrupted)
+        {
+            // Phiên đang đọc: theo dõi (ghi LastReadingSeenAt). Phiên đã thoát vì hết giờ: chỉ đọc trạng thái hiện tại.
+            readingTime = ChildReadingPolicy.IsActive(session.Status)
+                ? await _readingTime.TrackReadingAsync(childProfileId, session.StartedAt, ct)
+                : timeUpEarlier
+                    ? await _readingTime.GetStatusAsync(childProfileId, ct)
+                    : null;
+        }
+
+        var timeUpNow = readingTime != null && ReadingSchedulePolicy.EndsSession(readingTime.State);
+        var shouldExit = interrupted || timeUpEarlier || timeUpNow;
         if (shouldExit && ChildReadingPolicy.IsActive(session.Status))
         {
             session.Status = SessionStatus.ForceExited;
@@ -707,8 +735,12 @@ public class ChildReadingService : IChildReadingService
         {
             ShouldExit = shouldExit,
             ReturnTo = shouldExit ? ReadingSessionInterruptPolicy.ReturnToJourneyMap : null,
-            Message = shouldExit ? ReadingSessionInterruptPolicy.ChildMessage : null,
-            SessionStatus = session.Status.ToString()
+            Message = interrupted ? ReadingSessionInterruptPolicy.ChildMessage
+                : timeUpNow ? readingTime!.Message
+                : timeUpEarlier ? ReadingSchedulePolicy.ChildTimeUpMessage
+                : null,
+            SessionStatus = session.Status.ToString(),
+            ReadingTime = readingTime
         };
     }
 

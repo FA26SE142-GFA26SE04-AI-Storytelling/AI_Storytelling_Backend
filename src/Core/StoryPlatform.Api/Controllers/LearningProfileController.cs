@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.ChildProfiles.Learning.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.Learning.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
@@ -21,7 +23,7 @@ public class LearningProfileController : BaseApiController
     /// Tạo/cập nhật Learning Profile của một hồ sơ trẻ (Bước 1.3).
     /// </summary>
     [HttpPut("{childProfileId:int}")]
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.ChildProfileManage)]
     public async Task<ActionResult<ApiResponse<LearningProfileDto>>> SetLearningProfile(
         int childProfileId,
         [FromBody] SetLearningProfileRequestDto request,
@@ -37,7 +39,7 @@ public class LearningProfileController : BaseApiController
     /// Tạo mới Learning Profile của một hồ sơ trẻ (dùng cùng logic upsert với PUT).
     /// </summary>
     [HttpPost("{childProfileId:int}")]
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.ChildProfileManage)]
     public async Task<ActionResult<ApiResponse<LearningProfileDto>>> CreateLearningProfile(
         int childProfileId,
         [FromBody] SetLearningProfileRequestDto request,
@@ -53,7 +55,7 @@ public class LearningProfileController : BaseApiController
     /// Lấy Learning Profile hiện tại của hồ sơ trẻ.
     /// </summary>
     [HttpGet("{childProfileId:int}")]
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.ChildProfileManage)]
     public async Task<ActionResult<ApiResponse<LearningProfileDto>>> GetLearningProfile(
         int childProfileId, CancellationToken cancellationToken)
     {
@@ -65,7 +67,7 @@ public class LearningProfileController : BaseApiController
     /// Xoá hẳn Learning Profile của hồ sơ trẻ (xoá cứng — chỉ là cấu hình, không phải lịch sử học tập).
     /// </summary>
     [HttpDelete("{childProfileId:int}")]
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.ChildProfileManage)]
     public async Task<ActionResult<ApiResponse<object?>>> DeleteLearningProfile(
         int childProfileId, CancellationToken cancellationToken)
     {

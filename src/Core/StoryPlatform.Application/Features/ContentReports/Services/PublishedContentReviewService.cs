@@ -8,8 +8,12 @@ using StoryPlatform.Application.Features.ContentReports.Interfaces;
 using StoryPlatform.Application.Features.MediaStorage.Interfaces;
 using StoryPlatform.Application.Features.Moderation;
 using StoryPlatform.Application.Features.RoadmapTemplates;
+using StoryPlatform.Application.Features.Stories.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Application.Features.AccessControl.Services;
 
 namespace StoryPlatform.Application.Features.ContentReports.Services;
 
@@ -19,12 +23,18 @@ public class PublishedContentReviewService : IPublishedContentReviewService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditLogWriter _auditLogWriter;
     private readonly IMediaStorage? _mediaStorage;
+    private readonly IAccessPolicy _accessPolicy;
+    private readonly IStoryCoverResolver? _covers;
 
     public PublishedContentReviewService(
         IUnitOfWork unitOfWork,
         IAuditLogWriter auditLogWriter,
-        IMediaStorage? mediaStorage = null)
+        IMediaStorage? mediaStorage = null,
+        IAccessPolicy? accessPolicy = null,
+        IStoryCoverResolver? covers = null)
     {
+        _covers = covers;
+        _accessPolicy = accessPolicy ?? AccessPolicy.Default(unitOfWork);
         _unitOfWork = unitOfWork;
         _auditLogWriter = auditLogWriter;
         _mediaStorage = mediaStorage;
@@ -202,8 +212,17 @@ public class PublishedContentReviewService : IPublishedContentReviewService
             link => storyIds.Contains(link.StoryId), cancellationToken: cancellationToken);
         var categories = await LoadCategoriesAsync(
             links.Select(link => link.ContentCategoryId).Distinct().ToList(), cancellationToken);
+        var authorIds = stories.Select(story => story.AuthorUserId).Distinct().ToList();
+        var authors = (await _unitOfWork.Repository<UserAccount>().FindAsync(
+                user => authorIds.Contains(user.Id), cancellationToken: cancellationToken))
+            .ToDictionary(user => user.Id);
+        var cover = _covers is null
+            ? value => value
+            : await _covers.ResolveAsync(stories.Select(story => story.CoverImageUrl), cancellationToken);
         var items = stories.Select(story => new PublishedContentItemDto
         {
+            CoverImageUrl = cover(story.CoverImageUrl),
+            AuthorName = ModerationQueuePolicy.DisplayName(authors.GetValueOrDefault(story.AuthorUserId)),
             Source = PublishedContentSource.PublicLibrary.ToString(),
             Id = story.Id,
             Title = story.Title ?? string.Empty,
@@ -279,18 +298,11 @@ public class PublishedContentReviewService : IPublishedContentReviewService
             });
     }
 
-    private async Task<UserAccount> RequireStaffAsync(int actorUserId, CancellationToken cancellationToken)
-    {
-        var actor = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(actorUserId, cancellationToken);
-        if (actor == null || actor.IsDeleted || actor.Status != AccountStatus.Active
-            || actor.Role is not (UserRole.Moderator or UserRole.Administrator))
-        {
-            throw new ForbiddenException(
-                "Chỉ kiểm duyệt viên hoặc quản trị viên đang hoạt động mới xem được nội dung đã công khai.");
-        }
-
-        return actor;
-    }
+    private Task<UserAccount> RequireStaffAsync(int actorUserId, CancellationToken cancellationToken) =>
+        _accessPolicy.EnsureAsync(
+            actorUserId, Permissions.Moderation.PublishedView, mode: AccessMode.Read,
+            deniedMessage: "Chỉ kiểm duyệt viên hoặc quản trị viên đang hoạt động mới xem được nội dung đã công khai.",
+            cancellationToken: cancellationToken);
 
     private static AgeBand? ParseAgeBand(string? ageBand)
     {

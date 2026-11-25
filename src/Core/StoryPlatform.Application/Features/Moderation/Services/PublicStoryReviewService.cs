@@ -10,6 +10,9 @@ using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
 using System.Text.Json;
+using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Application.Features.AccessControl.Services;
 
 namespace StoryPlatform.Application.Features.Moderation.Services;
 
@@ -20,6 +23,7 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
     private readonly INotificationService _notificationService;
     private readonly IMediaStorage? _mediaStorage;
     private readonly ITokenQuotaService? _tokenQuotaService;
+    private readonly IAccessPolicy _accessPolicy;
 
     /// <summary>Đường dẫn media trong gói duyệt sống 1 giờ; mỗi lần mở lại gói hoặc sau mỗi thao tác sẽ được ký lại.</summary>
     private static readonly TimeSpan ReviewMediaUrlLifetime = TimeSpan.FromHours(1);
@@ -29,8 +33,10 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
         IAuditLogWriter auditLogWriter,
         INotificationService notificationService,
         IMediaStorage? mediaStorage = null,
-        ITokenQuotaService? tokenQuotaService = null)
+        ITokenQuotaService? tokenQuotaService = null,
+        IAccessPolicy? accessPolicy = null)
     {
+        _accessPolicy = accessPolicy ?? AccessPolicy.Default(unitOfWork);
         _unitOfWork = unitOfWork;
         _auditLogWriter = auditLogWriter;
         _notificationService = notificationService;
@@ -71,14 +77,10 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
     private async Task<ReviewContext> LoadClaimedContextAsync(
         int actorUserId, int itemId, CancellationToken cancellationToken)
     {
-        var actor = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(actorUserId, cancellationToken);
-        if (actor == null
-            || actor.Status != AccountStatus.Active
-            || actor.Role is not (UserRole.Moderator or UserRole.Administrator))
-        {
-            throw new ForbiddenException(
-                "Chỉ kiểm duyệt viên hoặc quản trị viên đang hoạt động mới duyệt được truyện thư viện công khai.");
-        }
+        var actor = await _accessPolicy.EnsureAsync(
+            actorUserId, Permissions.Review.PublicStory, mode: AccessMode.Read,
+            deniedMessage: "Chỉ kiểm duyệt viên hoặc quản trị viên đang hoạt động mới duyệt được truyện thư viện công khai.",
+            cancellationToken: cancellationToken);
 
         var item = await _unitOfWork.Repository<ModerationItem>().GetByIdAsync(itemId, cancellationToken)
                    ?? throw new NotFoundException("Mục kiểm duyệt", itemId);

@@ -3,15 +3,20 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.ContentCategories.DTOs;
 using StoryPlatform.Application.Features.ContentCategories.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>
-/// Quản lý danh mục nội dung dùng chung.
+/// Quản lý danh mục nội dung dùng chung. Moderator ghi; mọi tài khoản đăng nhập đọc danh mục đang hoạt động.
 /// </summary>
 public class ContentCategoryController : BaseApiController
 {
     private readonly IContentCategoryService _contentCategoryService;
+
+    /// <summary>Moderator và Administrator được xem cả danh mục đã tắt.</summary>
+    private bool CanSeeInactive => User.IsInRole("Moderator") || User.IsInRole("Administrator");
 
     public ContentCategoryController(IContentCategoryService contentCategoryService)
     {
@@ -22,7 +27,7 @@ public class ContentCategoryController : BaseApiController
     /// Tạo mới một danh mục nội dung.
     /// </summary>
     [HttpPost]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Moderation.CategoryManage)]
     public async Task<ActionResult<ApiResponse<ContentCategoryDto>>> CreateContentCategory(
         [FromBody] CreateContentCategoryRequestDto request, CancellationToken cancellationToken)
     {
@@ -35,7 +40,7 @@ public class ContentCategoryController : BaseApiController
     /// Cập nhật tên hiển thị và trạng thái hoạt động của danh mục nội dung.
     /// </summary>
     [HttpPut("{contentCategoryId:int}")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Moderation.CategoryManage)]
     public async Task<ActionResult<ApiResponse<ContentCategoryDto>>> UpdateContentCategory(
         int contentCategoryId, [FromBody] UpdateContentCategoryRequestDto request,
         CancellationToken cancellationToken)
@@ -45,10 +50,10 @@ public class ContentCategoryController : BaseApiController
     }
 
     /// <summary>
-    /// Xoá hẳn một danh mục nội dung.
+    /// Xoá hẳn một danh mục nội dung chưa được dùng ở đâu; đang được dùng thì trả 409 (hãy tắt IsActive).
     /// </summary>
     [HttpDelete("{contentCategoryId:int}")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Moderation.CategoryManage)]
     public async Task<ActionResult<ApiResponse<object?>>> DeleteContentCategory(
         int contentCategoryId, CancellationToken cancellationToken)
     {
@@ -57,26 +62,26 @@ public class ContentCategoryController : BaseApiController
     }
 
     /// <summary>
-    /// Lấy chi tiết một danh mục nội dung theo mã định danh.
+    /// Lấy chi tiết một danh mục nội dung theo mã định danh. Danh mục đã tắt chỉ Moderator/Administrator xem được.
     /// </summary>
     [HttpGet("{contentCategoryId:int}")]
     [Authorize]
     public async Task<ActionResult<ApiResponse<ContentCategoryDto>>> GetContentCategory(
         int contentCategoryId, CancellationToken cancellationToken)
     {
-        var result = await _contentCategoryService.GetByIdAsync(contentCategoryId, cancellationToken);
+        var result = await _contentCategoryService.GetByIdAsync(contentCategoryId, CanSeeInactive, cancellationToken);
         return HandleResult(result, "Lấy Content Category thành công.");
     }
 
     /// <summary>
-    /// Lấy danh sách toàn bộ danh mục nội dung.
+    /// Lấy danh sách danh mục đang hoạt động; Moderator/Administrator truyền includeInactive=true để lấy cả danh mục đã tắt.
     /// </summary>
     [HttpGet]
     [Authorize]
     public async Task<ActionResult<ApiResponse<List<ContentCategoryDto>>>> ListContentCategories(
-        CancellationToken cancellationToken)
+        [FromQuery] bool includeInactive, CancellationToken cancellationToken)
     {
-        var result = await _contentCategoryService.ListAsync(cancellationToken);
+        var result = await _contentCategoryService.ListAsync(includeInactive && CanSeeInactive, cancellationToken);
         return HandleResult(result, "Lấy danh sách Content Category thành công.");
     }
 }

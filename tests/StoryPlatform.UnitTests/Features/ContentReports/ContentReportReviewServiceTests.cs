@@ -901,7 +901,7 @@ public class ContentReportReviewServiceTests
             .ToArray();
 
         Assert.NotNull(authorize);
-        Assert.Equal("Moderator", authorize!.Roles);
+        Assert.Equal("Moderator", authorize!.GrantedRoles());
         Assert.Equal(["Archive", "Dismiss", "GetDetail"], methods);
     }
 }

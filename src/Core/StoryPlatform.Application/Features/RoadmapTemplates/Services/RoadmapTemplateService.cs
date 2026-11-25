@@ -6,6 +6,9 @@ using StoryPlatform.Application.Features.RoadmapTemplates.DTOs;
 using StoryPlatform.Application.Features.RoadmapTemplates.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.AccessControl;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Application.Features.AccessControl.Services;
 
 namespace StoryPlatform.Application.Features.RoadmapTemplates.Services;
 
@@ -15,13 +18,16 @@ public partial class RoadmapTemplateService : IRoadmapTemplateService
     private readonly IRoadmapSubmissionChecker _checker;
     private readonly IModerationQueueService _queueService;
     private readonly IAuditLogWriter _auditLogWriter;
+    private readonly IAccessPolicy _accessPolicy;
 
     public RoadmapTemplateService(
         IUnitOfWork unitOfWork,
         IRoadmapSubmissionChecker checker,
         IModerationQueueService queueService,
-        IAuditLogWriter auditLogWriter)
+        IAuditLogWriter auditLogWriter,
+        IAccessPolicy? accessPolicy = null)
     {
+        _accessPolicy = accessPolicy ?? AccessPolicy.Default(unitOfWork);
         _unitOfWork = unitOfWork;
         _checker = checker;
         _queueService = queueService;
@@ -296,28 +302,18 @@ public partial class RoadmapTemplateService : IRoadmapTemplateService
             request.ReadingLevelMax, request.DefaultDaysPerStory);
     }
 
-    private async Task<UserAccount> RequireModeratorAsync(int userId, CancellationToken cancellationToken)
-    {
-        var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(userId, cancellationToken);
-        if (user == null || user.IsDeleted || user.Status != AccountStatus.Active || user.Role != UserRole.Moderator)
-        {
-            throw new ForbiddenException("Chỉ kiểm duyệt viên đang hoạt động mới thao tác được với bộ truyện mẫu.");
-        }
+    /// <summary>Soạn bộ truyện mẫu: Moderator; Administrator chỉ khi không còn Moderator hoạt động (Luồng 5).</summary>
+    private Task<UserAccount> RequireModeratorAsync(int userId, CancellationToken cancellationToken) =>
+        _accessPolicy.EnsureAsync(
+            userId, Permissions.Review.RoadmapTemplateAuthor,
+            deniedMessage: "Chỉ kiểm duyệt viên đang hoạt động mới thao tác được với bộ truyện mẫu.",
+            cancellationToken: cancellationToken);
 
-        return user;
-    }
-
-    private async Task<UserAccount> RequireStaffAsync(int userId, CancellationToken cancellationToken)
-    {
-        var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(userId, cancellationToken);
-        if (user == null || user.IsDeleted || user.Status != AccountStatus.Active
-            || user.Role is not (UserRole.Moderator or UserRole.Administrator))
-        {
-            throw new ForbiddenException("Chỉ kiểm duyệt viên hoặc quản trị viên đang hoạt động mới xem được bộ truyện mẫu.");
-        }
-
-        return user;
-    }
+    private Task<UserAccount> RequireStaffAsync(int userId, CancellationToken cancellationToken) =>
+        _accessPolicy.EnsureAsync(
+            userId, Permissions.Review.RoadmapTemplateView, mode: AccessMode.Read,
+            deniedMessage: "Chỉ kiểm duyệt viên hoặc quản trị viên đang hoạt động mới xem được bộ truyện mẫu.",
+            cancellationToken: cancellationToken);
 
     private static string DisplayName(UserAccount user) =>
         string.IsNullOrWhiteSpace(user.FullName) ? user.Username : user.FullName;

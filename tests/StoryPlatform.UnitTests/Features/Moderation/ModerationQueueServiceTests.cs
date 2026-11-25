@@ -227,7 +227,13 @@ public class ModerationQueueServiceTests
 
         await _sut.ListAsync(_admin.Id, new ModerationQueueQueryDto());
 
-        Assert.True(filter!.Compile()(PendingItem(createdBy: _admin.Id)));
+        var own = PendingItem(createdBy: _admin.Id);
+        own.ItemType = ModerationItemType.GrayZoneStory;
+        Assert.True(filter!.Compile()(own));
+        // Loại mục Administrator không được nhận thì không hiện trong danh sách.
+        Assert.False(filter.Compile()(PendingItem()));
+        own.ItemType = ModerationItemType.StoryRating;
+        Assert.False(filter.Compile()(own));
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseNpgsql("Host=localhost;Database=metadata_only;Username=unused;Password=unused").Options;
         await using var context = new ApplicationDbContext(options);
@@ -322,6 +328,32 @@ public class ModerationQueueServiceTests
         await Assert.ThrowsAsync<ForbiddenException>(() => _sut.ClaimAsync(_admin.Id, item.Id));
 
         Assert.Equal(ModerationItemStatus.Pending, item.Status);
+    }
+
+    [Fact]
+    public async Task ClaimAsync_AdministratorClaimsEscalatedItem_WhileModeratorIsAvailable()
+    {
+        var item = PendingItem();
+        item.ItemType = ModerationItemType.GrayZoneStory;
+        item.EscalatedAt = DateTime.UtcNow.AddMinutes(-5);
+        ReturnItem(item);
+        SetEligibleModeratorCount(1);
+
+        var result = await _sut.ClaimAsync(_admin.Id, item.Id);
+
+        Assert.Equal(_admin.Id, result.ClaimedByUserId);
+    }
+
+    [Fact]
+    public void ClaimPermission_MapsEachItemTypeToItsReviewPermission()
+    {
+        Assert.Equal("moderation.report.review", ModerationQueuePolicy.ClaimPermission(ModerationItemType.ContentReport));
+        Assert.Equal("moderation.rating.moderate", ModerationQueuePolicy.ClaimPermission(ModerationItemType.StoryRating));
+        Assert.Equal("review.gray_zone", ModerationQueuePolicy.ClaimPermission(ModerationItemType.GrayZoneStory));
+        Assert.Equal("review.public_story", ModerationQueuePolicy.ClaimPermission(ModerationItemType.PublicStoryReview));
+        Assert.Equal("review.roadmap", ModerationQueuePolicy.ClaimPermission(ModerationItemType.RoadmapTemplateReview));
+        Assert.Equal("review.creator_publication", ModerationQueuePolicy.ClaimPermission(ModerationItemType.PublicStoryRemoval));
+        Assert.Equal("moderation.queue.process", ModerationQueuePolicy.ClaimPermission(ModerationItemType.CommunitySubmission));
     }
 
     [Fact]
@@ -565,7 +597,7 @@ public class ModerationQueueServiceTests
         var authorize = typeof(ModerationQueueController).GetCustomAttribute<AuthorizeAttribute>();
 
         Assert.NotNull(authorize);
-        Assert.Equal("Moderator,Administrator", authorize!.Roles);
+        Assert.Equal("Moderator,Administrator", authorize!.GrantedRoles());
     }
 
     // ---- storyImpact ----

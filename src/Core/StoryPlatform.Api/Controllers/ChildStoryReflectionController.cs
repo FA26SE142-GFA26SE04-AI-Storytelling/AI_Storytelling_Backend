@@ -7,12 +7,15 @@ using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.ReadingSessions;
 using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.ChildProfiles.Safety;
 
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>Cảm nhận sau khi đọc, phía trẻ: cảm xúc, cảnh thích nhất và lời bé về cảnh đó (viết hoặc kể).</summary>
 [ApiController]
 [Authorize(Policy = ServiceExtensions.ChildSessionPolicy)]
+[RequireChildFeature(ChildFeatures.Reflection)]
 [Route("api/v1/child/reading/sessions/{sessionId:int}/reflection")]
 public sealed class ChildStoryReflectionController : ControllerBase
 {

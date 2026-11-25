@@ -5,6 +5,8 @@ using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.Administration.DTOs;
 using StoryPlatform.Application.Features.Administration.Interfaces;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
@@ -12,7 +14,7 @@ namespace StoryPlatform.Api.Controllers;
 /// Administrator quản lý tài khoản Content Creator (Luồng 5, M5): xem danh sách, vô hiệu hoá, kích hoạt lại.
 /// Duyệt đơn đăng ký Creator ở api/v1/admin/creator-applications.
 /// </summary>
-[Authorize(Roles = "Administrator")]
+[HasPermission(Permissions.Admin.CreatorAccountManage)]
 [Route("api/v1/admin/creators")]
 public class CreatorAccountController : BaseApiController
 {

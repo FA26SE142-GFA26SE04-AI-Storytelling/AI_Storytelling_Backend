@@ -35,6 +35,8 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<StoryReflection> StoryReflections => Set<StoryReflection>();
 
     public DbSet<SafetyPolicy> SafetyPolicies => Set<SafetyPolicy>();
+    public DbSet<ReadingSchedule> ReadingSchedules => Set<ReadingSchedule>();
+    public DbSet<ReadingScheduleWindow> ReadingScheduleWindows => Set<ReadingScheduleWindow>();
     public DbSet<SafetyPolicyCategory> SafetyPolicyCategories => Set<SafetyPolicyCategory>();
     public DbSet<ChildAccessCredential> ChildAccessCredentials => Set<ChildAccessCredential>();
     public DbSet<ChildSession> ChildSessions => Set<ChildSession>();
@@ -89,6 +91,9 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<AiGovernanceMetric> AiGovernanceMetrics => Set<AiGovernanceMetric>();
     public DbSet<BusinessReport> BusinessReports => Set<BusinessReport>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<Role> Roles => Set<Role>();
+    public DbSet<Permission> Permissions => Set<Permission>();
+    public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
     public DbSet<ChildProfileVersionHistory> ChildProfileVersionHistories => Set<ChildProfileVersionHistory>();
     public DbSet<TokenQuotaConfig> TokenQuotaConfigs => Set<TokenQuotaConfig>();
     public DbSet<SubscriptionPlan> SubscriptionPlans => Set<SubscriptionPlan>();

@@ -4,6 +4,8 @@ using StoryPlatform.Api.Extensions;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.CreatorTiers.DTOs;
 using StoryPlatform.Application.Features.CreatorTiers.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
@@ -11,7 +13,7 @@ namespace StoryPlatform.Api.Controllers;
 /// Administrator xem và thu hồi cấp Creator đối tác (Luồng 5, 5g). Việc xét cấp hằng tháng chạy tự động
 /// (SubscriptionCycleWorker và lúc cấp hạn mức tháng); Creator xem tiến độ của mình ở CreatorStatistics/content.
 /// </summary>
-[Authorize(Roles = "Administrator")]
+[HasPermission(Permissions.Admin.CreatorTierManage)]
 [Route("api/v1/admin/creators/{creatorUserId:int}/partner-tier")]
 public class CreatorTierController : BaseApiController
 {

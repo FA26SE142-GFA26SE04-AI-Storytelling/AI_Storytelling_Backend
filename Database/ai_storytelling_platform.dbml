@@ -803,7 +803,7 @@ Table child_sessions {
 Table content_categories {
   Code varchar(100) [not null]
   CreatedAt timestamptz [not null]
-  CreatedByAdminId int
+  CreatedByModeratorId int
   DefaultBlockedAgeBands text[] [not null]
   DisplayName varchar(150) [not null]
   Group ContentCategoryGroup [not null, note: 'EF PostgreSQL type: character varying(30)']
@@ -813,7 +813,7 @@ Table content_categories {
   UpdatedAt timestamptz
   Indexes {
     Code [unique]
-    CreatedByAdminId
+    CreatedByModeratorId
   }
 }
 
@@ -1331,6 +1331,18 @@ Table payment_transactions {
   }
 }
 
+Table permissions {
+  Code varchar(100) [not null]
+    Code [unique]
+  CreatedAt timestamptz [not null]
+  Description varchar(300) [not null]
+  Group varchar(50) [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  IsStaffGrantable boolean [not null]
+  UpdatedAt timestamptz
+}
+
 Table plan_settings {
   CreatedAt timestamptz [not null]
   CreativeFundPercent int [not null]
@@ -1517,6 +1529,28 @@ Table refresh_tokens {
     TokenHash [unique]
     UserAccountId
   }
+}
+
+Table role_permissions {
+  CreatedAt timestamptz [not null]
+  PermissionId int [not null]
+  RoleId int [not null]
+  Indexes {
+    (RoleId, PermissionId) [pk]
+    PermissionId
+  }
+}
+
+Table roles {
+  Code varchar(50) [not null]
+    Code [unique]
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  IsStaff boolean [not null]
+  IsSystem boolean [not null]
+  Name varchar(100) [not null]
+  UpdatedAt timestamptz
 }
 
 Table safety_policies {
@@ -2183,7 +2217,7 @@ Ref: child_roadmap_items.StoryId > stories.Id
 Ref: child_sessions.ChildAccessCredentialId > child_access_credentials.Id
 Ref: child_sessions.ChildProfileId > child_profiles.Id
 Ref: child_sessions.SupervisorSessionId > refresh_tokens.Id
-Ref: content_categories.CreatedByAdminId > user_accounts.Id
+Ref: content_categories.CreatedByModeratorId > user_accounts.Id
 Ref: content_reports.ReadingRoadmapId > reading_roadmaps.Id
 Ref: content_reports.ReporterUserId > user_accounts.Id
 Ref: content_reports.ReviewedByUserId > user_accounts.Id
@@ -2339,3 +2373,5 @@ Ref: user_subscriptions.UserId > user_accounts.Id
 Ref: vocabulary_notebook_entries.ChildProfileId > child_profiles.Id
 Ref: vocabulary_notebook_entries.StoryVocabularyId > story_vocabulary.Id
 Ref: wish_cards.ContentCategoryId > content_categories.Id
+Ref: role_permissions.PermissionId > permissions.Id
+Ref: role_permissions.RoleId > roles.Id

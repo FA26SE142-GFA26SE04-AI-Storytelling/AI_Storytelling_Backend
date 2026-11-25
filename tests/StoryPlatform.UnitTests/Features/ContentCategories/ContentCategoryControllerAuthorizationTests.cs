@@ -1,3 +1,4 @@
+using StoryPlatform.Api.Extensions;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,6 +12,7 @@ public class ContentCategoryControllerAuthorizationTests
 {
     [Theory]
     [InlineData(UserRole.User, true)]
+    [InlineData(UserRole.Moderator, true)]
     [InlineData(UserRole.Administrator, true)]
     public async Task GetActions_AllowAnyAuthenticatedRole(UserRole role, bool expected)
     {
@@ -25,9 +27,10 @@ public class ContentCategoryControllerAuthorizationTests
     }
 
     [Theory]
-    [InlineData(UserRole.Administrator, true)]
+    [InlineData(UserRole.Moderator, true)]
+    [InlineData(UserRole.Administrator, false)]
     [InlineData(UserRole.User, false)]
-    public async Task WriteActions_RequireAdministratorOnly(UserRole role, bool expected)
+    public async Task WriteActions_RequireModeratorOnly(UserRole role, bool expected)
     {
         foreach (var actionName in new[]
                  {
@@ -44,7 +47,7 @@ public class ContentCategoryControllerAuthorizationTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddAuthorization();
+        services.AddAppAuthorization();
         using var provider = services.BuildServiceProvider();
         var policyProvider = provider.GetRequiredService<IAuthorizationPolicyProvider>();
         var authorization = provider.GetRequiredService<IAuthorizationService>();

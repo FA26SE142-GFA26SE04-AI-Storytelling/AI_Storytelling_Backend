@@ -308,7 +308,8 @@ public class SafetyPolicyService : ISafetyPolicyService
     private static void ApplyRequest(
         SafetyPolicy policy, SetSafetyPolicyRequestDto request, bool isOwner)
     {
-        policy.MaxStoryLength = request.MaxStoryLength;
+        policy.StoryLengthTarget = request.StoryLengthTarget;
+        policy.MaxStoryLength = StoryLengthRules.CapFor(request.StoryLengthTarget, request.MaxStoryLength);
         policy.RequiredApprovalMode = request.RequiredApprovalMode;
         policy.ParentalGateEnabled = request.ParentalGateEnabled;
         policy.ReadabilityScoreThreshold = request.ReadabilityScoreThreshold;
@@ -371,6 +372,7 @@ public class SafetyPolicyService : ISafetyPolicyService
     private static object Snapshot(SafetyPolicy policy, IEnumerable<SafetyPolicyCategoryDto> categories) => new
     {
         policy.MaxStoryLength,
+        policy.StoryLengthTarget,
         RequiredApprovalMode = policy.RequiredApprovalMode.ToString(),
         policy.ParentalGateEnabled,
         policy.SafetyScoreThreshold,
@@ -391,6 +393,7 @@ public class SafetyPolicyService : ISafetyPolicyService
         Id = policy.Id,
         ChildProfileId = policy.ChildProfileId,
         MaxStoryLength = policy.MaxStoryLength,
+        StoryLengthTarget = policy.StoryLengthTarget,
         RequiredApprovalMode = policy.RequiredApprovalMode.ToString(),
         ParentalGateEnabled = policy.ParentalGateEnabled,
         ConsentRecorded = policy.ConsentRecorded,
@@ -437,6 +440,12 @@ public class SafetyPolicyService : ISafetyPolicyService
         {
             throw new BadRequestException(
                 "Độ dài truyện tối đa phải từ 100 đến 20000 ký tự.");
+        }
+
+        if (request.StoryLengthTarget is < 100 or > 9000)
+        {
+            throw new BadRequestException(
+                "Độ dài truyện mong muốn phải từ 100 đến 9000 từ.");
         }
 
         if (!Enum.IsDefined(request.RequiredApprovalMode))

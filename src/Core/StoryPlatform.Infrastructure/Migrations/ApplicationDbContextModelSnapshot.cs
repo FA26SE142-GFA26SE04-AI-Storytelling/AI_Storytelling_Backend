@@ -3944,6 +3944,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<decimal?>("SafetyScoreThreshold")
                         .HasColumnType("decimal(5,2)");
 
+                    b.Property<int?>("StoryLengthTarget")
+                        .HasColumnType("integer");
+
                     b.Property<bool>("StoryWishesEnabled")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")

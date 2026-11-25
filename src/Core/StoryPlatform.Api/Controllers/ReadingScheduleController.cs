@@ -7,6 +7,7 @@ using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.AccessControl;
 using StoryPlatform.Application.Features.ChildProfiles.ReadingTime.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.ReadingTime.Interfaces;
+using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Api.Controllers;
 
@@ -28,6 +29,15 @@ public class ReadingScheduleController : BaseApiController
     {
         var result = await _readingScheduleService.GetAsync(childProfileId, GetCurrentUserId(), cancellationToken);
         return HandleResult(result, "Lấy cấu hình thời gian đọc thành công.");
+    }
+
+    /// <summary>Gợi ý theo nhóm tuổi cho form "Thêm bé" (bé chưa có hồ sơ); không ghi DB.</summary>
+    [HttpGet("suggestion")]
+    [HasPermission(Permissions.Parent.ChildProfileManage)]
+    public ActionResult<ApiResponse<ReadingScheduleDto>> GetSuggestion([FromQuery] AgeBand ageBand)
+    {
+        var result = _readingScheduleService.GetSuggestion(ageBand);
+        return HandleResult(result, "Lấy gợi ý thời gian đọc thành công.");
     }
 
     /// <summary>Lưu toàn bộ cấu hình (thay danh sách khung giờ); có hiệu lực ngay từ lần kiểm tra kế tiếp.</summary>

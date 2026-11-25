@@ -12,6 +12,8 @@ public class ChildProfileDto
     public string Nickname { get; set; } = string.Empty;
     public string AvatarId { get; set; } = string.Empty;
     public string AgeBand { get; set; } = string.Empty;
+    /// <summary>Tuổi cụ thể 6–10; null nếu phụ huynh chưa chọn.</summary>
+    public int? Age { get; set; }
     public string Language { get; set; } = "vi";
     public string Status { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
@@ -32,6 +34,12 @@ public class CreateChildProfileRequestDto
     [StringLength(10, ErrorMessage = "Mã ngôn ngữ tối đa 10 ký tự.")]
     public string Language { get; set; } = "vi";
 
+    /// <summary>Tuổi cụ thể 6–10, phải khớp nhóm tuổi; null = không chọn.</summary>
+    public int? Age { get; set; }
+
+    /// <summary>Ảnh đại diện; trống = ảnh mặc định.</summary>
+    [StringLength(100, ErrorMessage = "Mã ảnh đại diện tối đa 100 ký tự.")]
+    public string? AvatarId { get; set; }
 }
 
 public class UpdateChildProfileRequestDto
@@ -49,6 +57,9 @@ public class UpdateChildProfileRequestDto
 
     [StringLength(100, ErrorMessage = "Mã ảnh đại diện tối đa 100 ký tự.")]
     public string? AvatarId { get; set; }
+
+    /// <summary>Tuổi cụ thể 6–10, phải khớp nhóm tuổi. null = giữ tuổi đang lưu nếu còn khớp nhóm tuổi mới, không thì xoá.</summary>
+    public int? Age { get; set; }
 }
 
 public class ResumeChildProfileRequestDto

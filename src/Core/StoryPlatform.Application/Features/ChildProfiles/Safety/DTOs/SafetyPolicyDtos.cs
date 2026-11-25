@@ -9,6 +9,7 @@ public class SafetyPolicyDto
     public int Id { get; set; }
     public int ChildProfileId { get; set; }
     public int MaxStoryLength { get; set; }
+    public int? StoryLengthTarget { get; set; }
     public string RequiredApprovalMode { get; set; } = string.Empty;
     public bool ParentalGateEnabled { get; set; }
     public bool ConsentRecorded { get; set; }
@@ -46,6 +47,10 @@ public class SetSafetyPolicyRequestDto
 {
     [Range(100, 20000, ErrorMessage = "Độ dài truyện tối đa phải từ 100 đến 20000 đơn vị từ.")]
     public int MaxStoryLength { get; set; } = 2000;
+
+    /// <summary>Độ dài truyện phụ huynh tự chỉnh; null = theo mức đọc. Khi có giá trị, trần MaxStoryLength tự nâng lên ít nhất 110% số này.</summary>
+    [Range(100, 9000, ErrorMessage = "Độ dài truyện mong muốn phải từ 100 đến 9000 từ.")]
+    public int? StoryLengthTarget { get; set; }
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public ApprovalMode RequiredApprovalMode { get; set; } = ApprovalMode.AlwaysManual;

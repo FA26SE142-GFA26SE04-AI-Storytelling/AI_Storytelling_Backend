@@ -29,8 +29,15 @@ public interface ICreatorPayoutService
         int adminUserId, int payoutId, CancelCreatorPayoutRequestDto request, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Worker: từ ngày chốt Admin đặt (<see cref="PlanSettings.CreatorPeriodCloseDay"/>, giờ Việt Nam), chốt kỳ của tháng trước nếu chưa chốt và cộng thu nhập
-    /// của kỳ vào số dư từng Creator. Trả true khi vừa chốt.
+    /// Worker: từ ngày chốt Admin đặt (<see cref="PlanSettings.CreatorPeriodCloseDay"/>, giờ Việt Nam), chốt phần chưa chốt của tháng trước (cả tháng, hoặc
+    /// phần còn lại sau lần Chốt kỳ ngay) và cộng thu nhập của kỳ vào số dư từng Creator. Trả true khi vừa chốt.
     /// </summary>
     Task<bool> CloseDuePeriodAsync(DateTime now, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Admin bấm Chốt kỳ ngay (dùng khi demo): chốt từ ngày sau kỳ đã chốt gần nhất (hoặc ngày 1 tháng trước nếu tháng trước
+    /// chưa chốt) đến hết hôm nay (giờ Việt Nam) và cộng thu nhập vào số dư ngay. Lượt đọc còn lại của hôm nay không được tính;
+    /// lần chốt sau bắt đầu từ ngày mai. Ghi audit log.
+    /// </summary>
+    Task<CreatorEarningPeriodDto> CloseNowAsync(int adminUserId, DateTime now, CancellationToken cancellationToken = default);
 }

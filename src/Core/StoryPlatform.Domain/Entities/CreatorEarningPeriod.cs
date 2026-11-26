@@ -1,13 +1,20 @@
 namespace StoryPlatform.Domain.Entities;
 
 /// <summary>
-/// Một kỳ chia tiền (1 tháng dương lịch) đã chốt (Luồng 5, 5f bước 6 và 5h bước 2): vào ngày chốt Admin đặt (mặc định ngày 8 tháng sau, sau 7 ngày soát
-/// xét), thu nhập của kỳ được cộng vào số dư của từng Creator. Mỗi tháng một dòng nên chốt lại không cộng trùng.
+/// Một kỳ chia tiền đã chốt (Luồng 5, 5f bước 6 và 5h bước 2): vào ngày chốt Admin đặt (mặc định ngày 8 tháng sau, sau 7 ngày soát
+/// xét), thu nhập của tháng trước được cộng vào số dư của từng Creator. Admin cũng có thể bấm Chốt kỳ ngay để chốt đến hết hôm nay
+/// (dùng khi demo); khi đó một tháng có thể gồm nhiều kỳ. Các kỳ nối tiếp nhau, không chồng ngày, nên chốt lại không cộng trùng.
 /// </summary>
 public class CreatorEarningPeriod : BaseEntity
 {
-    /// <summary>Ngày 1 của tháng (theo ngày dương lịch, cùng cách tính kỳ của thống kê thu nhập).</summary>
+    /// <summary>Ngày 1 của tháng chứa ngày đầu kỳ.</summary>
     public DateTime PeriodMonth { get; set; }
+
+    /// <summary>Ngày đầu của kỳ (theo ngày dương lịch, cùng cách tính kỳ của thống kê thu nhập).</summary>
+    public DateTime PeriodStart { get; set; }
+
+    /// <summary>Ngày cuối của kỳ (tính cả ngày này).</summary>
+    public DateTime PeriodEnd { get; set; }
 
     /// <summary>Quỹ Creator của kỳ tại lúc chốt.</summary>
     public long CreatorFundVnd { get; set; }

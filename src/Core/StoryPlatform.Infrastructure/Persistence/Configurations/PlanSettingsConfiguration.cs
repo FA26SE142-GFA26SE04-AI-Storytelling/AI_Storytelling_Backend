@@ -18,6 +18,8 @@ public class PlanSettingsConfiguration : IEntityTypeConfiguration<PlanSettings>
                 "\"MinimumReadSeconds\" BETWEEN 1 AND 3600");
             table.HasCheckConstraint("CK_plan_settings_min_payout",
                 "\"MinimumPayoutVnd\" BETWEEN 0 AND 1000000000");
+            table.HasCheckConstraint("CK_plan_settings_creator_period_close_day",
+                "\"CreatorPeriodCloseDay\" BETWEEN 1 AND 28");
         });
 
         builder.HasKey(x => x.Id);

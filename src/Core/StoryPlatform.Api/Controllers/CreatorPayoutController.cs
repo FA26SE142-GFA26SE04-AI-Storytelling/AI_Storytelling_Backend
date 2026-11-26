@@ -11,7 +11,7 @@ namespace StoryPlatform.Api.Controllers;
 /// <summary>
 /// Chi trả cho Creator (Luồng 5, 5h). Hệ thống không chuyển tiền: Admin chuyển khoản ngoài hệ thống rồi đánh dấu Đã chi.
 /// Creator chỉ xem và sửa dữ liệu của chính mình (mã Creator lấy từ token); việc cộng thu nhập kỳ vào số dư chạy tự động
-/// ngày 8 hằng tháng (SubscriptionCycleWorker).
+/// vào ngày chốt Admin đặt trong cấu hình gói, mặc định ngày 8 hằng tháng (SubscriptionCycleWorker).
 /// </summary>
 [Route("api/v1/creator-payouts")]
 public class CreatorPayoutController : BaseApiController

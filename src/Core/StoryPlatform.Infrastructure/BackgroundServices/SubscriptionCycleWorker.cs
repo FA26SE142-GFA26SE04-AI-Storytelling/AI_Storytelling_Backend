@@ -81,7 +81,7 @@ public sealed class SubscriptionCycleWorker : BackgroundService
 
             try
             {
-                // Chốt kỳ chia tiền của tháng trước từ ngày 8 (giờ Việt Nam) và cộng thu nhập vào số dư Creator
+                // Chốt kỳ chia tiền của tháng trước từ ngày chốt Admin đặt (mặc định ngày 8, giờ Việt Nam) và cộng thu nhập vào số dư Creator
                 // (Luồng 5, 5h); mỗi kỳ chốt một lần nên các lượt chạy sau không làm gì.
                 await using var scope = _scopeFactory.CreateAsyncScope();
                 var creatorPayouts = scope.ServiceProvider.GetRequiredService<ICreatorPayoutService>();

@@ -59,13 +59,28 @@ public interface IEventRewardService
 {
     Task EvaluateSubmissionAsync(int evaluatorUserId, int submissionId, EvaluateSubmissionRequestDto request, CancellationToken ct = default);
     Task<IReadOnlyList<EventAwardSlotDto>> ProposeAwardsAsync(int moderatorUserId, int eventId, CancellationToken ct = default);
+    Task<EventAwardSlotDto> ManualAssignAwardAsync(int moderatorUserId, int awardId, ManualAssignAwardRequestDto request, CancellationToken ct = default);
+    Task<IReadOnlyList<EventAwardCandidateDto>> GetAwardCandidatesAsync(int moderatorUserId, int awardId, CancellationToken ct = default);
+    Task<IReadOnlyList<EventAwardSlotDto>> ConfirmAwardsAsync(int moderatorUserId, int eventId, CancellationToken ct = default);
     Task<IReadOnlyList<EventAwardSlotDto>> ApproveAwardsAsync(int adminUserId, int eventId, CancellationToken ct = default);
+    Task<EventAwardSlotDto> RevokeAwardAsync(int moderatorUserId, int awardId, RevokeAwardRequestDto request, CancellationToken ct = default);
     Task<IReadOnlyList<EventAwardSlotDto>> GetMyRewardsAsync(int userId, CancellationToken ct = default);
     Task<EventAwardSlotDto> ClaimRewardAsync(int userId, int awardId, ClaimRewardRequestDto request, CancellationToken ct = default);
     Task<int> ProcessExpiredClaimsAsync(int actorUserId, int eventId, CancellationToken ct = default);
     Task<EventRewardRecipientDto> GetRewardRecipientAsync(int operatorUserId, int awardId, CancellationToken ct = default);
     Task<EventAwardNotificationResultDto> ResendAwardNotificationsAsync(int actorUserId, int eventId, CancellationToken ct = default);
     Task<EventAwardSlotDto> UpdateFulfillmentAsync(int operatorUserId, int awardId, FulfillRewardRequestDto request, CancellationToken ct = default);
+}
+
+public interface IEventResultsQueryService
+{
+    Task<IReadOnlyList<MyEventResultDto>> GetMyResultsAsync(int userId, CancellationToken ct = default);
+    Task<PublicEventResultsDto> GetPublicResultsAsync(int userId, int eventId, CancellationToken ct = default);
+}
+
+public interface IEventResultSweepService
+{
+    Task<int> SweepEndedEventsAsync(CancellationToken ct = default);
 }
 
 public interface IEventIntegrationHooks

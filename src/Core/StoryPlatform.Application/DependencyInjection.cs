@@ -252,6 +252,8 @@ public static class DependencyInjection
         services.AddScoped<Features.Events.Interfaces.IEventManagementService, Features.Events.Services.EventManagementService>();
         services.AddScoped<Features.Events.Interfaces.IEventParticipationService, Features.Events.Services.EventParticipationService>();
         services.AddScoped<Features.Events.Interfaces.IEventRewardService, Features.Events.Services.EventRewardService>();
+        services.AddScoped<Features.Events.Interfaces.IEventResultsQueryService, Features.Events.Services.EventResultsQueryService>();
+        services.AddScoped<Features.Events.Interfaces.IEventResultSweepService, Features.Events.Services.EventResultSweepService>();
         services.AddScoped<Features.Events.Interfaces.IEventIntegrationHooks, Features.Events.Services.EventIntegrationHooks>();
 
         return services;

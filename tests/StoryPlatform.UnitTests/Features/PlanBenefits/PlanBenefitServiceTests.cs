@@ -95,6 +95,27 @@ public sealed class PlanBenefitServiceTests
     }
 
     [Fact]
+    public async Task GetForUser_ReadingOverride_RaisesOnlyTheTargetAccountLimit()
+    {
+        _uow.Items<UserAccount>().Single(user => user.Id == 10).WeeklyNewLibraryStoriesOverride = 99;
+        _uow.Seed(new UserAccount { Id = 11, Role = UserRole.User });
+
+        Assert.Equal(99, (await _service.GetForUserAsync(10)).WeeklyNewLibraryStories);
+        Assert.Equal(3, (await _service.GetForUserAsync(11)).WeeklyNewLibraryStories);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(120)]
+    public async Task GetForUser_ReadingOverride_PreservesMoreGenerousPaidLimits(int? planLimit)
+    {
+        _uow.Items<UserAccount>().Single(user => user.Id == 10).WeeklyNewLibraryStoriesOverride = 99;
+        GivenCycle(SubscriptionStatus.Active, Now.AddDays(-3), Now.AddDays(27)).WeeklyNewLibraryStories = planLimit;
+
+        Assert.Equal(planLimit, (await _service.GetForUserAsync(10)).WeeklyNewLibraryStories);
+    }
+
+    [Fact]
     public async Task GetForUser_FreeUsesConfiguredSettings()
     {
         _uow.Seed(new PlanSettings { Id = PlanSettings.SingletonId, FreeMaxChildProfiles = 2, FreeWeeklyNewLibraryStories = null });

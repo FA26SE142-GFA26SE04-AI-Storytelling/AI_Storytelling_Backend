@@ -10,6 +10,7 @@ using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using StoryPlatform.Application.Features.AccessControl;
 using StoryPlatform.Application.Features.AccessControl.Interfaces;
 using StoryPlatform.Application.Features.AccessControl.Services;
@@ -24,6 +25,7 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
     private readonly IMediaStorage? _mediaStorage;
     private readonly ITokenQuotaService? _tokenQuotaService;
     private readonly IAccessPolicy _accessPolicy;
+    private readonly ILogger<PublicStoryReviewService>? _logger;
 
     /// <summary>Đường dẫn media trong gói duyệt sống 1 giờ; mỗi lần mở lại gói hoặc sau mỗi thao tác sẽ được ký lại.</summary>
     private static readonly TimeSpan ReviewMediaUrlLifetime = TimeSpan.FromHours(1);
@@ -34,8 +36,10 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
         INotificationService notificationService,
         IMediaStorage? mediaStorage = null,
         ITokenQuotaService? tokenQuotaService = null,
-        IAccessPolicy? accessPolicy = null)
+        IAccessPolicy? accessPolicy = null,
+        ILogger<PublicStoryReviewService>? logger = null)
     {
+        _logger = logger;
         _accessPolicy = accessPolicy ?? AccessPolicy.Default(unitOfWork);
         _unitOfWork = unitOfWork;
         _auditLogWriter = auditLogWriter;
@@ -343,7 +347,19 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
             EventSubmissions = await EventSubmissionModerationAccess.LoadLinkedForItemAsync(
                 _unitOfWork, item, DateTime.UtcNow, cancellationToken)
         };
-        await SignMediaUrlsAsync(package, cancellationToken);
+        var unavailable = await SignMediaUrlsAsync(package, cancellationToken);
+        if (unavailable > 0)
+        {
+            // File không ký được (vd. đã mất khỏi kho sau khi đổi kho lưu trữ): vẫn trả gói để Moderator xem phần còn lại,
+            // nhưng không cho duyệt một truyện mà trẻ sẽ không xem/nghe được.
+            package.UnavailableMediaCount = unavailable;
+            package.ApproveBlockers.Add(new ApproveBlockerDto
+            {
+                Code = ApproveBlockerCodes.MediaUnavailable,
+                Message = $"Không mở được {unavailable} tranh hoặc âm thanh trong kho lưu trữ. Nhà sáng tạo cần tạo lại media trước khi duyệt."
+            });
+            package.CanApprove = false;
+        }
         return package;
     }
 
@@ -351,14 +367,16 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
     /// Tranh và giọng đọc lưu trong kho riêng tư nên cơ sở dữ liệu chỉ giữ đường dẫn nội bộ. Moderator cần đường dẫn có chữ ký
     /// (giống phụ huynh xem gói media), nếu không trình duyệt không mở được và tranh/âm thanh luôn báo lỗi.
     /// </summary>
-    private async Task SignMediaUrlsAsync(PublicReviewPackageDto package, CancellationToken cancellationToken)
+    /// <returns>Số file không ký được (URL để trống); một file lỗi không làm hỏng cả gói.</returns>
+    private async Task<int> SignMediaUrlsAsync(PublicReviewPackageDto package, CancellationToken cancellationToken)
     {
-        if (_mediaStorage is null) return;
+        if (_mediaStorage is null) return 0;
+        var failed = 0;
         // Mỗi lần ký là một lệnh gọi mạng tới kho lưu trữ; gói có hàng chục tranh/âm thanh nên phải ký song song,
         // nếu ký lần lượt thì mở gói mất hàng chục giây.
         var tasks = new List<Task>();
         void Sign(string? path, Action<string?> assign) =>
-            tasks.Add(SignAndAssignAsync(path, assign, cancellationToken));
+            tasks.Add(SignAndAssignAsync(path, assign, () => Interlocked.Increment(ref failed), cancellationToken));
         foreach (var scene in package.Scenes)
         {
             foreach (var illustration in scene.Illustrations)
@@ -374,10 +392,23 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
                 Sign(audio.Url, signed => audio.Url = signed);
         }
         await Task.WhenAll(tasks);
+        return failed;
     }
 
-    private async Task SignAndAssignAsync(string? path, Action<string?> assign, CancellationToken cancellationToken) =>
-        assign(await SignMediaUrlAsync(path, cancellationToken));
+    private async Task SignAndAssignAsync(string? path, Action<string?> assign, Action onFailed, CancellationToken cancellationToken)
+    {
+        try
+        {
+            assign(await SignMediaUrlAsync(path, cancellationToken));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            // Không ghi đường dẫn file vào log: chỉ cần biết loại lỗi để tra cứu kho lưu trữ.
+            _logger?.LogWarning("Signing review media URL failed: {ErrorType}", ex.GetType().Name);
+            assign(null);
+            onFailed();
+        }
+    }
 
     private async Task<string?> SignMediaUrlAsync(string? path, CancellationToken cancellationToken)
     {

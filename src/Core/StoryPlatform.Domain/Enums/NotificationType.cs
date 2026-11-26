@@ -54,5 +54,13 @@ public enum NotificationType
     /// <summary>Lượt AI đang giữ của một truyện bỏ dở đã được trả lại (Luồng 2, UC-L2-09).</summary>
     StoryCreditReleased = 40,
     /// <summary>Người tham gia trúng giải sự kiện sau khi Admin phê duyệt danh sách trao giải.</summary>
-    EventAwardApproved = 41
+    EventAwardApproved = 41,
+    /// <summary>Sự kiện đã kết thúc — cảm ơn và tóm tắt đóng góp cá nhân của người tham gia.</summary>
+    EventEnded = 42,
+    /// <summary>Kết quả sự kiện đã được công bố cho mọi người tham gia.</summary>
+    EventResultPublished = 43,
+    /// <summary>Suất giải thưởng bị thu hồi trong thời gian khiếu nại kèm lý do.</summary>
+    EventAwardRevoked = 44,
+    /// <summary>Đơn khiếu nại sự kiện đã được Moderator chấp nhận.</summary>
+    EventAppealAccepted = 45
 }

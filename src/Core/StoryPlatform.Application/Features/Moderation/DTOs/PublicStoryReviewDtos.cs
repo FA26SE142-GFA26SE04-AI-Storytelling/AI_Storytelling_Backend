@@ -26,6 +26,8 @@ public class PublicReviewPackageDto
     public PublicReviewChecklistDto Checklist { get; set; } = new();
     public List<ApproveBlockerDto> ApproveBlockers { get; set; } = new();
     public bool CanApprove { get; set; }
+    /// <summary>Số tranh/âm thanh không ký được URL (file không còn trong kho); các mục đó có URL rỗng.</summary>
+    public int UnavailableMediaCount { get; set; }
     /// <summary>Trạng thái quét an toàn AI của phiên bản đang duyệt (Safe, GrayZone, HardBlock hoặc NotChecked).</summary>
     public PublicReviewSafetyScanDto SafetyScan { get; set; } = new();
     public string? PreviousModeratorName { get; set; }

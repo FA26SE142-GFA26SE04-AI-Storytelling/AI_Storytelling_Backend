@@ -296,6 +296,9 @@ public static class DependencyInjection
         services.Configure<StoryWishSweepWorkerOptions>(
             configuration.GetSection(StoryWishSweepWorkerOptions.SectionName));
         services.AddHostedService<StoryWishSweepWorker>();
+        services.Configure<EventResultSweepWorkerOptions>(
+            configuration.GetSection(EventResultSweepWorkerOptions.SectionName));
+        services.AddHostedService<EventResultSweepWorker>();
 
         return services;
     }

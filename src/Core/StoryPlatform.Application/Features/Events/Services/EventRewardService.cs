@@ -11,6 +11,7 @@ using StoryPlatform.Application.Common.Time;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.Events.DTOs;
 using StoryPlatform.Application.Features.Events.Interfaces;
+using StoryPlatform.Application.Features.Notifications.DTOs;
 using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -22,16 +23,19 @@ public partial class EventRewardService : IEventRewardService
     private readonly IUnitOfWork _uow;
     private readonly IAuditLogWriter _audit;
     private readonly INotificationService? _notifications;
+    private readonly INotificationRealtimePublisher? _notificationPublisher;
 
     private readonly IRewardRecipientProtector? _recipientProtector;
     private readonly ILogger<EventRewardService>? _logger;
 
     public EventRewardService(IUnitOfWork uow, IAuditLogWriter audit, INotificationService? notifications = null,
-        IRewardRecipientProtector? recipientProtector = null, ILogger<EventRewardService>? logger = null)
+        IRewardRecipientProtector? recipientProtector = null, ILogger<EventRewardService>? logger = null,
+        INotificationRealtimePublisher? notificationPublisher = null)
     {
         _uow = uow;
         _audit = audit;
         _notifications = notifications;
+        _notificationPublisher = notificationPublisher;
         _recipientProtector = recipientProtector;
         _logger = logger;
     }
@@ -99,14 +103,12 @@ public partial class EventRewardService : IEventRewardService
             var ev = await _uow.Repository<Event>().GetByIdAsync(eventId, ct)
                 ?? throw new NotFoundException(nameof(Event), eventId);
             EventModeratorAccess.RequireOwner(ev, moderatorUserId);
+            if (ev.ResultsFinalizedAt.HasValue)
+                throw new ConflictException("Danh sách người nhận giải đã được xác nhận, không thể tính lại.");
             var (tracks, activities) = await RequireEndedAsync(eventId, ct);
             if (ev.ConfigVersion == EventConfigVersion.ActivityBased)
             {
-                var hasVoting = activities.Any(a => a.ActivityType == EventActivityType.Voting);
-                var lb = hasVoting
-                    ? await new EventParticipationService(_uow, _audit).BuildLeaderboardAsync(ev.Id, includeHidden: true, verifiedOnly: true, ct)
-                    : null;
-                await AssignActivityProposedAwardsAsync(ev, activities, lb, ct);
+                await RecalculateActivityProposedAwardsInTransactionAsync(ev, activities, ct);
             }
             else
             {
@@ -116,7 +118,8 @@ public partial class EventRewardService : IEventRewardService
             var awards = await _uow.Repository<EventAward>().FindAsync(a => a.EventId == eventId, cancellationToken: ct);
             await _audit.LogAsync(moderatorUserId, "EventAwardsProposed", nameof(Event), eventId, null,
                 new { Count = awards.Count(a => a.Status == EventAwardStatus.AwardProposed && a.ParticipationId.HasValue) }, ct);
-            return (IReadOnlyList<EventAwardSlotDto>)awards.Select(MapAward).ToList();
+            var activityMap = activities.ToDictionary(a => a.Id);
+            return (IReadOnlyList<EventAwardSlotDto>)await EventAwardEnricher.MapForOperatorsAsync(_uow, eventId, awards, activityMap, ct);
         }, ct);
 
     private async Task AssignProposedAwardsAsync(
@@ -147,7 +150,8 @@ public partial class EventRewardService : IEventRewardService
 
     }
 
-    private async Task<(IReadOnlyList<EventTrack> Tracks, IReadOnlyList<EventActivity> Activities)> RequireEndedAsync(int eventId, CancellationToken ct)
+    private async Task<(IReadOnlyList<EventTrack> Tracks, IReadOnlyList<EventActivity> Activities)> RequireEndedAsync(
+        int eventId, CancellationToken ct, bool allowPaused = false)
     {
         var campaign = await _uow.Repository<Event>().GetByIdAsync(eventId, ct)
             ?? throw new NotFoundException(nameof(Event), eventId);
@@ -155,7 +159,7 @@ public partial class EventRewardService : IEventRewardService
         var activities = campaign.ConfigVersion == EventConfigVersion.ActivityBased
             ? await _uow.Repository<EventActivity>().FindAsync(a => a.EventId == eventId, cancellationToken: ct)
             : Array.Empty<EventActivity>();
-        EventExecution.EnsureEnded(campaign, tracks, activities);
+        EventExecution.EnsureEnded(campaign, tracks, activities, allowPaused);
         return (tracks, activities);
     }
 
@@ -228,7 +232,13 @@ public partial class EventRewardService : IEventRewardService
 
     public async Task<IReadOnlyList<EventAwardSlotDto>> ApproveAwardsAsync(int adminUserId, int eventId, CancellationToken ct = default)
     {
-        var awards = await InEventTransactionAsync(eventId, () => ApproveAwardsLockedAsync(adminUserId, eventId, ct), ct);
+        var (awards, isActivityBased, notices) = await InEventTransactionAsync(
+            eventId, () => ApproveAwardsLockedAsync(adminUserId, eventId, ct), ct);
+        if (isActivityBased)
+        {
+            await EventNotificationDelivery.PublishAsync(_notificationPublisher, notices, _logger);
+            return awards;
+        }
         var result = await NotifyAwardWinnersAsync(eventId, awards, adminUserId, ct);
         var failed = result.FailedAwardIds.ToHashSet();
         foreach (var award in awards)
@@ -290,11 +300,20 @@ public partial class EventRewardService : IEventRewardService
         return new(sent, failed);
     }
 
-    private async Task<IReadOnlyList<EventAwardSlotDto>> ApproveAwardsLockedAsync(int adminUserId, int eventId, CancellationToken ct)
+    private async Task<(IReadOnlyList<EventAwardSlotDto> Awards, bool IsActivityBased, List<(int UserId, NotificationDto Notice)> Notices)> ApproveAwardsLockedAsync(
+        int adminUserId, int eventId, CancellationToken ct)
     {
         var ev = await _uow.Repository<Event>().GetByIdAsync(eventId, ct)
             ?? throw new NotFoundException(nameof(Event), eventId);
-        var (trackList, activityList) = await RequireEndedAsync(eventId, ct);
+        var activityBased = ev.ConfigVersion == EventConfigVersion.ActivityBased;
+        var publishedAt = ev.ResultsPublishedAt;
+        if (activityBased && !publishedAt.HasValue && ev.ResultsFinalizedAt.HasValue)
+        {
+            var awardHistory = await _uow.Repository<EventAward>().FindAsync(
+                a => a.EventId == eventId && a.ApprovedByAdminId != null && !a.IsDeleted, cancellationToken: ct);
+            publishedAt = EventExecution.PublishedResultsAt(ev, awardHistory);
+        }
+        var (trackList, activityList) = await RequireEndedAsync(eventId, ct, allowPaused: activityBased && publishedAt.HasValue);
         var tracks = trackList.ToDictionary(t => t.Id);
         var activityMap = activityList.ToDictionary(a => a.Id);
         var openAppeals = await _uow.Repository<EventAppeal>().ExistsAsync(
@@ -306,8 +325,12 @@ public partial class EventRewardService : IEventRewardService
         var votingEnabled = ev.ConfigVersion == EventConfigVersion.ActivityBased
             ? activityList.Any(a => a.ActivityType == EventActivityType.Voting)
             : EventVoting.IsEnabled(ev.ScoringMode);
-        var activityBased = ev.ConfigVersion == EventConfigVersion.ActivityBased;
-        if (!ev.ResultsFinalizedAt.HasValue)
+        if (activityBased)
+        {
+            if (!ev.ResultsFinalizedAt.HasValue)
+                throw new ConflictException("Moderator chưa xác nhận danh sách người nhận giải.");
+        }
+        else if (!ev.ResultsFinalizedAt.HasValue)
         {
             var pending = await _uow.Repository<EventParticipation>().ExistsAsync(p => p.EventId == eventId &&
                 (p.Status == EventParticipationStatus.Registered || p.Status == EventParticipationStatus.MissionCompleted ||
@@ -316,39 +339,59 @@ public partial class EventRewardService : IEventRewardService
                 throw new ConflictException("Cần xác minh xong người tham gia trước khi chốt kết quả.");
             await EventAppealWindow.EnsureNoOpenWindowAsync(_uow, eventId, DateTime.UtcNow, ct);
             await EnsureRubricEvaluationsCompleteAsync(ev, trackList, activityList, ct);
-            if (activityBased)
-            {
-                if (votingEnabled)
-                    snapshot = await new EventParticipationService(_uow, _audit).BuildLeaderboardAsync(ev.Id, includeHidden: true, verifiedOnly: true, ct);
-                var rankings = new List<ActivityAwardRanking>();
-                await AssignActivityProposedAwardsAsync(ev, activityList, snapshot, ct, rankings);
-                ev.FinalAwardRankingSnapshotJson = JsonSerializer.Serialize(rankings);
-                ev.ResultsFinalizedAt = DateTime.UtcNow;
-                ev.UpdatedAt = ev.ResultsFinalizedAt;
-                _uow.Repository<Event>().Update(ev);
-            }
-            else
-            {
-                if (votingEnabled)
-                    snapshot = await BuildVotingResultsAsync(ev, ct);
-                await AssignProposedAwardsAsync(ev, trackList, snapshot, ct);
-            }
+            if (votingEnabled)
+                snapshot = await BuildVotingResultsAsync(ev, ct);
+            await AssignProposedAwardsAsync(ev, trackList, snapshot, ct);
             await _uow.SaveChangesAsync(ct);
         }
 
-        var awards = await _uow.Repository<EventAward>().FindAsync(
+        var proposedAwards = await _uow.Repository<EventAward>().FindAsync(
             a => a.EventId == eventId && a.Status == EventAwardStatus.AwardProposed && a.ParticipationId != null, cancellationToken: ct);
+        var awards = new List<EventAward>(proposedAwards.Count);
+        foreach (var award in proposedAwards)
+        {
+            if (activityBased && award.ManuallyAssignedAt.HasValue)
+            {
+                var part = await _uow.Repository<EventParticipation>().GetByIdAsync(award.ParticipationId!.Value, ct);
+                var user = part is null ? null : await _uow.Repository<UserAccount>().GetByIdAsync(part.UserId, ct);
+                if (part is null || part.IsDeleted || part.EventId != eventId || part.Status != EventParticipationStatus.Verified ||
+                    !part.EventActivityId.HasValue || part.EventActivityId != ResolveSourceActivity(award, activityList)?.Id ||
+                    user is null || user.IsDeleted || !IsUserMatchingAudience(user.Role, award.TargetAudience) ||
+                    !await HasRequiredApprovedSubmissionAsync(award, ct))
+                {
+                    ClearManualAwardAssignment(award);
+                    _uow.Repository<EventAward>().Update(award);
+                    continue;
+                }
+            }
+            awards.Add(award);
+        }
+
+        var firstPublication = activityBased && !publishedAt.HasValue;
+        var notices = new List<(int UserId, NotificationDto Notice)>();
+        if (activityBased && !firstPublication && proposedAwards.Count == 0)
+            return (Array.Empty<EventAwardSlotDto>(), true, notices);
 
         var now = DateTime.UtcNow;
         foreach (var award in awards)
         {
-            var hours = award.EventActivityId.HasValue && activityMap.TryGetValue(award.EventActivityId.Value, out var act)
-                ? act.ClaimWindowHours
-                : (award.TrackId.HasValue && tracks.TryGetValue(award.TrackId.Value, out var tr) ? tr.ClaimWindowHours : 72);
-            award.Status = EventAwardStatus.AwaitingClaim;
-            award.ApprovedByAdminId = adminUserId;
-            award.ClaimDeadlineAt = now.AddHours(hours);
-            award.UpdatedAt = now;
+            if (activityBased && (firstPublication || ev.ResultsPublishedAt.HasValue))
+            {
+                award.Status = EventAwardStatus.AppealHold;
+                award.ApprovedByAdminId = adminUserId;
+                award.ClaimDeadlineAt = null;
+                award.UpdatedAt = now;
+            }
+            else
+            {
+                var hours = activityBased && award.EventActivityId is { } activityId && activityMap.TryGetValue(activityId, out var activity)
+                    ? activity.ClaimWindowHours
+                    : award.TrackId.HasValue && tracks.TryGetValue(award.TrackId.Value, out var tr) ? tr.ClaimWindowHours : 72;
+                award.Status = EventAwardStatus.AwaitingClaim;
+                award.ApprovedByAdminId = adminUserId;
+                award.ClaimDeadlineAt = now.AddHours(hours);
+                award.UpdatedAt = now;
+            }
             _uow.Repository<EventAward>().Update(award);
         }
 
@@ -360,6 +403,8 @@ public partial class EventRewardService : IEventRewardService
         }
 
         ev.ResultsFinalizedAt ??= now;
+        if (firstPublication)
+            ev.ResultsPublishedAt = now;
         ev.UpdatedAt = now;
         _uow.Repository<Event>().Update(ev);
 
@@ -367,9 +412,51 @@ public partial class EventRewardService : IEventRewardService
         var unassignedCount = await _uow.Repository<EventAward>().CountAsync(
             a => a.EventId == eventId && a.Status == EventAwardStatus.AwardProposed && a.ParticipationId == null, ct);
         await _audit.LogAsync(adminUserId, "EventAwardsApproved", nameof(Event), eventId, null,
-            new { ApprovedCount = awards.Count, UnassignedCount = unassignedCount }, ct);
-        return awards.Select(MapAward).ToList();
+            new { ApprovedCount = awards.Count, UnassignedCount = unassignedCount, Published = activityBased }, ct);
+
+        if (activityBased && _notifications != null)
+        {
+            var awardedPartIds = awards.Select(a => a.ParticipationId!.Value).ToHashSet();
+            var participants = await _uow.Repository<EventParticipation>().FindAsync(
+                p => p.EventId == eventId && p.EventActivityId != null && !p.IsDeleted &&
+                    (firstPublication || awardedPartIds.Contains(p.Id)), cancellationToken: ct);
+            if (ev.ResultsPublishedAt.HasValue)
+            {
+                var payload = JsonSerializer.Serialize(new { eventId, eventTitle = ev.Title });
+                foreach (var uid in participants.Select(p => p.UserId).Distinct())
+                    notices.Add((uid, await StoreApprovalNoticeAsync(uid, NotificationType.EventResultPublished, payload, ct)));
+            }
+            else
+            {
+                var recipientByPart = participants.ToDictionary(p => p.Id, p => p.UserId);
+                foreach (var award in awards)
+                {
+                    if (!recipientByPart.TryGetValue(award.ParticipationId!.Value, out var uid)) continue;
+                    var payload = JsonSerializer.Serialize(new { eventId, awardId = award.Id, rankOrTier = award.RankOrTier, rewardName = award.RewardName });
+                    notices.Add((uid, await StoreApprovalNoticeAsync(uid, NotificationType.EventAwardApproved, payload, ct)));
+                }
+            }
+        }
+
+        var mapped = await EventAwardEnricher.MapForOperatorsAsync(_uow, eventId, awards, activityMap, ct);
+        return (mapped, activityBased, notices);
     }
+
+    private async Task<NotificationDto> StoreApprovalNoticeAsync(int userId, NotificationType type, string payload, CancellationToken ct)
+    {
+        try
+        {
+            return await _notifications!.CreateStoredAsync(userId, type, payload, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger?.LogWarning(ex, "Could not store event approval notification of type {NotificationType}", type);
+            throw new ApprovalNotificationException();
+        }
+    }
+
+    private sealed class ApprovalNotificationException()
+        : AppException("Chưa thể duyệt giải vì không lưu được thông báo. Vui lòng thử lại.", 503, "EVENT_APPROVAL_NOTIFICATION_UNAVAILABLE");
 
     private async Task EnsureRubricEvaluationsCompleteAsync(
         Event ev, IReadOnlyList<EventTrack> tracks, IReadOnlyList<EventActivity> activities, CancellationToken ct)
@@ -412,7 +499,8 @@ public partial class EventRewardService : IEventRewardService
         if (partIds.Count == 0) return Array.Empty<EventAwardSlotDto>();
 
         var awards = await _uow.Repository<EventAward>().FindAsync(
-            a => a.ParticipationId.HasValue && partIds.Contains(a.ParticipationId.Value), cancellationToken: ct);
+            a => a.ParticipationId.HasValue && partIds.Contains(a.ParticipationId.Value) &&
+                !a.IsDeleted && a.Status != EventAwardStatus.AwardProposed, cancellationToken: ct);
         return awards.Select(MapAward).ToList();
     }
 
@@ -428,6 +516,16 @@ public partial class EventRewardService : IEventRewardService
     {
         var award = await _uow.Repository<EventAward>().GetByIdAsync(awardId, ct)
             ?? throw new NotFoundException(nameof(EventAward), awardId);
+        if (award.Status == EventAwardStatus.AppealHold)
+        {
+            var evHold = await _uow.Repository<Event>().GetByIdAsync(award.EventId, ct);
+            if (evHold?.ResultsPublishedAt is { } publishedAt)
+            {
+                var opensAt = publishedAt.AddHours(EventAppealWindow.Hours);
+                throw new ConflictException($"Giải sẽ mở nhận từ {opensAt + VietnamTime.Offset:HH:mm dd/MM/yyyy} sau khi hết hạn khiếu nại.");
+            }
+            throw new ConflictException("Giải sẽ mở nhận sau khi hết hạn khiếu nại.");
+        }
         if (award.Status != EventAwardStatus.AwaitingClaim || !award.ParticipationId.HasValue)
             throw new ConflictException("Giải thưởng không ở trạng thái chờ xác nhận nhận giải.");
 
@@ -435,6 +533,9 @@ public partial class EventRewardService : IEventRewardService
             ?? throw new NotFoundException(nameof(EventParticipation), award.ParticipationId.Value);
         if (participation.UserId != userId)
             throw new ForbiddenException("Bạn không phải người trúng suất giải thưởng này.");
+        if (award.ManuallyAssignedAt.HasValue &&
+            (participation.Status != EventParticipationStatus.Verified || !await HasRequiredApprovedSubmissionAsync(award, ct)))
+            throw new ConflictException("Hồ sơ được chỉ định thủ công hiện không còn đủ điều kiện nhận giải.");
 
         var now = DateTime.UtcNow;
         if (award.ClaimDeadlineAt.HasValue && now > award.ClaimDeadlineAt.Value)
@@ -544,6 +645,13 @@ public partial class EventRewardService : IEventRewardService
                 Status = RewardFulfillmentStatus.Processing
             }, ct);
             award.Status = EventAwardStatus.FulfillmentProcessing;
+        }
+
+        if (award.ResultSource == EventAwardResultSource.MissionCompletion)
+        {
+            var claimer = await _uow.Repository<UserAccount>().GetByIdAsync(userId, ct);
+            if (claimer?.Role == UserRole.User)
+                award.ShowChildNames = request.ShowChildNames == true;
         }
 
         award.UpdatedAt = now;
@@ -763,25 +871,10 @@ public partial class EventRewardService : IEventRewardService
         await _uow.SaveChangesAsync(ct);
 
         await _audit.LogAsync(operatorUserId, "EventRewardFulfillmentUpdated", nameof(EventAward), award.Id, null, new { award.Status, request.TrackingOrBankTxCode }, ct);
-        return MapAward(award);
+        var enriched = await EventAwardEnricher.MapForOperatorsAsync(_uow, award.EventId, [award], null, ct);
+        return enriched[0];
     }
 
-    private static EventAwardSlotDto MapAward(EventAward a) => new()
-    {
-        Id = a.Id,
-        TrackId = a.TrackId,
-        EventActivityId = a.EventActivityId,
-        ResultSource = a.ResultSource,
-        TargetAudience = a.TargetAudience,
-        RankOrTier = a.RankOrTier,
-        SlotIndex = a.SlotIndex,
-        RewardType = a.RewardType,
-        RewardName = a.RewardName,
-        UnitValueVnd = a.UnitValueVnd,
-        CreditGrantAmount = a.CreditGrantAmount,
-        SubmitCreditGrantAmount = a.SubmitCreditGrantAmount,
-        ParticipationId = a.ParticipationId,
-        Status = a.Status,
-        ClaimDeadlineAt = a.ClaimDeadlineAt
-    };
+    private static EventAwardSlotDto MapAward(EventAward a) =>
+        EventAwardEnricher.MapBase(a, includeOperatorFields: false);
 }

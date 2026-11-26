@@ -17,15 +17,18 @@ public class EventsController : BaseApiController
     private readonly IEventManagementService _management;
     private readonly IEventParticipationService _participation;
     private readonly IEventRewardService _rewards;
+    private readonly IEventResultsQueryService _results;
 
     public EventsController(
         IEventManagementService management,
         IEventParticipationService participation,
-        IEventRewardService rewards)
+        IEventRewardService rewards,
+        IEventResultsQueryService results)
     {
         _management = management;
         _participation = participation;
         _rewards = rewards;
+        _results = results;
     }
 
     [HttpGet]
@@ -275,12 +278,44 @@ public class EventsController : BaseApiController
     [HttpPost("{eventId:int}/awards/propose")]
     [HasPermission(Permissions.Moderation.EventManage)]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<EventAwardSlotDto>>>> ProposeAwards(int eventId, CancellationToken ct = default) =>
-        HandleResult(await _rewards.ProposeAwardsAsync(GetCurrentUserId(), eventId, ct), "Đã đề xuất danh sách nhận giải.");
+        HandleResult(await _rewards.ProposeAwardsAsync(GetCurrentUserId(), eventId, ct), "Đã tính lại danh sách nhận giải.");
+
+    [HttpGet("awards/{awardId:int}/candidates")]
+    [HasPermission(Permissions.Moderation.EventManage)]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<EventAwardCandidateDto>>>> AwardCandidates(int awardId, CancellationToken ct = default) =>
+        HandleResult(await _rewards.GetAwardCandidatesAsync(GetCurrentUserId(), awardId, ct));
+
+    [HttpPut("awards/{awardId:int}/assignment")]
+    [HasPermission(Permissions.Moderation.EventManage)]
+    public async Task<ActionResult<ApiResponse<EventAwardSlotDto>>> ManualAssignAward(
+        int awardId, [FromBody] ManualAssignAwardRequestDto request, CancellationToken ct = default) =>
+        HandleResult(await _rewards.ManualAssignAwardAsync(GetCurrentUserId(), awardId, request, ct), "Đã cập nhật người nhận giải.");
+
+    [HttpPost("{eventId:int}/awards/confirm")]
+    [HasPermission(Permissions.Moderation.EventManage)]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<EventAwardSlotDto>>>> ConfirmAwards(int eventId, CancellationToken ct = default) =>
+        HandleResult(await _rewards.ConfirmAwardsAsync(GetCurrentUserId(), eventId, ct), "Đã xác nhận danh sách người nhận giải.");
 
     [HttpPost("{eventId:int}/awards/approve")]
     [HasPermission(Permissions.Admin.EventApprove)]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<EventAwardSlotDto>>>> ApproveAwards(int eventId, CancellationToken ct = default) =>
         HandleResult(await _rewards.ApproveAwardsAsync(GetCurrentUserId(), eventId, ct), "Đã phê duyệt danh sách nhận giải.");
+
+    [HttpPost("awards/{awardId:int}/revoke")]
+    [HasPermission(Permissions.Moderation.EventManage)]
+    public async Task<ActionResult<ApiResponse<EventAwardSlotDto>>> RevokeAward(
+        int awardId, [FromBody] RevokeAwardRequestDto request, CancellationToken ct = default) =>
+        HandleResult(await _rewards.RevokeAwardAsync(GetCurrentUserId(), awardId, request, ct), "Đã thu hồi suất giải.");
+
+    [HttpGet("my-results")]
+    [HasPermission(Permissions.Shared.EventParticipate)]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<MyEventResultDto>>>> MyResults(CancellationToken ct = default) =>
+        HandleResult(await _results.GetMyResultsAsync(GetCurrentUserId(), ct));
+
+    [HttpGet("{eventId:int}/results")]
+    [HasPermission(Permissions.Shared.EventParticipate)]
+    public async Task<ActionResult<ApiResponse<PublicEventResultsDto>>> PublicResults(int eventId, CancellationToken ct = default) =>
+        HandleResult(await _results.GetPublicResultsAsync(GetCurrentUserId(), eventId, ct));
 
     [HttpGet("my-rewards")]
     [HasPermission(Permissions.Shared.EventParticipate)]

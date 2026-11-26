@@ -464,13 +464,18 @@ public partial class EventParticipationService : IEventParticipationService
     }
 
     public Task<int> VerifyEventParticipationsAsync(int actorUserId, int eventId, CancellationToken ct = default) =>
-        InEventResultTransactionAsync(eventId, () => VerifyEventParticipationsLockedAsync(actorUserId, eventId, ct), ct);
+        InEventResultTransactionAsync(eventId, async () =>
+        {
+            var campaign = await _uow.Repository<Event>().GetByIdAsync(eventId, ct)
+                ?? throw new NotFoundException(nameof(Event), eventId);
+            await EventModeratorAccess.RequireOperatorAsync(_uow, campaign, actorUserId, ct);
+            return await VerifyEventParticipationsCoreLockedAsync(actorUserId, eventId, ct);
+        }, ct);
 
-    private async Task<int> VerifyEventParticipationsLockedAsync(int actorUserId, int eventId, CancellationToken ct)
+    internal async Task<int> VerifyEventParticipationsCoreLockedAsync(int? actorUserId, int eventId, CancellationToken ct)
     {
         var campaign = await _uow.Repository<Event>().GetByIdAsync(eventId, ct)
             ?? throw new NotFoundException(nameof(Event), eventId);
-        await EventModeratorAccess.RequireOperatorAsync(_uow, campaign, actorUserId, ct);
         var tracks = await _uow.Repository<EventTrack>().FindAsync(t => t.EventId == eventId, cancellationToken: ct);
         var activities = campaign.ConfigVersion == EventConfigVersion.ActivityBased
             ? await _uow.Repository<EventActivity>().FindAsync(a => a.EventId == eventId, cancellationToken: ct)
@@ -606,18 +611,68 @@ public partial class EventParticipationService : IEventParticipationService
     {
         var ev = await _uow.Repository<Event>().GetByIdAsync(eventId, ct)
             ?? throw new NotFoundException(nameof(Event), eventId);
-        EnsureResultsEditable(ev);
 
         var participation = await _uow.Repository<EventParticipation>().GetByIdAsync(request.ParticipationId, ct)
             ?? throw new NotFoundException(nameof(EventParticipation), request.ParticipationId);
         if (participation.UserId != userId || participation.EventId != eventId)
             throw new ForbiddenException("Bạn không có quyền khiếu nại hồ sơ này (BR-AP01).");
-        if (ev.Status != EventStatus.Published || participation.Status != EventParticipationStatus.VerificationFailed)
-            throw new ConflictException("Chỉ có thể khiếu nại khi hồ sơ đã có kết quả xác minh không đạt.");
-        if (EventAppealWindow.DeadlineFor(participation) is { } deadline && DateTime.UtcNow >= deadline)
-            throw new ConflictException($"Đã quá hạn {EventAppealWindow.Hours} giờ để gửi khiếu nại.");
         if (string.IsNullOrWhiteSpace(request.ReasonText))
             throw new BadRequestException("Hãy nhập lý do khiếu nại.");
+
+        EventAward? targetAward = null;
+        if (ev.ConfigVersion == EventConfigVersion.ActivityBased)
+        {
+            if (ev.Status is not (EventStatus.Published or EventStatus.Paused) || !ev.ResultsPublishedAt.HasValue)
+                throw new ConflictException("Chỉ có thể gửi khiếu nại sau khi kết quả sự kiện được công bố.");
+            var deadline = ev.ResultsPublishedAt.Value.AddHours(EventAppealWindow.Hours);
+            if (DateTime.UtcNow >= deadline)
+                throw new ConflictException($"Đã quá hạn {EventAppealWindow.Hours} giờ để gửi khiếu nại.");
+
+            var activities = await _uow.Repository<EventActivity>().FindAsync(a => a.EventId == eventId && !a.IsDeleted, cancellationToken: ct);
+            var eventAwards = await _uow.Repository<EventAward>().FindAsync(a => a.EventId == eventId && !a.IsDeleted, cancellationToken: ct);
+            var sourceActIds = eventAwards
+                .Select(a => EventResultsQueryService.ResolveSourceActivityId(a, activities))
+                .Where(id => id.HasValue)
+                .Select(id => id!.Value)
+                .ToHashSet();
+            if (!participation.EventActivityId.HasValue || !sourceActIds.Contains(participation.EventActivityId.Value))
+                throw new ConflictException("Hoạt động này không thuộc nguồn xét giải của sự kiện.");
+
+            var userParts = await _uow.Repository<EventParticipation>().FindAsync(
+                p => p.EventId == eventId && p.UserId == userId && !p.IsDeleted, cancellationToken: ct);
+            var userPartIds = userParts.Select(p => p.Id).ToHashSet();
+            var holdsAward = eventAwards.Any(a =>
+                a.ParticipationId.HasValue && userPartIds.Contains(a.ParticipationId.Value) &&
+                a.Status is EventAwardStatus.AppealHold or EventAwardStatus.AwaitingClaim or
+                    EventAwardStatus.Claimed or EventAwardStatus.FulfillmentProcessing or EventAwardStatus.Fulfilled);
+            if (holdsAward)
+                throw new ConflictException("Người đang giữ suất giải không thể gửi khiếu nại.");
+
+            var kind = Enum.IsDefined(request.Kind) ? request.Kind : EventAppealKind.Verification;
+            if (kind == EventAppealKind.Verification)
+            {
+                if (participation.Status != EventParticipationStatus.VerificationFailed)
+                    throw new ConflictException("Chỉ có thể khiếu nại kết quả xác minh khi hồ sơ không đạt.");
+            }
+            else
+            {
+                if (participation.Status != EventParticipationStatus.Verified)
+                    throw new ConflictException("Chỉ hồ sơ đã xác minh đạt mới có thể khiếu nại thứ hạng hoặc người nhận giải.");
+                if (request.TargetAwardId.HasValue)
+                {
+                    targetAward = eventAwards.FirstOrDefault(a => a.Id == request.TargetAwardId.Value)
+                        ?? throw new BadRequestException("Suất giải bị khiếu nại không thuộc sự kiện này.");
+                }
+            }
+        }
+        else
+        {
+            EnsureResultsEditable(ev);
+            if (ev.Status != EventStatus.Published || participation.Status != EventParticipationStatus.VerificationFailed)
+                throw new ConflictException("Chỉ có thể khiếu nại khi hồ sơ đã có kết quả xác minh không đạt.");
+            if (EventAppealWindow.DeadlineFor(participation) is { } deadline && DateTime.UtcNow >= deadline)
+                throw new ConflictException($"Đã quá hạn {EventAppealWindow.Hours} giờ để gửi khiếu nại.");
+        }
 
         // BR-AP07: Không cho phép Appeal ghi đè quyết định Hard Safety Block của F-10
         var blockedSubmission = await _uow.Repository<EventSubmission>().ExistsAsync(
@@ -630,6 +685,10 @@ public partial class EventParticipationService : IEventParticipationService
         if (hasActive)
             throw new ConflictException("Đã có một đơn khiếu nại đang mở cho hồ sơ này (BR-AP03).");
 
+        var appealKind = ev.ConfigVersion == EventConfigVersion.ActivityBased && Enum.IsDefined(request.Kind)
+            ? request.Kind
+            : EventAppealKind.Verification;
+
         var appeal = new EventAppeal
         {
             EventId = eventId,
@@ -637,41 +696,83 @@ public partial class EventParticipationService : IEventParticipationService
             AppellantUserId = userId,
             ReasonText = request.ReasonText.Trim(),
             EvidenceJson = request.EvidenceJson,
+            Kind = appealKind,
+            TargetAwardId = appealKind == EventAppealKind.Ranking ? request.TargetAwardId : null,
             Status = EventAppealStatus.Open
         };
         await _uow.Repository<EventAppeal>().AddAsync(appeal, ct);
         await _uow.SaveChangesAsync(ct);
-        await _audit.LogAsync(userId, "EventAppealCreated", nameof(EventAppeal), appeal.Id, null, new { participation.Id }, ct);
+        await _audit.LogAsync(userId, "EventAppealCreated", nameof(EventAppeal), appeal.Id, null,
+            new { participation.Id, appeal.Kind, appeal.TargetAwardId }, ct);
 
-        return MapAppeal(appeal);
+        return MapAppeal(appeal, targetAward);
     }
 
     public async Task<IReadOnlyList<EventAppealDto>> ListAppealsAsync(int eventId, CancellationToken ct = default)
     {
         var list = await _uow.Repository<EventAppeal>().FindAsync(a => a.EventId == eventId, cancellationToken: ct);
-        return list.OrderByDescending(a => a.CreatedAt).Select(MapAppeal).ToList();
+        var awardIds = list.Where(a => a.TargetAwardId.HasValue).Select(a => a.TargetAwardId!.Value).Distinct().ToList();
+        var awards = awardIds.Count == 0
+            ? new Dictionary<int, EventAward>()
+            : (await _uow.Repository<EventAward>().FindAsync(a => awardIds.Contains(a.Id), cancellationToken: ct))
+                .ToDictionary(a => a.Id);
+        return list.OrderByDescending(a => a.CreatedAt)
+            .Select(a => MapAppeal(a, a.TargetAwardId.HasValue ? awards.GetValueOrDefault(a.TargetAwardId.Value) : null))
+            .ToList();
     }
 
     public async Task<EventAppealDto> DecideAppealAsync(int actorUserId, int appealId, DecideAppealRequestDto request, CancellationToken ct = default)
     {
         var appeal = await _uow.Repository<EventAppeal>().FirstOrDefaultAsync(a => a.Id == appealId, cancellationToken: ct)
             ?? throw new NotFoundException(nameof(EventAppeal), appealId);
-        return await InEventResultTransactionAsync(appeal.EventId,
+        var (dto, notifyEventTitle) = await InEventResultTransactionAsync(appeal.EventId,
             () => DecideAppealLockedAsync(actorUserId, appealId, request, ct), ct);
+
+        if (notifyEventTitle != null && _notifications != null)
+        {
+            try
+            {
+                var payload = JsonSerializer.Serialize(new
+                {
+                    eventId = dto.EventId,
+                    eventTitle = notifyEventTitle,
+                    appealId = dto.Id,
+                    resolutionNote = dto.ResolutionNote
+                });
+                await _notifications.CreateAsync(dto.AppellantUserId, NotificationType.EventAppealAccepted, payload, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _uow.DiscardTrackedChanges();
+            }
+        }
+
+        return dto;
     }
 
-    private async Task<EventAppealDto> DecideAppealLockedAsync(int actorUserId, int appealId, DecideAppealRequestDto request, CancellationToken ct)
+    private async Task<(EventAppealDto Dto, string? NotifyEventTitle)> DecideAppealLockedAsync(
+        int actorUserId, int appealId, DecideAppealRequestDto request, CancellationToken ct)
     {
         var appeal = await _uow.Repository<EventAppeal>().GetByIdAsync(appealId, ct)
             ?? throw new NotFoundException(nameof(EventAppeal), appealId);
         var campaign = await _uow.Repository<Event>().GetByIdAsync(appeal.EventId, ct)
             ?? throw new NotFoundException(nameof(Event), appeal.EventId);
         await EventModeratorAccess.RequireOperatorAsync(_uow, campaign, actorUserId, ct);
-        EnsureResultsEditable(campaign);
+        if (campaign.ConfigVersion == EventConfigVersion.ActivityBased)
+        {
+            if (campaign.Status is EventStatus.Closed or EventStatus.Archived)
+                throw new ConflictException("Sự kiện đã đóng, không thể xử lý khiếu nại.");
+        }
+        else
+        {
+            EnsureResultsEditable(campaign);
+        }
         if (appeal.Status is EventAppealStatus.Accepted or EventAppealStatus.Rejected)
             throw new ConflictException("Khiếu nại này đã có kết luận.");
         if (request.Decision is not (EventAppealStatus.Accepted or EventAppealStatus.Rejected or EventAppealStatus.UnderReview or EventAppealStatus.Escalated))
             throw new BadRequestException("Quyết định xử lý khiếu nại không hợp lệ.");
+        if (appeal.Kind == EventAppealKind.Ranking && request.Decision == EventAppealStatus.Accepted)
+            throw new ConflictException("Hãy chấp nhận đơn khiếu nại xếp hạng bằng cách thu hồi suất giải và gắn đơn vào thao tác đó.");
         if (string.IsNullOrWhiteSpace(request.ResolutionNote))
             throw new BadRequestException("Phải nhập lý do kết luận xử lý khiếu nại (BR-AP05).");
 
@@ -682,7 +783,7 @@ public partial class EventParticipationService : IEventParticipationService
         appeal.UpdatedAt = appeal.ResolvedAt;
         _uow.Repository<EventAppeal>().Update(appeal);
 
-        if (request.Decision == EventAppealStatus.Accepted)
+        if (request.Decision == EventAppealStatus.Accepted && appeal.Kind == EventAppealKind.Verification)
         {
             var p = await _uow.Repository<EventParticipation>().GetByIdAsync(appeal.ParticipationId, ct);
             if (p != null)
@@ -695,8 +796,24 @@ public partial class EventParticipationService : IEventParticipationService
         }
 
         await _uow.SaveChangesAsync(ct);
+
+        if (request.Decision == EventAppealStatus.Accepted &&
+            campaign.ConfigVersion == EventConfigVersion.ActivityBased &&
+            !campaign.ResultsFinalizedAt.HasValue)
+        {
+            var activities = await _uow.Repository<EventActivity>().FindAsync(a => a.EventId == campaign.Id, cancellationToken: ct);
+            if (EventExecution.HasEnded(campaign, Array.Empty<EventTrack>(), activities))
+            {
+                await new EventRewardService(_uow, _audit).RecalculateActivityProposedAwardsInTransactionAsync(campaign, activities, ct);
+                await _uow.SaveChangesAsync(ct);
+            }
+        }
+
+        EventAward? targetAward = appeal.TargetAwardId.HasValue
+            ? await _uow.Repository<EventAward>().GetByIdAsync(appeal.TargetAwardId.Value, ct)
+            : null;
         await _audit.LogAsync(actorUserId, "EventAppealDecided", nameof(EventAppeal), appeal.Id, null, new { appeal.Status, appeal.ResolutionNote }, ct);
-        return MapAppeal(appeal);
+        return (MapAppeal(appeal, targetAward), request.Decision == EventAppealStatus.Accepted ? campaign.Title : null);
     }
 
     private async Task<EventMissionDashboardDto> BuildDashboardAsync(EventParticipation participation, EventTrack track, CancellationToken ct)
@@ -1062,7 +1179,28 @@ public partial class EventParticipationService : IEventParticipationService
     public async Task<IReadOnlyList<EventVoteDto>> ListVotesAsync(int eventId, CancellationToken ct = default)
     {
         var votes = await _uow.Repository<EventVote>().FindAsync(v => v.EventId == eventId && !v.IsDeleted, cancellationToken: ct);
-        return votes.OrderByDescending(v => v.CreatedAt).Select(MapVote).ToList();
+        if (votes.Count == 0) return Array.Empty<EventVoteDto>();
+
+        var storyIds = votes.Select(v => v.StoryId).Distinct().ToList();
+        var userIds = votes.Select(v => v.ParentUserId).Distinct().ToList();
+        var sessionIds = votes.Where(v => v.ReadingSessionId.HasValue).Select(v => v.ReadingSessionId!.Value).Distinct().ToList();
+        var titles = (await _uow.Repository<Story>().FindAsync(s => storyIds.Contains(s.Id), cancellationToken: ct))
+            .ToDictionary(s => s.Id, s => s.Title);
+        var names = (await _uow.Repository<UserAccount>().FindAsync(u => userIds.Contains(u.Id), cancellationToken: ct))
+            .ToDictionary(u => u.Id, u => string.IsNullOrWhiteSpace(u.FullName) ? u.Username : u.FullName);
+        var completed = sessionIds.Count == 0
+            ? new Dictionary<int, DateTime?>()
+            : (await _uow.Repository<ReadingSession>().FindAsync(r => sessionIds.Contains(r.Id), cancellationToken: ct))
+                .ToDictionary(r => r.Id, r => r.CompletedAt);
+
+        return votes.OrderByDescending(v => v.CreatedAt).Select(v =>
+        {
+            var dto = MapVote(v);
+            dto.StoryTitle = titles.GetValueOrDefault(v.StoryId);
+            dto.VoterName = names.GetValueOrDefault(v.ParentUserId);
+            dto.ReadingCompletedAt = v.ReadingSessionId is int sid ? completed.GetValueOrDefault(sid) : null;
+            return dto;
+        }).ToList();
     }
 
     public async Task<EventVoteDto> DisqualifyVoteAsync(int moderatorUserId, int voteId, DisqualifyEventVoteRequestDto request, CancellationToken ct = default)
@@ -1314,13 +1452,16 @@ public partial class EventParticipationService : IEventParticipationService
         UpdatedAt = v.UpdatedAt
     };
 
-    private static EventAppealDto MapAppeal(EventAppeal a) => new()
+    private static EventAppealDto MapAppeal(EventAppeal a, EventAward? targetAward = null) => new()
     {
         Id = a.Id,
         EventId = a.EventId,
         ParticipationId = a.ParticipationId,
         AppellantUserId = a.AppellantUserId,
         ReasonText = a.ReasonText,
+        Kind = a.Kind,
+        TargetAwardId = a.TargetAwardId,
+        TargetAwardLabel = targetAward == null ? null : $"{targetAward.RankOrTier} · Suất #{targetAward.SlotIndex}",
         Status = a.Status,
         ResolutionNote = a.ResolutionNote,
         CreatedAt = a.CreatedAt,

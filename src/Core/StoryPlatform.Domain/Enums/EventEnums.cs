@@ -143,6 +143,13 @@ public enum EventAppealStatus
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
+public enum EventAppealKind
+{
+    Verification = 1,
+    Ranking = 2
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum EventRewardType
 {
     PhysicalGift = 1,
@@ -162,7 +169,9 @@ public enum EventAwardStatus
     Fulfilled = 6,
     Expired = 7,
     UnclaimedBudgetReturned = 8,
-    Failed = 9
+    Failed = 9,
+    AppealHold = 10,
+    Revoked = 11
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]

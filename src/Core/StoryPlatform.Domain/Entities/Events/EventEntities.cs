@@ -29,6 +29,8 @@ public class Event : BaseEntity
     public string? FinalLeaderboardSnapshotJson { get; set; }
     public string? FinalAwardRankingSnapshotJson { get; set; }
     public DateTime? ResultsFinalizedAt { get; set; }
+    public DateTime? ResultsPublishedAt { get; set; }
+    public DateTime? EndedNotifiedAt { get; set; }
     public long BudgetVnd { get; set; }
 
     public int CreatedByUserId { get; set; }
@@ -213,6 +215,8 @@ public class EventAppeal : BaseEntity
 
     public string ReasonText { get; set; } = string.Empty;
     public string? EvidenceJson { get; set; }
+    public EventAppealKind Kind { get; set; } = EventAppealKind.Verification;
+    public int? TargetAwardId { get; set; }
     public EventAppealStatus Status { get; set; } = EventAppealStatus.Open;
     public int? ReviewedByUserId { get; set; }
     public string? ResolutionNote { get; set; }
@@ -253,6 +257,13 @@ public class EventAward : BaseEntity
     public EventAwardStatus Status { get; set; } = EventAwardStatus.AwardProposed;
     public DateTime? ClaimDeadlineAt { get; set; }
     public int? ApprovedByAdminId { get; set; }
+    public string? ManualAssignmentNote { get; set; }
+    public int? ManuallyAssignedByUserId { get; set; }
+    public DateTime? ManuallyAssignedAt { get; set; }
+    public string? RevokedReason { get; set; }
+    public int? RevokedByUserId { get; set; }
+    public DateTime? RevokedAt { get; set; }
+    public bool ShowChildNames { get; set; }
 }
 
 public class RewardFulfillment : BaseEntity

@@ -313,7 +313,9 @@ public partial class EventParticipationService
         }
 
         await _audit.LogAsync(userId, "EventActivityStorySubmitted", nameof(EventSubmission), submission.Id, null, new { eventId, story.Id, isCreator }, ct);
-        return MapSubmission(submission, Array.Empty<EventEvaluation>());
+        var created = MapSubmission(submission, Array.Empty<EventEvaluation>());
+        created.SubmittedTitle ??= string.IsNullOrWhiteSpace(version.Title) ? story.Title : version.Title;
+        return created;
     }
 
     public async Task<IReadOnlyList<EventSubmissionDto>> ListMySubmissionsAsync(int userId, int eventId, CancellationToken ct = default)
@@ -343,6 +345,19 @@ public partial class EventParticipationService
             : await _uow.Repository<EventVote>().FindAsync(
                 v => v.EventId == eventId && !v.IsDisqualified && !v.IsDeleted, cancellationToken: ct);
 
+        // Bài của Creator không lưu tên lúc nộp; lấy tên phiên bản đã nộp, thiếu thì tên truyện.
+        var untitled = items.Where(s => string.IsNullOrWhiteSpace(s.ParentSubmissionTitle)).ToList();
+        var versionIds = untitled.Select(s => s.CurrentStoryVersionId).Distinct().ToList();
+        var storyIds = untitled.Select(s => s.StoryId).Distinct().ToList();
+        var versionTitles = versionIds.Count == 0
+            ? new Dictionary<int, string?>()
+            : (await _uow.Repository<StoryVersion>().FindAsync(v => versionIds.Contains(v.Id), cancellationToken: ct))
+                .ToDictionary(v => v.Id, v => (string?)v.Title);
+        var storyTitles = storyIds.Count == 0
+            ? new Dictionary<int, string?>()
+            : (await _uow.Repository<Story>().FindAsync(x => storyIds.Contains(x.Id), cancellationToken: ct))
+                .ToDictionary(x => x.Id, x => (string?)x.Title);
+
         var result = new List<EventSubmissionDto>(items.Count);
         foreach (var s in items.OrderByDescending(x => x.SubmittedAt ?? x.CreatedAt).ThenByDescending(x => x.Id))
         {
@@ -350,7 +365,13 @@ public partial class EventParticipationService
             var subVotes = hideVotes
                 ? null
                 : votes.Where(v => (v.EventSubmissionId == s.Id || v.StoryId == s.StoryId) && v.StoryVersionId == s.LockedStoryVersionId).ToList();
-            result.Add(MapSubmission(s, evals, subVotes));
+            var dto = MapSubmission(s, evals, subVotes);
+            if (string.IsNullOrWhiteSpace(dto.SubmittedTitle))
+            {
+                var versionTitle = versionTitles.GetValueOrDefault(s.CurrentStoryVersionId);
+                dto.SubmittedTitle = string.IsNullOrWhiteSpace(versionTitle) ? storyTitles.GetValueOrDefault(s.StoryId) : versionTitle;
+            }
+            result.Add(dto);
         }
         return result;
     }

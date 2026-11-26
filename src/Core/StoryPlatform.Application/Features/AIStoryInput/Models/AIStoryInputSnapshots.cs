@@ -37,8 +37,6 @@ public sealed record AIStoryInputContextSnapshot(
     bool ParentalGateEnabled = true,
     decimal? SafetyScoreThreshold = null,
     string? ComprehensionGoal = null,
-    decimal? ComprehensionThresholdPercent = null,
-    int ComprehensionWindowSize = 3,
     int ConsentPolicyVersion = 1,
     DateTime? ConsentRecordedAt = null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]

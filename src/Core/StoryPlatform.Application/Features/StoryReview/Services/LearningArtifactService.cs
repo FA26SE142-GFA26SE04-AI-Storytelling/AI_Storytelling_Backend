@@ -232,8 +232,7 @@ public sealed class LearningArtifactService : ILearningArtifactService
             Vocabulary = vocabDtos,
             AgeBand = ageBand,
             Language = story.Language,
-            ComprehensionGoal = learning?.ComprehensionGoal,
-            ComprehensionThresholdPercent = safety?.ComprehensionThresholdPercent
+            ComprehensionGoal = learning?.ComprehensionGoal
         };
 
         var response = await _aiClient.GenerateQuizAsync(request, cancellationToken);

@@ -4980,14 +4980,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int>("ChildProfileId")
                         .HasColumnType("integer");
 
-                    b.Property<decimal>("ComprehensionThresholdPercent")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("decimal(5,2)")
-                        .HasDefaultValue(70m);
-
-                    b.Property<int>("ComprehensionWindowSize")
-                        .HasColumnType("integer");
-
                     b.Property<int>("ConsentPolicyVersion")
                         .HasColumnType("integer");
 

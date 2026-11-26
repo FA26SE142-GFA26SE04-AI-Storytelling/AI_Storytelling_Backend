@@ -599,9 +599,7 @@ public sealed class ExistingStoryServiceTests
             ParentalGateEnabled = true,
             ConsentRecorded = true,
             ConsentRecordedAt = DateTime.UtcNow,
-            ConsentPolicyVersion = 1,
-            ComprehensionThresholdPercent = 70m,
-            ComprehensionWindowSize = 3
+            ConsentPolicyVersion = 1
         });
         return store;
     }

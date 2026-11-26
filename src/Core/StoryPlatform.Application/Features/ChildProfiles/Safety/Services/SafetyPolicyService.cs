@@ -5,6 +5,7 @@ using StoryPlatform.Application.Features.ChildProfiles.Safety;
 using StoryPlatform.Application.Features.ChildProfiles.Safety.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.Safety.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
+using StoryPlatform.Application.Features.ContentGeneration;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -15,15 +16,18 @@ public class SafetyPolicyService : ISafetyPolicyService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IChildProfileAccessGuard _accessGuard;
     private readonly IAuditLogWriter _auditLogWriter;
+    private readonly LearningBatchOptions _learningOptions;
 
     public SafetyPolicyService(
         IUnitOfWork unitOfWork,
         IChildProfileAccessGuard accessGuard,
-        IAuditLogWriter auditLogWriter)
+        IAuditLogWriter auditLogWriter,
+        LearningBatchOptions? learningOptions = null)
     {
         _unitOfWork = unitOfWork;
         _accessGuard = accessGuard;
         _auditLogWriter = auditLogWriter;
+        _learningOptions = learningOptions ?? new LearningBatchOptions();
     }
 
     public async Task<SafetyPolicyDto> SetSafetyPolicyAsync(
@@ -34,6 +38,7 @@ public class SafetyPolicyService : ISafetyPolicyService
             childProfileId, currentUserId, cancellationToken);
         var isOwner = true;
         ValidateRequest(request);
+        await EnsureStoryLengthWithinDefaultAsync(childProfileId, request.StoryLengthTarget, cancellationToken);
 
         var policyRepo = _unitOfWork.Repository<SafetyPolicy>();
         var policy = await policyRepo.FirstOrDefaultAsync(
@@ -314,8 +319,6 @@ public class SafetyPolicyService : ISafetyPolicyService
         policy.ParentalGateEnabled = request.ParentalGateEnabled;
         policy.ReadabilityScoreThreshold = request.ReadabilityScoreThreshold;
         policy.SafetyScoreThreshold = request.SafetyScoreThreshold;
-        policy.ComprehensionThresholdPercent = request.ComprehensionThresholdPercent;
-        policy.ComprehensionWindowSize = request.ComprehensionWindowSize;
         policy.StoryWishesEnabled = request.StoryWishesEnabled;
         policy.AllowInteractiveStories = request.AllowInteractiveStories;
         policy.ChildCreationEnabled = request.ChildCreationEnabled;
@@ -377,8 +380,6 @@ public class SafetyPolicyService : ISafetyPolicyService
         policy.ParentalGateEnabled,
         policy.SafetyScoreThreshold,
         policy.ReadabilityScoreThreshold,
-        policy.ComprehensionThresholdPercent,
-        policy.ComprehensionWindowSize,
         policy.StoryWishesEnabled,
         policy.AllowInteractiveStories,
         policy.ChildCreationEnabled,
@@ -402,8 +403,6 @@ public class SafetyPolicyService : ISafetyPolicyService
         ConsentedByUserId = policy.ConsentedByUserId,
         SafetyScoreThreshold = policy.SafetyScoreThreshold,
         ReadabilityScoreThreshold = policy.ReadabilityScoreThreshold,
-        ComprehensionThresholdPercent = policy.ComprehensionThresholdPercent,
-        ComprehensionWindowSize = policy.ComprehensionWindowSize,
         StoryWishesEnabled = policy.StoryWishesEnabled,
         AllowInteractiveStories = policy.AllowInteractiveStories,
         ChildCreationEnabled = policy.ChildCreationEnabled,
@@ -434,6 +433,25 @@ public class SafetyPolicyService : ISafetyPolicyService
             .ToList();
     }
 
+    /// <summary>Phụ huynh chỉ được hạ độ dài truyện so với mặc định theo tuổi và mức đọc của bé.</summary>
+    private async Task EnsureStoryLengthWithinDefaultAsync(
+        int childProfileId, int? storyLengthTarget, CancellationToken cancellationToken)
+    {
+        if (storyLengthTarget is not > 0) return;
+
+        var child = await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(childProfileId, cancellationToken)
+                    ?? throw new NotFoundException("Hồ sơ trẻ", childProfileId);
+        var learning = await _unitOfWork.Repository<LearningProfile>().FirstOrDefaultAsync(
+            value => value.ChildProfileId == childProfileId, cancellationToken: cancellationToken);
+        var ageBand = child.AgeBand == AgeBand.Age_9_10 ? "9-10" : "6-8";
+        var levelDefault = _learningOptions.Profile(ageBand, readingLevel: learning?.ReadingLevel).TargetWords;
+        if (storyLengthTarget > levelDefault)
+        {
+            throw new BadRequestException(
+                $"Độ dài truyện chỉ được từ {StoryLengthRules.MinimumTarget} đến {levelDefault} từ (mặc định theo tuổi và mức đọc của bé).");
+        }
+    }
+
     private static void ValidateRequest(SetSafetyPolicyRequestDto request)
     {
         if (request.MaxStoryLength is < 100 or > 20000)
@@ -442,10 +460,10 @@ public class SafetyPolicyService : ISafetyPolicyService
                 "Độ dài truyện tối đa phải từ 100 đến 20000 ký tự.");
         }
 
-        if (request.StoryLengthTarget is < 100 or > 9000)
+        if (request.StoryLengthTarget is < StoryLengthRules.MinimumTarget)
         {
             throw new BadRequestException(
-                "Độ dài truyện mong muốn phải từ 100 đến 9000 từ.");
+                $"Độ dài truyện phải từ {StoryLengthRules.MinimumTarget} từ trở lên.");
         }
 
         if (!Enum.IsDefined(request.RequiredApprovalMode))
@@ -466,11 +484,6 @@ public class SafetyPolicyService : ISafetyPolicyService
         if (request.SafetyScoreThreshold is < 0m or > 100m)
         {
             throw new BadRequestException("Ngưỡng safety phải nằm trong khoảng 0 đến 100.");
-        }
-
-        if (request.ComprehensionThresholdPercent is < 0m or > 100m || request.ComprehensionWindowSize is < 1 or > 20)
-        {
-            throw new BadRequestException("Cấu hình comprehension không hợp lệ.");
         }
 
         request.Categories ??= new List<SetSafetyPolicyCategoryRequestDto>();

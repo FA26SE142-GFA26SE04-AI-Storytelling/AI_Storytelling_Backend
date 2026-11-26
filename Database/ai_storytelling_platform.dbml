@@ -1557,8 +1557,6 @@ Table safety_policies {
   ChildCreationEnabled boolean [not null]
   ChildCreationMode ChildCreationMode [not null, note: 'EF PostgreSQL type: character varying(30)']
   ChildProfileId int [not null]
-  ComprehensionThresholdPercent numeric(5,2) [not null]
-  ComprehensionWindowSize int [not null]
   ConsentPolicyVersion int [not null]
   ConsentRecorded boolean [not null]
   ConsentRecordedAt timestamptz

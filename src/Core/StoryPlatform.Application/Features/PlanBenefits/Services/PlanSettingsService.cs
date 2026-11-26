@@ -36,6 +36,7 @@ public class PlanSettingsService(IUnitOfWork unitOfWork, IPlanSettingsProvider p
 
         settings.ReadingFundPercent = request.ReadingFundPercent;
         settings.CreativeFundPercent = request.CreativeFundPercent;
+        settings.MinimumPayoutVnd = request.MinimumPayoutVnd ?? settings.MinimumPayoutVnd;
         settings.CreatorMonthlyAiCredits = request.CreatorMonthlyAiCredits;
         settings.CreatorMonthlySubmitCredits = request.CreatorMonthlySubmitCredits;
         settings.PartnerMonthlyAiCredits = request.PartnerMonthlyAiCredits;
@@ -65,6 +66,9 @@ public class PlanSettingsService(IUnitOfWork unitOfWork, IPlanSettingsProvider p
         return after;
     }
 
+    /// <summary>Trần của mức chi tối thiểu cho Creator (VND).</summary>
+    public const long MaxMinimumPayoutVnd = 1_000_000_000;
+
     /// <summary>Trần của giới hạn sinh lại: mỗi lần sinh lại tốn chi phí AI mà không trừ lượt.</summary>
     public const int MaxRegenerationLimit = 20;
 
@@ -73,6 +77,11 @@ public class PlanSettingsService(IUnitOfWork unitOfWork, IPlanSettingsProvider p
         if (request.ReadingFundPercent is < 0 or > 100 || request.CreativeFundPercent is < 0 or > 100)
         {
             throw new BadRequestException("Tỷ lệ quỹ nhà sáng tạo phải từ 0 đến 100%.");
+        }
+
+        if (request.MinimumPayoutVnd is < 0 or > MaxMinimumPayoutVnd)
+        {
+            throw new BadRequestException($"Mức chi tối thiểu cho nhà sáng tạo phải từ 0 đến {MaxMinimumPayoutVnd:N0} đ.");
         }
 
         if (request.MinimumReadSeconds is < 1 or > 3600)
@@ -112,6 +121,7 @@ public class PlanSettingsService(IUnitOfWork unitOfWork, IPlanSettingsProvider p
     {
         ReadingFundPercent = settings.ReadingFundPercent,
         CreativeFundPercent = settings.CreativeFundPercent,
+        MinimumPayoutVnd = settings.MinimumPayoutVnd,
         CreatorMonthlyAiCredits = settings.CreatorMonthlyAiCredits,
         CreatorMonthlySubmitCredits = settings.CreatorMonthlySubmitCredits,
         PartnerMonthlyAiCredits = settings.PartnerMonthlyAiCredits,

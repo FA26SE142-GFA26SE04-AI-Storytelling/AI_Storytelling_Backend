@@ -1,4 +1,5 @@
 using StoryPlatform.Application.Features.CreatorPayouts.DTOs;
+using StoryPlatform.Domain.Entities;
 
 namespace StoryPlatform.Application.Features.CreatorPayouts.Interfaces;
 
@@ -18,7 +19,8 @@ public interface ICreatorPayoutService
     Task<CreatorPayoutAccountDto> UpdatePayoutAccountAsync(
         int creatorUserId, UpdateCreatorPayoutAccountRequestDto request, CancellationToken cancellationToken = default);
 
-    /// <summary>Danh sách chi: Creator Active, có số dư lớn hơn 0 và đã có thông tin nhận tiền (không có mức chi tối thiểu).</summary>
+    /// <summary>Danh sách chi: Creator Active, có số dư lớn hơn 0, đạt mức chi tối thiểu Admin đặt
+    /// (<see cref="PlanSettings.MinimumPayoutVnd"/>) và đã có thông tin nhận tiền.</summary>
     Task<IReadOnlyList<CreatorPayoutDueDto>> GetDueAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Admin đánh dấu Đã chi đúng bằng số dư: ghi lần chi, số dư về 0, thông báo Creator, audit log.</summary>

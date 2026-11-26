@@ -7,6 +7,7 @@ using StoryPlatform.Application.Features.CreatorPayouts.DTOs;
 using StoryPlatform.Application.Features.CreatorPayouts.Interfaces;
 using StoryPlatform.Application.Features.CreatorStatistics.Interfaces;
 using StoryPlatform.Application.Features.Notifications.Interfaces;
+using StoryPlatform.Application.Features.PlanBenefits.Services;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using StoryPlatform.Application.Features.AccessControl;
@@ -47,6 +48,10 @@ public class CreatorPayoutService : ICreatorPayoutService
         _notificationService = notificationService;
     }
 
+    /// <summary>Mức chi tối thiểu Admin đặt trong cấu hình gói (0 = không có mức tối thiểu).</summary>
+    private async Task<long> MinimumPayoutAsync(CancellationToken cancellationToken) =>
+        (await new PlanSettingsProvider(_unitOfWork).GetAsync(cancellationToken)).MinimumPayoutVnd;
+
     public async Task<CreatorPayoutOverviewDto> GetOverviewAsync(int creatorUserId, CancellationToken cancellationToken = default)
     {
         var creator = await RequireCreatorAsync(creatorUserId, cancellationToken);
@@ -70,6 +75,7 @@ public class CreatorPayoutService : ICreatorPayoutService
             Username = creator.Username,
             FullName = creator.FullName,
             BalanceVnd = entries.Sum(entry => entry.AmountVnd),
+            MinimumPayoutVnd = await MinimumPayoutAsync(cancellationToken),
             HasPayoutAccount = account != null,
             Reminder = account == null ? MissingAccountReminder : null,
             PayoutAccount = account == null ? null : ToDto(account),
@@ -146,7 +152,8 @@ public class CreatorPayoutService : ICreatorPayoutService
         var balances = (await _unitOfWork.Repository<CreatorBalanceEntry>().GetAllAsync(cancellationToken))
             .GroupBy(entry => entry.CreatorUserId)
             .ToDictionary(group => group.Key, group => group.Sum(entry => entry.AmountVnd));
-        var dueIds = balances.Where(pair => pair.Value > 0)
+        var minimum = await MinimumPayoutAsync(cancellationToken);
+        var dueIds = balances.Where(pair => pair.Value > 0 && pair.Value >= minimum)
             .Select(pair => pair.Key)
             .ToList();
         if (dueIds.Count == 0)
@@ -228,6 +235,12 @@ public class CreatorPayoutService : ICreatorPayoutService
             if (balance <= 0)
             {
                 throw new ConflictException("Số dư đã về 0; không ghi thêm lần chi.");
+            }
+
+            var minimum = await MinimumPayoutAsync(cancellationToken);
+            if (balance < minimum)
+            {
+                throw new ConflictException($"Số dư {balance:N0} đ chưa đạt mức chi tối thiểu {minimum:N0} đ.");
             }
 
             if (request.AmountVnd != balance)

@@ -42,7 +42,7 @@ public class CreatorPayoutController : BaseApiController
         return HandleResult(result, "Đã lưu thông tin nhận tiền.");
     }
 
-    /// <summary>Danh sách chi: Creator Active, số dư lớn hơn 0, đã có thông tin nhận tiền.</summary>
+    /// <summary>Danh sách chi: Creator Active, số dư đạt mức chi tối thiểu Admin đặt, đã có thông tin nhận tiền.</summary>
     [HttpGet("/api/v1/admin/creator-payouts/due")]
     [HasPermission(Permissions.Admin.CreatorPayoutManage)]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<CreatorPayoutDueDto>>>> GetDue(CancellationToken cancellationToken)

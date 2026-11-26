@@ -18,6 +18,26 @@ namespace StoryPlatform.UnitTests;
 public sealed partial class AIStoryInputServiceTests
 {
     [Fact]
+    public void CreativeInput_TooLongTopic_ReturnsVietnameseFieldMessage()
+    {
+        var request = new SubmitAIStoryInputRequestDto
+        {
+            Topic = new string('a', 201),
+            Lesson = "Biết chia sẻ",
+            VocabularyLevel = "level_2",
+            ChildProfileId = 1,
+            IdempotencyKey = "idem-key-1"
+        };
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+
+        System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            request, new System.ComponentModel.DataAnnotations.ValidationContext(request), results, validateAllProperties: true);
+
+        var error = Assert.Single(results);
+        Assert.Equal("Ý tưởng câu chuyện từ 2 đến 200 ký tự.", error.ErrorMessage);
+    }
+
+    [Fact]
     public async Task Creator_SubmitUsesAudienceWithoutChildConsentOrChildQuota()
     {
         var store = new FakeUnitOfWork();

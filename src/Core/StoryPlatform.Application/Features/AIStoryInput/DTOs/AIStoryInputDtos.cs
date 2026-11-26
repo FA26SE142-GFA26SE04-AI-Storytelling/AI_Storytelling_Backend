@@ -32,10 +32,11 @@ public sealed class AIStoryInputContextDto
 
 public class AIStoryCreativeInputDto
 {
-    [Required, StringLength(200, MinimumLength = 2)]
+    [Required(ErrorMessage = "Ý tưởng câu chuyện không được để trống.")]
+    [StringLength(200, MinimumLength = 2, ErrorMessage = "Ý tưởng câu chuyện từ 2 đến 200 ký tự.")]
     public string Topic { get; init; } = string.Empty;
 
-    [StringLength(50)]
+    [StringLength(50, ErrorMessage = "Thể loại tối đa 50 ký tự.")]
     public string? Genre { get; init; }
 
     [Required, RegularExpression("^(specified|ai_suggested)$")]
@@ -46,10 +47,11 @@ public class AIStoryCreativeInputDto
     [Required, RegularExpression("^(specified|ai_suggested)$")]
     public string SettingMode { get; init; } = "ai_suggested";
 
-    [StringLength(300)]
+    [StringLength(300, ErrorMessage = "Bối cảnh tối đa 300 ký tự.")]
     public string? Setting { get; init; }
 
-    [Required, StringLength(500, MinimumLength = 2)]
+    [Required(ErrorMessage = "Bài học không được để trống.")]
+    [StringLength(500, MinimumLength = 2, ErrorMessage = "Bài học từ 2 đến 500 ký tự.")]
     public string Lesson { get; init; } = string.Empty;
 
     [Required, RegularExpression("^level_[1-5]$")]

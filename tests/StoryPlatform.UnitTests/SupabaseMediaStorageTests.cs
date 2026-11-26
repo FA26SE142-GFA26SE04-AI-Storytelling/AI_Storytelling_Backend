@@ -200,8 +200,53 @@ public sealed class SupabaseMediaStorageTests
             storage.UploadAsync("123/audio.mp3", garbage, "audio/mpeg"));
     }
 
+    [Theory]
+    [InlineData("""{"statusCode":"404","error":"Bucket not found","message":"Bucket not found","code":"NoSuchBucket"}""", "MEDIA_STORAGE_UPLOAD_BUCKET_NOT_FOUND")]
+    [InlineData("""{"statusCode":"403","error":"Unauthorized","message":"new row violates row-level security policy"}""", "MEDIA_STORAGE_UPLOAD_ACCESS_DENIED")]
+    [InlineData("""{"statusCode":"413","error":"Payload too large","code":"EntityTooLarge"}""", "MEDIA_STORAGE_UPLOAD_REJECTED")]
+    [InlineData("not json", "MEDIA_STORAGE_UPLOAD_REJECTED")]
+    public async Task UploadAsync_Http400_UsesTheStatusSupabasePutsInTheBody(string body, string expectedCode)
+    {
+        var storage = CreateStorage(_ => Task.FromResult(JsonResponse(HttpStatusCode.BadRequest, body)));
+        using var content = new MemoryStream([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 1, 2]);
+
+        var failure = await Assert.ThrowsAsync<StoryPlatform.Application.Features.MediaGeneration.PermanentMediaGenerationException>(
+            () => storage.UploadAsync("123/scene-1.webp", content, "image/webp"));
+
+        Assert.Equal(expectedCode, failure.ErrorCode);
+    }
+
+    [Fact]
+    public async Task UploadAsync_Failure_LogsProviderCodeWithoutMessageOrSecret()
+    {
+        var logger = new ListLogger();
+        var storage = CreateStorage(_ => Task.FromResult(JsonResponse(HttpStatusCode.BadRequest,
+            """{"statusCode":"404","error":"Bucket not found","message":"private-path 123/scene-1.webp","code":"NoSuchBucket"}""")), logger);
+        using var content = new MemoryStream([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 1, 2]);
+
+        await Assert.ThrowsAnyAsync<Exception>(() => storage.UploadAsync("123/scene-1.webp", content, "image/webp"));
+
+        var line = Assert.Single(logger.Messages, m => m.Contains("upload failed", StringComparison.Ordinal));
+        Assert.Contains("Status=400", line);
+        Assert.Contains("ProviderStatus=404", line);
+        Assert.Contains("ProviderCode=NoSuchBucket", line);
+        Assert.DoesNotContain("Bucket not found", line);
+        Assert.DoesNotContain("private-path", line);
+        Assert.DoesNotContain("test-secret", line);
+    }
+
+    private sealed class ListLogger : Microsoft.Extensions.Logging.ILogger<SupabaseMediaStorage>
+    {
+        public List<string> Messages { get; } = [];
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId,
+            TState state, Exception? exception, Func<TState, Exception?, string> formatter) => Messages.Add(formatter(state, exception));
+    }
+
     private static SupabaseMediaStorage CreateStorage(
-        Func<HttpRequestMessage, Task<HttpResponseMessage>> responder)
+        Func<HttpRequestMessage, Task<HttpResponseMessage>> responder,
+        Microsoft.Extensions.Logging.ILogger<SupabaseMediaStorage>? logger = null)
     {
         var options = new SupabaseStorageOptions
         {
@@ -216,7 +261,7 @@ public sealed class SupabaseMediaStorageTests
         return new SupabaseMediaStorage(
             new HttpClient(authHandler),
             options,
-            NullLogger<SupabaseMediaStorage>.Instance);
+            logger ?? NullLogger<SupabaseMediaStorage>.Instance);
     }
 
     private static HttpResponseMessage JsonResponse(HttpStatusCode statusCode, string json) => new(statusCode)

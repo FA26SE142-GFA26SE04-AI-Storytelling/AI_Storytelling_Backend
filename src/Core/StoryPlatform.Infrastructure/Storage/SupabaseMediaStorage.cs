@@ -6,7 +6,7 @@ using StoryPlatform.Application.Features.MediaStorage.Interfaces;
 
 namespace StoryPlatform.Infrastructure.Storage;
 
-public sealed class SupabaseMediaStorage : IMediaStorage
+public sealed partial class SupabaseMediaStorage : IMediaStorage
 {
     private readonly HttpClient _httpClient;
     private readonly SupabaseStorageOptions _options;
@@ -50,10 +50,16 @@ public sealed class SupabaseMediaStorage : IMediaStorage
             using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("Supabase Storage upload failed Status={Status}", (int)response.StatusCode);
+                var status = (int)response.StatusCode;
+                var error = await ReadStorageErrorAsync(response, cancellationToken);
+                _logger.LogWarning(
+                    "Supabase Storage upload failed Status={Status} ProviderStatus={ProviderStatus} ProviderCode={ProviderCode} Bucket={Bucket}",
+                    status, error.Status, error.Code, _options.Bucket);
                 var retry = response.Headers.RetryAfter;
                 var retryAfter = retry?.Delta ?? (retry?.Date - DateTimeOffset.UtcNow);
-                throw MediaUploadFailure.ForStatus((int)response.StatusCode, retryAfter);
+                // Supabase Storage trả HTTP 400 cho cả "không có bucket" và "không có quyền", mã thật nằm trong body.
+                var effective = status == 400 && error.Status is 401 or 403 or 404 ? error.Status.Value : status;
+                throw MediaUploadFailure.ForStatus(effective, retryAfter);
             }
         }
         catch (InvalidOperationException ex) when (ex.Message == "SUPABASE_STORAGE_NOT_CONFIGURED")
@@ -172,6 +178,41 @@ public sealed class SupabaseMediaStorage : IMediaStorage
             $"Supabase Storage returned HTTP {status}.",
             null,
             response.StatusCode);
+    }
+
+    /// <summary>
+    /// Mã lỗi Supabase Storage trong body: chỉ "statusCode" (số) và "code" khi đúng dạng tên mã (vd NoSuchBucket).
+    /// Không đọc "error"/"message": các trường này có thể chứa đường dẫn object, URL ký sẵn hoặc khoá.
+    /// </summary>
+    private static async Task<StorageError> ReadStorageErrorAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            if (body.Length > 4096) body = body[..4096];
+            using var json = System.Text.Json.JsonDocument.Parse(body);
+            var root = json.RootElement;
+            if (root.ValueKind != System.Text.Json.JsonValueKind.Object) return StorageError.None;
+            int? status = root.TryGetProperty("statusCode", out var s)
+                ? s.ValueKind == System.Text.Json.JsonValueKind.Number && s.TryGetInt32(out var n) ? n
+                : s.ValueKind == System.Text.Json.JsonValueKind.String && int.TryParse(s.GetString(), out var p) ? p : null
+                : null;
+            var code = root.TryGetProperty("code", out var c) && c.ValueKind == System.Text.Json.JsonValueKind.String &&
+                       ProviderCodePattern().IsMatch(c.GetString() ?? "") ? c.GetString() : null;
+            return new StorageError(status is >= 100 and <= 599 ? status : null, code);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return StorageError.None;
+        }
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex("^[A-Z][A-Za-z]{2,40}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant)]
+    private static partial System.Text.RegularExpressions.Regex ProviderCodePattern();
+
+    private sealed record StorageError(int? Status, string? Code)
+    {
+        public static readonly StorageError None = new(null, null);
     }
 
     private sealed record SignedUrlResponse(

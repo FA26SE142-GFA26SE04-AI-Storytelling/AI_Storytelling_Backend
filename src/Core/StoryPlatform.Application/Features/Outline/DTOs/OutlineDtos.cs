@@ -5,6 +5,8 @@ namespace StoryPlatform.Application.Features.Outline.DTOs;
 public sealed class OutlineProgressDto
 {
     public int StoryId { get; init; }
+    /// <summary>Bé của truyện (chỉ trả cho người có quyền xem truyện); null với truyện của Creator.</summary>
+    public int? ChildProfileId { get; init; }
     public string StoryStatus { get; init; } = string.Empty;
     public OutlineVersionDto? CurrentVersion { get; init; }
     public string? ActiveOperation { get; init; }

@@ -1,4 +1,4 @@
--- 78. creator_earning_periods (2): ky chia tien cach day 2 thang da chot (Luong 5 5h). Thang truoc de worker tu chot
+-- 78. creator_earning_periods (1): ky chia tien cach day 2 thang da chot (Luong 5 5h). Thang truoc de worker tu chot
 -- tu ngay 8 khi chay that.
 INSERT INTO creator_earning_periods (
     "Id", "PeriodMonth", "CreatorFundVnd", "TotalValidReads", "DistributedVnd", "ClosedAt", "CreatedAt", "IsDeleted"

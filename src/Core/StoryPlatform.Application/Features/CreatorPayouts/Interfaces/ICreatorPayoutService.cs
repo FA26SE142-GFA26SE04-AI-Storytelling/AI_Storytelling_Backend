@@ -8,8 +8,6 @@ namespace StoryPlatform.Application.Features.CreatorPayouts.Interfaces;
 /// </summary>
 public interface ICreatorPayoutService
 {
-    public const long MinimumPayoutVnd = 200_000;
-
     /// <summary>Ngày (giờ Việt Nam) trong tháng mà kỳ của tháng trước thành chính thức, sau 7 ngày soát xét.</summary>
     public const int PeriodCloseDay = 8;
 
@@ -20,7 +18,7 @@ public interface ICreatorPayoutService
     Task<CreatorPayoutAccountDto> UpdatePayoutAccountAsync(
         int creatorUserId, UpdateCreatorPayoutAccountRequestDto request, CancellationToken cancellationToken = default);
 
-    /// <summary>Danh sách chi: Creator Active, có số dư từ <see cref="MinimumPayoutVnd"/> và đã có thông tin nhận tiền.</summary>
+    /// <summary>Danh sách chi: Creator Active, có số dư lớn hơn 0 và đã có thông tin nhận tiền (không có mức chi tối thiểu).</summary>
     Task<IReadOnlyList<CreatorPayoutDueDto>> GetDueAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Admin đánh dấu Đã chi đúng bằng số dư: ghi lần chi, số dư về 0, thông báo Creator, audit log.</summary>

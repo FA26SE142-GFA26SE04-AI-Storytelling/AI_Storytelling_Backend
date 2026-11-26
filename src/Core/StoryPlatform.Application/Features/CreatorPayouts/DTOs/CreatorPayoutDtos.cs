@@ -10,8 +10,6 @@ public class CreatorPayoutOverviewDto
     public string FullName { get; set; } = string.Empty;
     /// <summary>Số dư hiện tại (VND, trước thuế) = tổng các bút toán.</summary>
     public long BalanceVnd { get; set; }
-    /// <summary>Số dư tối thiểu để được chi; dưới mức này cộng dồn sang kỳ sau.</summary>
-    public long MinimumPayoutVnd { get; set; }
     public bool HasPayoutAccount { get; set; }
     /// <summary>Lời nhắc nhập thông tin nhận tiền khi Creator chưa nhập; null khi đã có.</summary>
     public string? Reminder { get; set; }

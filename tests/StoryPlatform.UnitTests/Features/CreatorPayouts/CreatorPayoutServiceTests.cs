@@ -70,17 +70,17 @@ public sealed class CreatorPayoutServiceTests
     // ---------- Danh sách chi ----------
 
     [Fact]
-    public async Task GetDue_ListsOnlyActiveCreatorsWithBalanceFrom200kAndPayoutAccount()
+    public async Task GetDue_ListsActiveCreatorsWithAnyPositiveBalanceAndPayoutAccount()
     {
         SeedCreator(CreatorA, 655_000);                                       // AC1
         SeedCreator(CreatorB, 300_000, withAccount: false);                   // AC4: chưa nhập thông tin
-        SeedCreator(CreatorC, 78_600);                                        // AC2: dưới mức chi
+        SeedCreator(CreatorC, 78_600);                                        // số dư nhỏ vẫn được chi (không còn mức tối thiểu)
         SeedCreator(5, 500_000, status: AccountStatus.Suspended);             // bị vô hiệu hoá
-        SeedCreator(6, 200_000);                                              // đúng mức tối thiểu
+        SeedCreator(6, 0);                                                    // số dư 0: không có gì để chi
 
         var due = await _sut.GetDueAsync();
 
-        Assert.Equal([CreatorA, 6], due.Select(row => row.CreatorUserId));
+        Assert.Equal([CreatorA, CreatorC], due.Select(row => row.CreatorUserId));
         var a = due[0];
         Assert.Equal(655_000, a.BalanceVnd);
         Assert.Equal("Vietcombank", a.BankName);
@@ -99,7 +99,6 @@ public sealed class CreatorPayoutServiceTests
         Assert.False(overview.HasPayoutAccount);
         Assert.NotNull(overview.Reminder);
         Assert.Null(overview.PayoutAccount);
-        Assert.Equal(200_000, overview.MinimumPayoutVnd);
     }
 
     [Fact]
@@ -222,13 +221,23 @@ public sealed class CreatorPayoutServiceTests
     }
 
     [Fact]
-    public async Task MarkPaid_BelowMinimumWithoutAccountOrSuspended_IsConflict()
+    public async Task MarkPaid_SmallBalance_IsPaidInFull()
     {
         SeedCreator(CreatorC, 78_600);
+
+        await _sut.MarkPaidAsync(AdminId, CreatorC, Paid(78_600));
+
+        Assert.Equal(0, BalanceOf(CreatorC));
+    }
+
+    [Fact]
+    public async Task MarkPaid_ZeroBalanceWithoutAccountOrSuspended_IsConflict()
+    {
+        SeedCreator(6, 0);
         SeedCreator(CreatorB, 300_000, withAccount: false);
         SeedCreator(5, 500_000, status: AccountStatus.Suspended);
 
-        await Assert.ThrowsAsync<ConflictException>(() => _sut.MarkPaidAsync(AdminId, CreatorC, Paid(78_600)));
+        await Assert.ThrowsAsync<ConflictException>(() => _sut.MarkPaidAsync(AdminId, 6, Paid(0)));
         await Assert.ThrowsAsync<ConflictException>(() => _sut.MarkPaidAsync(AdminId, CreatorB, Paid(300_000)));
         await Assert.ThrowsAsync<ConflictException>(() => _sut.MarkPaidAsync(AdminId, 5, Paid(500_000)));
         Assert.DoesNotContain(_store.Items<CreatorBalanceEntry>(), entry => entry.Type == CreatorBalanceEntryType.Payout);

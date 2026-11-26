@@ -70,7 +70,6 @@ public class CreatorPayoutService : ICreatorPayoutService
             Username = creator.Username,
             FullName = creator.FullName,
             BalanceVnd = entries.Sum(entry => entry.AmountVnd),
-            MinimumPayoutVnd = ICreatorPayoutService.MinimumPayoutVnd,
             HasPayoutAccount = account != null,
             Reminder = account == null ? MissingAccountReminder : null,
             PayoutAccount = account == null ? null : ToDto(account),
@@ -147,7 +146,7 @@ public class CreatorPayoutService : ICreatorPayoutService
         var balances = (await _unitOfWork.Repository<CreatorBalanceEntry>().GetAllAsync(cancellationToken))
             .GroupBy(entry => entry.CreatorUserId)
             .ToDictionary(group => group.Key, group => group.Sum(entry => entry.AmountVnd));
-        var dueIds = balances.Where(pair => pair.Value >= ICreatorPayoutService.MinimumPayoutVnd)
+        var dueIds = balances.Where(pair => pair.Value > 0)
             .Select(pair => pair.Key)
             .ToList();
         if (dueIds.Count == 0)
@@ -229,12 +228,6 @@ public class CreatorPayoutService : ICreatorPayoutService
             if (balance <= 0)
             {
                 throw new ConflictException("Số dư đã về 0; không ghi thêm lần chi.");
-            }
-
-            if (balance < ICreatorPayoutService.MinimumPayoutVnd)
-            {
-                throw new ConflictException(
-                    $"Số dư {balance:N0} đ chưa đạt mức chi tối thiểu {ICreatorPayoutService.MinimumPayoutVnd:N0} đ.");
             }
 
             if (request.AmountVnd != balance)

@@ -9,9 +9,6 @@ namespace StoryPlatform.Application.Features.CreatorPayouts.Interfaces;
 /// </summary>
 public interface ICreatorPayoutService
 {
-    /// <summary>Ngày (giờ Việt Nam) trong tháng mà kỳ của tháng trước thành chính thức, sau 7 ngày soát xét.</summary>
-    public const int PeriodCloseDay = 8;
-
     /// <summary>Creator xem số dư, thông tin nhận tiền và lịch sử của chính mình.</summary>
     Task<CreatorPayoutOverviewDto> GetOverviewAsync(int creatorUserId, CancellationToken cancellationToken = default);
 
@@ -32,7 +29,7 @@ public interface ICreatorPayoutService
         int adminUserId, int payoutId, CancelCreatorPayoutRequestDto request, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Worker: từ ngày <see cref="PeriodCloseDay"/> (giờ Việt Nam), chốt kỳ của tháng trước nếu chưa chốt và cộng thu nhập
+    /// Worker: từ ngày chốt Admin đặt (<see cref="PlanSettings.CreatorPeriodCloseDay"/>, giờ Việt Nam), chốt kỳ của tháng trước nếu chưa chốt và cộng thu nhập
     /// của kỳ vào số dư từng Creator. Trả true khi vừa chốt.
     /// </summary>
     Task<bool> CloseDuePeriodAsync(DateTime now, CancellationToken cancellationToken = default);

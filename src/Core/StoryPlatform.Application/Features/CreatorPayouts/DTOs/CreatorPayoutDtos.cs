@@ -12,6 +12,8 @@ public class CreatorPayoutOverviewDto
     public long BalanceVnd { get; set; }
     /// <summary>Số dư tối thiểu để được chi, do Admin đặt; 0 = không có mức tối thiểu. Dưới mức này cộng dồn sang kỳ sau.</summary>
     public long MinimumPayoutVnd { get; set; }
+    /// <summary>Ngày trong tháng (giờ Việt Nam) chốt kỳ tháng trước và cộng thu nhập vào số dư, do Admin đặt.</summary>
+    public int PeriodCloseDay { get; set; }
     public bool HasPayoutAccount { get; set; }
     /// <summary>Lời nhắc nhập thông tin nhận tiền khi Creator chưa nhập; null khi đã có.</summary>
     public string? Reminder { get; set; }

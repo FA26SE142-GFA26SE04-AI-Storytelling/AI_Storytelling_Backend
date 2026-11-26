@@ -56,6 +56,7 @@ public class CreatorPayoutService : ICreatorPayoutService
     {
         var creator = await RequireCreatorAsync(creatorUserId, cancellationToken);
         var account = await FindAccountAsync(creator.Id, cancellationToken);
+        var settings = await new PlanSettingsProvider(_unitOfWork).GetAsync(cancellationToken);
         var entries = await _unitOfWork.Repository<CreatorBalanceEntry>().FindAsync(
             entry => entry.CreatorUserId == creator.Id, cancellationToken: cancellationToken);
         var periodIds = entries.Where(entry => entry.EarningPeriodId != null)
@@ -75,7 +76,8 @@ public class CreatorPayoutService : ICreatorPayoutService
             Username = creator.Username,
             FullName = creator.FullName,
             BalanceVnd = entries.Sum(entry => entry.AmountVnd),
-            MinimumPayoutVnd = await MinimumPayoutAsync(cancellationToken),
+            MinimumPayoutVnd = settings.MinimumPayoutVnd,
+            PeriodCloseDay = settings.CreatorPeriodCloseDay,
             HasPayoutAccount = account != null,
             Reminder = account == null ? MissingAccountReminder : null,
             PayoutAccount = account == null ? null : ToDto(account),
@@ -365,7 +367,8 @@ public class CreatorPayoutService : ICreatorPayoutService
     public async Task<bool> CloseDuePeriodAsync(DateTime now, CancellationToken cancellationToken = default)
     {
         var today = VietnamTime.LocalDate(now);
-        if (today.Day < ICreatorPayoutService.PeriodCloseDay)
+        var closeDay = (await new PlanSettingsProvider(_unitOfWork).GetAsync(cancellationToken)).CreatorPeriodCloseDay;
+        if (today.Day < closeDay)
         {
             return false;
         }

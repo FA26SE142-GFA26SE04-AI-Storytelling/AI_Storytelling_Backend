@@ -190,7 +190,7 @@ public class EventManagementTests
     {
         var store = new InMemoryUnitOfWork();
         var now = DateTime.UtcNow;
-        store.Seed(new Event { Id = 1, Status = EventStatus.Published, ConfigVersion = EventConfigVersion.ActivityBased, AssignedModeratorId = 9, ResultsFinalizedAt = now.AddMinutes(-5) });
+        store.Seed(new Event { Id = 1, Status = EventStatus.Published, ConfigVersion = EventConfigVersion.ActivityBased, AssignedModeratorId = 9, ResultsFinalizedAt = now.AddHours(-50), ResultsPublishedAt = now.AddHours(-49) });
         store.Seed(new EventActivity { Id = 2, EventId = 1, ActivityType = EventActivityType.ReadingMissions, EndAt = now.AddMinutes(-10) });
         store.Seed(new EventParticipation { Id = 3, EventId = 1, EventActivityId = 2, UserId = 50, Status = EventParticipationStatus.Verified });
         store.Seed(new EventAward { Id = 4, EventId = 1, EventActivityId = 2, ParticipationId = 3, Status = EventAwardStatus.Failed });
@@ -199,17 +199,19 @@ public class EventManagementTests
         Assert.Contains("chưa hoàn tất", ex.Message);
     }
 
-    [Fact]
-    public async Task CloseEvent_NonVotingWithUnassignedAwards_ThrowsConflict()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CloseEvent_NonVotingWithUnassignedAwards_RequiresPublication_RegardlessOfModeratorConfirmation(bool confirmed)
     {
         var store = new InMemoryUnitOfWork();
         var now = DateTime.UtcNow;
-        store.Seed(new Event { Id = 1, Status = EventStatus.Published, ConfigVersion = EventConfigVersion.ActivityBased, AssignedModeratorId = 9 });
+        store.Seed(new Event { Id = 1, Status = EventStatus.Published, ConfigVersion = EventConfigVersion.ActivityBased, AssignedModeratorId = 9, ResultsFinalizedAt = confirmed ? now.AddMinutes(-5) : null });
         store.Seed(new EventActivity { Id = 2, EventId = 1, ActivityType = EventActivityType.ReadingMissions, EndAt = now.AddMinutes(-10) });
         store.Seed(new EventAward { Id = 4, EventId = 1, EventActivityId = 2, ParticipationId = null, Status = EventAwardStatus.AwardProposed });
 
         var ex = await Assert.ThrowsAsync<ConflictException>(() => new EventManagementService(store, _audit.Object).CloseEventAsync(9, 1));
-        Assert.Equal("Cần chốt và duyệt danh sách trao giải trước khi đóng sự kiện.", ex.Message);
+        Assert.Equal("Admin cần công bố kết quả trước khi đóng sự kiện.", ex.Message);
     }
 
     [Fact]
@@ -283,7 +285,7 @@ public class EventManagementTests
 
         await new EventRewardService(store, _audit.Object, notifications: notifications.Object).ApproveAwardsAsync(10, 1);
 
-        notifications.Verify(n => n.CreateAsync(55, NotificationType.EventAwardApproved, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        notifications.Verify(n => n.CreateStoredAsync(55, NotificationType.EventResultPublished, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

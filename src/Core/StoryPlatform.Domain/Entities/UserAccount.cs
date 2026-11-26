@@ -31,6 +31,7 @@ public class UserAccount : BaseEntity
     public DateTime? PendingEmailOtpExpiresAt { get; set; }
     public int PendingEmailOtpFailedAttempts { get; set; }
     public DateTime? LastLoginAt { get; set; }
+    public int? WeeklyNewLibraryStoriesOverride { get; set; }
 
     public int FailedLoginAttempts { get; set; } = 0;
     public DateTime? LockedUntil { get; set; }

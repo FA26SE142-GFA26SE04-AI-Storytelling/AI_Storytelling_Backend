@@ -1456,6 +1456,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)");
 
+                    b.Property<DateTime?>("EndedNotifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("FinalAwardRankingSnapshotJson")
                         .HasColumnType("text");
 
@@ -1486,6 +1489,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("ResultsFinalizedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ResultsPublishedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("ReviewCutoffAt")
@@ -1653,6 +1659,13 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasDefaultValue("Verification");
+
                     b.Property<int>("ParticipationId")
                         .HasColumnType("integer");
 
@@ -1675,6 +1688,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(24)
                         .HasColumnType("character varying(24)");
+
+                    b.Property<int?>("TargetAwardId")
+                        .HasColumnType("integer");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -1718,6 +1734,16 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("ManualAssignmentNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("ManuallyAssignedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("ManuallyAssignedByUserId")
+                        .HasColumnType("integer");
+
                     b.Property<int?>("ParticipationId")
                         .HasColumnType("integer");
 
@@ -1736,6 +1762,16 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("RevokedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("RevokedReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<string>("RewardName")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -1745,6 +1781,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(24)
                         .HasColumnType("character varying(24)");
+
+                    b.Property<bool>("ShowChildNames")
+                        .HasColumnType("boolean");
 
                     b.Property<int>("SlotIndex")
                         .HasColumnType("integer");
@@ -1777,12 +1816,12 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasIndex("EventId", "EventActivityId", "RankOrTier", "SlotIndex")
                         .IsUnique()
                         .HasDatabaseName("IX_event_awards_ActiveActivitySlot")
-                        .HasFilter("\"EventActivityId\" IS NOT NULL AND \"Status\" NOT IN ('Expired', 'UnclaimedBudgetReturned', 'Failed') AND NOT \"IsDeleted\"");
+                        .HasFilter("\"EventActivityId\" IS NOT NULL AND \"Status\" NOT IN ('Expired', 'UnclaimedBudgetReturned', 'Failed', 'Revoked') AND NOT \"IsDeleted\"");
 
                     b.HasIndex("EventId", "TrackId", "RankOrTier", "SlotIndex")
                         .IsUnique()
                         .HasDatabaseName("IX_event_awards_ActiveSlot")
-                        .HasFilter("\"TrackId\" IS NOT NULL AND \"Status\" NOT IN ('Expired', 'UnclaimedBudgetReturned', 'Failed') AND NOT \"IsDeleted\"");
+                        .HasFilter("\"TrackId\" IS NOT NULL AND \"Status\" NOT IN ('Expired', 'UnclaimedBudgetReturned', 'Failed', 'Revoked') AND NOT \"IsDeleted\"");
 
                     b.ToTable("event_awards", (string)null);
                 });
@@ -6943,6 +6982,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
+
+                    b.Property<int?>("WeeklyNewLibraryStoriesOverride")
+                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 

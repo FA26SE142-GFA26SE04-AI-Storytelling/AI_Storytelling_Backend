@@ -270,8 +270,12 @@ public class EventManagementTests
     {
         var store = new InMemoryUnitOfWork();
         var now = DateTime.UtcNow;
-        store.Seed(new Event { Id = 1, Status = EventStatus.Published, ConfigVersion = EventConfigVersion.ActivityBased, AssignedModeratorId = 9, ResultsFinalizedAt = now });
-        store.Seed(new EventActivity { Id = 2, EventId = 1, ActivityType = EventActivityType.ReadingMissions, EndAt = now.AddMinutes(-10) });
+        store.Seed(new Event
+        {
+            Id = 1, Status = EventStatus.Published, ConfigVersion = EventConfigVersion.ActivityBased,
+            AssignedModeratorId = 9, ResultsFinalizedAt = now.AddHours(-51), ResultsPublishedAt = now.AddHours(-49)
+        });
+        store.Seed(new EventActivity { Id = 2, EventId = 1, ActivityType = EventActivityType.ReadingMissions, EndAt = now.AddHours(-52) });
         store.Seed(new EventParticipation { Id = 3, EventId = 1, EventActivityId = 2, UserId = 55, Status = EventParticipationStatus.Verified });
         store.Seed(new EventAward { Id = 4, EventId = 1, EventActivityId = 2, Status = EventAwardStatus.AwardProposed });
         store.Seed(new EventAward { Id = 5, EventId = 1, EventActivityId = 2, ParticipationId = 3, Status = EventAwardStatus.Fulfilled });

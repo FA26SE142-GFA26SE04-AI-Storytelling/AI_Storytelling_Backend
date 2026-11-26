@@ -16,6 +16,8 @@ public class PlanSettingsConfiguration : IEntityTypeConfiguration<PlanSettings>
                 "\"ReadingFundPercent\" BETWEEN 0 AND 100 AND \"CreativeFundPercent\" BETWEEN 0 AND 100");
             table.HasCheckConstraint("CK_plan_settings_min_read_seconds",
                 "\"MinimumReadSeconds\" BETWEEN 1 AND 3600");
+            table.HasCheckConstraint("CK_plan_settings_min_payout",
+                "\"MinimumPayoutVnd\" BETWEEN 0 AND 1000000000");
         });
 
         builder.HasKey(x => x.Id);

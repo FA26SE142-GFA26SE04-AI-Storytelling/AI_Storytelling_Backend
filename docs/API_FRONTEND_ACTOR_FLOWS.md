@@ -8197,7 +8197,6 @@ Nguồn: [TopicRelation.cs](../src/Core/StoryPlatform.Domain/Enums/TopicRelation
 | Tên | Giá trị |
 |---|---|
 | `FavoriteTopic` | 1 |
-| `PriorityFocusArea` | 2 |
 
 Enum dùng số trong JSON trừ field có JsonStringEnumConverter. Query enum theo model binding.
 

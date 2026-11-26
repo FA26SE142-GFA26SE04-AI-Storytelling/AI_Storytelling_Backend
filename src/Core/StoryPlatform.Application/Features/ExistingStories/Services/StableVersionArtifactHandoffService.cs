@@ -321,7 +321,7 @@ public sealed class StableVersionArtifactHandoffService : IStableVersionArtifact
             Language: story.Language ?? "vi",
             MaximumLength: safety?.MaxStoryLength ?? 5000,
             RequiredApprovalMode: safety?.RequiredApprovalMode ?? ApprovalMode.AlwaysManual.ToString(),
-            Interests: learning?.Topics?.Where(t => string.Equals(t.Relation, "Favorite", StringComparison.OrdinalIgnoreCase))
+            Interests: learning?.Topics?.Where(t => string.Equals(t.Relation, TopicRelation.FavoriteTopic.ToString(), StringComparison.OrdinalIgnoreCase))
                               .Select(t => t.Topic).ToArray() ?? Array.Empty<string>(),
             AllowedCategoryCodes: safety?.Categories?
                 .Where(c => string.Equals(c.Rule, PolicyRule.Allowed.ToString(), StringComparison.OrdinalIgnoreCase))

@@ -60,6 +60,20 @@ public sealed class PlanSettingsServiceTests
     }
 
     [Fact]
+    public async Task CreatorPeriodCloseDay_DefaultsTo8_IsSaved_AndIsKeptWhenAnOldClientOmitsIt()
+    {
+        Assert.Equal(8, (await _sut.GetAsync()).CreatorPeriodCloseDay);
+
+        var request = Defaults();
+        request.CreatorPeriodCloseDay = 1;
+        Assert.Equal(1, (await _sut.UpdateAsync(AdminId, request)).CreatorPeriodCloseDay);
+        request.CreatorPeriodCloseDay = null;
+        await _sut.UpdateAsync(AdminId, request);
+
+        Assert.Equal(1, Assert.Single(_uow.Items<PlanSettings>()).CreatorPeriodCloseDay);
+    }
+
+    [Fact]
     public async Task Get_NoRow_ReturnsDefaults()
     {
         var empty = new InMemoryUnitOfWork();
@@ -123,6 +137,8 @@ public sealed class PlanSettingsServiceTests
     {
         r => r.ReadingFundPercent = 101,
         r => r.MinimumPayoutVnd = -1,
+        r => r.CreatorPeriodCloseDay = 0,
+        r => r.CreatorPeriodCloseDay = 29,
         r => r.MinimumPayoutVnd = 1_000_000_001,
         r => r.CreativeFundPercent = -1,
         r => r.MinimumReadSeconds = 0,

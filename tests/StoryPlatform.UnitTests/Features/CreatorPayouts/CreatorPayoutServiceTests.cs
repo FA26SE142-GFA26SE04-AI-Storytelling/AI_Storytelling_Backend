@@ -379,6 +379,24 @@ public sealed class CreatorPayoutServiceTests
         Assert.Equal([CreatorA, CreatorC], (await _sut.GetDueAsync()).Select(row => row.CreatorUserId));
     }
 
+    [Theory]
+    [InlineData(1, 1, true)]     // ngày chốt 1: chốt tháng 11 ngay ngày 1/12
+    [InlineData(15, 14, false)]  // ngày chốt 15: ngày 14/12 chưa chốt
+    [InlineData(15, 15, true)]
+    public async Task CloseDuePeriod_UsesTheCloseDayAdminSet(int closeDay, int vietnamDay, bool expected)
+    {
+        _store.Seed(new PlanSettings { Id = PlanSettings.SingletonId, CreatorPeriodCloseDay = closeDay });
+        SeedCreator(CreatorA, 0);
+        SetupEarnings((CreatorA, 10, 69_000));
+        // 03:00 UTC = 10:00 giờ Việt Nam cùng ngày.
+        var now = new DateTime(2026, 12, vietnamDay, 3, 0, 0, DateTimeKind.Utc);
+
+        Assert.Equal(expected, await _sut.CloseDuePeriodAsync(now));
+
+        Assert.Equal(expected ? 69_000 : 0, BalanceOf(CreatorA));
+        Assert.Equal(closeDay, (await _sut.GetOverviewAsync(CreatorA)).PeriodCloseDay);
+    }
+
     [Fact]
     public async Task CloseDuePeriod_January_ClosesDecemberOfPreviousYear()
     {

@@ -3994,6 +3994,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int>("CreatorMonthlySubmitCredits")
                         .HasColumnType("integer");
 
+                    b.Property<int>("CreatorPeriodCloseDay")
+                        .HasColumnType("integer");
+
                     b.Property<int>("CreatorWritingAssistPerDay")
                         .HasColumnType("integer");
 
@@ -4049,6 +4052,8 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.ToTable("plan_settings", null, t =>
                         {
+                            t.HasCheckConstraint("CK_plan_settings_creator_period_close_day", "\"CreatorPeriodCloseDay\" BETWEEN 1 AND 28");
+
                             t.HasCheckConstraint("CK_plan_settings_fund_percent", "\"ReadingFundPercent\" BETWEEN 0 AND 100 AND \"CreativeFundPercent\" BETWEEN 0 AND 100");
 
                             t.HasCheckConstraint("CK_plan_settings_min_payout", "\"MinimumPayoutVnd\" BETWEEN 0 AND 1000000000");
@@ -4066,6 +4071,7 @@ namespace StoryPlatform.Infrastructure.Migrations
                             CreativeFundPercent = 10,
                             CreatorMonthlyAiCredits = 2,
                             CreatorMonthlySubmitCredits = 5,
+                            CreatorPeriodCloseDay = 8,
                             CreatorWritingAssistPerDay = 20,
                             FreeCanCopyRoadmapTemplates = false,
                             FreeMaxChildProfiles = 1,

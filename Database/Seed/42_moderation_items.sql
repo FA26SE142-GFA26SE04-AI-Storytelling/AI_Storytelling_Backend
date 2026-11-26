@@ -1,4 +1,4 @@
--- 42. moderation_items (32): queue examples including the WF-L5A PublicStoryReview chain.
+-- 42. moderation_items (33): queue examples including the WF-L5A PublicStoryReview chain.
 INSERT INTO moderation_items (
     "Id", "ItemType", "Status", "Priority", "StoryId", "StoryVersionId",
     "CreatedByUserId", "SourceChildProfileId", "ClaimedByUserId", "ClaimedAt",

@@ -24,10 +24,6 @@ public class SafetyPolicyConfiguration : IEntityTypeConfiguration<SafetyPolicy>
         builder.Property(x => x.ReadabilityScoreThreshold)
             .HasColumnType("decimal(5,2)");
 
-        builder.Property(x => x.ComprehensionThresholdPercent)
-            .HasColumnType("decimal(5,2)")
-            .HasDefaultValue(70m);
-
         builder.Property(x => x.StoryWishesEnabled).HasDefaultValue(true);
         builder.Property(x => x.AllowInteractiveStories).HasDefaultValue(true);
         builder.Property(x => x.ChildCreationEnabled).HasDefaultValue(true);

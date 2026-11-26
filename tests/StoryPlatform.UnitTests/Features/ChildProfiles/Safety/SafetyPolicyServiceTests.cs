@@ -9,6 +9,7 @@ using StoryPlatform.Application.Features.ChildProfiles.Safety.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.Safety.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Safety.Services;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
+using StoryPlatform.Application.Features.ContentGeneration;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using Xunit;
@@ -20,6 +21,7 @@ public class SafetyPolicyServiceTests
     private readonly Mock<IGenericRepository<SafetyPolicy>> _policyRepo = new();
     private readonly Mock<IGenericRepository<SafetyPolicyCategory>> _categoryRepo = new();
     private readonly Mock<IGenericRepository<ChildProfile>> _profileRepo = new();
+    private readonly Mock<IGenericRepository<LearningProfile>> _learningRepo = new();
     private readonly Mock<IGenericRepository<ContentCategory>> _contentCategoryRepo = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IChildProfileAccessGuard> _guard = new();
@@ -32,6 +34,7 @@ public class SafetyPolicyServiceTests
         _unitOfWork.Setup(u => u.Repository<SafetyPolicy>()).Returns(_policyRepo.Object);
         _unitOfWork.Setup(u => u.Repository<SafetyPolicyCategory>()).Returns(_categoryRepo.Object);
         _unitOfWork.Setup(u => u.Repository<ChildProfile>()).Returns(_profileRepo.Object);
+        SeedChild(AgeBand.Age_6_8, 2);
         _unitOfWork.Setup(u => u.Repository<ContentCategory>()).Returns(_contentCategoryRepo.Object);
         _auditLogWriter.Setup(w => w.LogAsync(
                 It.IsAny<int?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(),
@@ -106,6 +109,7 @@ public class SafetyPolicyServiceTests
     public async Task SetSafetyPolicyAsync_CustomStoryLength_SavesTargetAndRaisesCapToUpperBound()
     {
         AllowPermission();
+        SeedChild(AgeBand.Age_6_8, 4);
         _policyRepo.Setup(r => r.FirstOrDefaultAsync(
                 It.IsAny<Expression<Func<SafetyPolicy, bool>>>(), null,
                 It.IsAny<CancellationToken>())).ReturnsAsync((SafetyPolicy?)null);
@@ -680,6 +684,72 @@ public class SafetyPolicyServiceTests
         var policy = new SafetyPolicy();
         Assert.True(policy.QuizEnabled && policy.NotebookEnabled && policy.LibraryBrowseEnabled
                     && policy.ReflectionEnabled && policy.RewardsEnabled);
+    }
+
+    private void SeedChild(AgeBand band, int? readingLevel)
+    {
+        _profileRepo.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChildProfile { Id = 1, OwnerUserId = 2, AgeBand = band, Status = ChildProfileStatus.Active });
+        _unitOfWork.Setup(u => u.Repository<LearningProfile>()).Returns(_learningRepo.Object);
+        _learningRepo.Setup(r => r.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<LearningProfile, bool>>>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(readingLevel is null ? null : new LearningProfile { ChildProfileId = 1, ReadingLevel = readingLevel.Value });
+    }
+
+    [Theory]
+    [InlineData(AgeBand.Age_6_8, 2, 1200)]
+    [InlineData(AgeBand.Age_9_10, 2, 1600)]
+    [InlineData(AgeBand.Age_6_8, 2, 250)]
+    public async Task SetSafetyPolicyAsync_StoryLengthOutsideLowerOnlyRange_IsRejected(AgeBand band, int level, int length)
+    {
+        AllowPermission();
+        SeedChild(band, level);
+        var request = ValidRequest();
+        request.StoryLengthTarget = length;
+
+        var error = await Assert.ThrowsAsync<BadRequestException>(() => _sut.SetSafetyPolicyAsync(1, 2, request));
+
+        Assert.Contains("300", error.Message);
+        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(AgeBand.Age_6_8, 2, 300)]
+    [InlineData(AgeBand.Age_6_8, 2, 900)]
+    [InlineData(AgeBand.Age_6_8, 4, 1500)]
+    [InlineData(AgeBand.Age_9_10, 2, 1500)]
+    [InlineData(AgeBand.Age_6_8, null, 900)]
+    [InlineData(AgeBand.Age_9_10, null, 1500)]
+    public async Task SetSafetyPolicyAsync_StoryLengthWithinRange_IsSaved(AgeBand band, int? level, int length)
+    {
+        AllowPermission();
+        SeedChild(band, level);
+        var policy = new SafetyPolicy { Id = 5, ChildProfileId = 1, ConsentRecorded = true };
+        SetupExistingPolicy(policy);
+        var request = ValidRequest();
+        request.StoryLengthTarget = length;
+
+        var result = await _sut.SetSafetyPolicyAsync(1, 2, request);
+
+        Assert.Equal(length, result.StoryLengthTarget);
+        Assert.Equal(length, policy.StoryLengthTarget);
+        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task SetSafetyPolicyAsync_StoryLength_UsesConfiguredDefault()
+    {
+        AllowPermission();
+        SeedChild(AgeBand.Age_6_8, 2);
+        var sut = new SafetyPolicyService(_unitOfWork.Object, _guard.Object, _auditLogWriter.Object,
+            new LearningBatchOptions { YoungerTargetWords = 800 });
+        var request = ValidRequest();
+        request.StoryLengthTarget = 850;
+
+        var error = await Assert.ThrowsAsync<BadRequestException>(() => sut.SetSafetyPolicyAsync(1, 2, request));
+
+        Assert.Contains("800", error.Message);
+        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
     private void AllowPermission(int userId = 2)

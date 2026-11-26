@@ -24,12 +24,16 @@ public class StoryLengthRulesTests
     public void CapFor_WithoutTarget_KeepsRequestedCap() =>
         Assert.Equal(700, StoryLengthRules.CapFor(null, 700));
 
-    [Fact]
-    public void ForGeneration_CustomTarget_UsesTargetAndRaisedCap() =>
-        Assert.Equal((1200, 1320), StoryLengthRules.ForGeneration(1200, 900, 900));
+    [Theory]
+    [InlineData(600, 900, 600, 660)]
+    [InlineData(900, 900, 900, 990)]
+    [InlineData(2100, 900, 900, 990)]
+    [InlineData(1200, 1500, 1200, 1320)]
+    public void ForGeneration_CustomTarget_IsClampedToLevelDefault(int custom, int levelDefault, int expectedTarget, int expectedCap) =>
+        Assert.Equal((expectedTarget, expectedCap), StoryLengthRules.ForGeneration(custom, 5000, levelDefault));
 
     [Theory]
-    [InlineData(2000, 900, 900, 2000)]   // trần rộng: giữ trần
+    [InlineData(2000, 900, 900, 990)]    // trần cũ không nới trần sinh truyện
     [InlineData(900, 900, 900, 990)]     // trần bằng mặc định: nâng lên 110%
     [InlineData(1500, 1500, 1500, 1650)] // bé 9–10 tuổi hoặc mức 4–5
     public void ForGeneration_FollowsLevelDefaultWhenNoTarget(int storedCap, int levelDefault, int expectedTarget, int expectedCap) =>

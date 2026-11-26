@@ -336,8 +336,6 @@ public sealed class StableVersionArtifactHandoffService : IStableVersionArtifact
             ParentalGateEnabled: safety?.ParentalGateEnabled ?? true,
             SafetyScoreThreshold: safety?.SafetyScoreThreshold,
             ComprehensionGoal: learning?.ComprehensionGoal,
-            ComprehensionThresholdPercent: safety?.ComprehensionThresholdPercent,
-            ComprehensionWindowSize: safety?.ComprehensionWindowSize ?? 3,
             ConsentPolicyVersion: safety?.ConsentPolicyVersion ?? 1,
             ConsentRecordedAt: safety?.ConsentRecordedAt);
     }

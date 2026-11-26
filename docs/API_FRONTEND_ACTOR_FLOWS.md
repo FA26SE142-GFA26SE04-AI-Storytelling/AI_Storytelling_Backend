@@ -4104,8 +4104,6 @@ Nguồn: [AIStoryInputDtos.cs](../src/Core/StoryPlatform.Application/Features/AI
 | `safetyScoreThreshold` | `decimal?` | Có | — |
 | `readabilityScoreThreshold` | `decimal?` | Có | — |
 | `comprehensionGoal` | `string?` | Có | — |
-| `comprehensionThresholdPercent` | `decimal?` | Có | — |
-| `comprehensionWindowSize` | `int` | Không | — |
 | `interests` | `IReadOnlyList<string>` | Không | default `[]` |
 | `allowedCategoryCodes` | `IReadOnlyList<string>` | Không | default `[]` |
 | `restrictedCategoryCodes` | `IReadOnlyList<string>` | Không | default `[]` |
@@ -7452,8 +7450,6 @@ Nguồn: [SafetyPolicyDtos.cs](../src/Core/StoryPlatform.Application/Features/Ch
 | `consentedByUserId` | `int?` | Có | — |
 | `safetyScoreThreshold` | `decimal?` | Có | — |
 | `readabilityScoreThreshold` | `decimal?` | Có | — |
-| `comprehensionThresholdPercent` | `decimal` | Không | — |
-| `comprehensionWindowSize` | `int` | Không | — |
 | `storyWishesEnabled` | `bool` | Không | — |
 | `allowInteractiveStories` | `bool` | Không | — |
 | `childCreationEnabled` | `bool` | Không | — |
@@ -7608,8 +7604,6 @@ Nguồn: [SafetyPolicyDtos.cs](../src/Core/StoryPlatform.Application/Features/Ch
 | `consentRecorded` | `bool` | Không | — |
 | `safetyScoreThreshold` | `decimal?` | Có | `[Range(typeof(decimal), "0", "100", ErrorMessage = "Ngưỡng safety phải nằm trong khoảng 0 đến 100.")]` |
 | `readabilityScoreThreshold` | `decimal?` | Có | `[Range(typeof(decimal), "0", "100", ErrorMessage = "Ngưỡng readability phải nằm trong khoảng 0 đến 100.")]` |
-| `comprehensionThresholdPercent` | `decimal` | Không | default `70m`; `[Range(typeof(decimal), "0", "100", ErrorMessage = "Ngưỡng comprehension phải nằm trong khoảng 0 đến 100.")]` |
-| `comprehensionWindowSize` | `int` | Không | default `3`; `[Range(1, 20, ErrorMessage = "Comprehension window size phải nằm trong khoảng 1 đến 20.")]` |
 | `storyWishesEnabled` | `bool` | Không | default `true` |
 | `allowInteractiveStories` | `bool` | Không | default `true` |
 | `childCreationEnabled` | `bool` | Không | default `true` |
@@ -7629,8 +7623,6 @@ Ví dụ JSON minh họa shape request:
   "consentRecorded": false,
   "safetyScoreThreshold": null,
   "readabilityScoreThreshold": null,
-  "comprehensionThresholdPercent": 1,
-  "comprehensionWindowSize": 3,
   "storyWishesEnabled": true,
   "allowInteractiveStories": true,
   "childCreationEnabled": true,

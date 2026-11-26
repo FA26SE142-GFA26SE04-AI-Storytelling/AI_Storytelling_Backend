@@ -1,4 +1,4 @@
--- 16. illustration_beats (11): one ordered visual beat for each seeded ready scene.
+-- 16. illustration_beats (15): one ordered visual beat for each seeded ready scene.
 INSERT INTO illustration_beats (
     "Id", "StorySceneId", "BeatOrder", "StartOffset", "EndOffset",
     "VisualFocus", "CreatedAt", "IsDeleted"

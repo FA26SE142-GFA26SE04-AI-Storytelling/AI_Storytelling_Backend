@@ -243,6 +243,126 @@ public class EventManagementTests
     }
 
     [Fact]
+    public async Task SafetyWarningCategory_CannotBeTheEventTopic_OnCreateOrUpdate()
+    {
+        var store = new InMemoryUnitOfWork();
+        store.Seed(new ContentCategory { Id = 1, IsActive = true });
+        store.Seed(new ContentCategory { Id = 7, IsActive = true, Group = ContentCategoryGroup.SafetyWarning });
+        var now = DateTime.UtcNow;
+        CreateEventRequestDto Request(int categoryId) => new()
+        {
+            Title = "Chủ đề", Description = "Mô tả", MainCategoryId = categoryId, ConfigVersion = EventConfigVersion.ActivityBased,
+            OpensAt = now, ClosesAt = now.AddDays(3),
+            Activities = [new UpsertEventActivityDto { ActivityType = EventActivityType.Submission, AllowedAudience = EventAudience.Creator, RegistrationStartAt = now, RegistrationEndAt = now.AddDays(1), StartAt = now, EndAt = now.AddDays(2) }]
+        };
+        var service = new EventManagementService(store, _audit.Object);
+
+        var created = await service.CreateEventAsync(9, Request(1));
+        var onCreate = await Assert.ThrowsAsync<BadRequestException>(() => service.CreateEventAsync(9, Request(7)));
+        var onUpdate = await Assert.ThrowsAsync<BadRequestException>(() => service.UpdateEventAsync(9, created.Id, Request(7)));
+
+        Assert.Equal("Danh mục chính của sự kiện không hợp lệ.", onCreate.Message);
+        Assert.Equal(onCreate.Message, onUpdate.Message);
+    }
+
+    [Fact]
+    public async Task CloseEvent_ReturnsBudgetOfUnassignedAwards_AndKeepsOtherAwards()
+    {
+        var store = new InMemoryUnitOfWork();
+        var now = DateTime.UtcNow;
+        store.Seed(new Event { Id = 1, Status = EventStatus.Published, ConfigVersion = EventConfigVersion.ActivityBased, AssignedModeratorId = 9, ResultsFinalizedAt = now });
+        store.Seed(new EventActivity { Id = 2, EventId = 1, ActivityType = EventActivityType.ReadingMissions, EndAt = now.AddMinutes(-10) });
+        store.Seed(new EventParticipation { Id = 3, EventId = 1, EventActivityId = 2, UserId = 55, Status = EventParticipationStatus.Verified });
+        store.Seed(new EventAward { Id = 4, EventId = 1, EventActivityId = 2, Status = EventAwardStatus.AwardProposed });
+        store.Seed(new EventAward { Id = 5, EventId = 1, EventActivityId = 2, ParticipationId = 3, Status = EventAwardStatus.Fulfilled });
+
+        await new EventManagementService(store, _audit.Object).CloseEventAsync(9, 1);
+
+        Assert.Equal(EventAwardStatus.UnclaimedBudgetReturned, store.Items<EventAward>().Single(a => a.Id == 4).Status);
+        Assert.Equal(EventAwardStatus.Fulfilled, store.Items<EventAward>().Single(a => a.Id == 5).Status);
+    }
+
+    [Fact]
+    public async Task TitleLongerThanTheColumn_IsRejectedOnCreateAndUpdate()
+    {
+        var store = new InMemoryUnitOfWork();
+        store.Seed(new ContentCategory { Id = 1, IsActive = true });
+        var now = DateTime.UtcNow;
+        CreateEventRequestDto Request(int length) => new()
+        {
+            Title = " " + new string('a', length) + " ", Description = "Mô tả", MainCategoryId = 1, ConfigVersion = EventConfigVersion.ActivityBased,
+            OpensAt = now, ClosesAt = now.AddDays(3),
+            Activities = [new UpsertEventActivityDto { ActivityType = EventActivityType.Submission, AllowedAudience = EventAudience.Creator, RegistrationStartAt = now, RegistrationEndAt = now.AddDays(1), StartAt = now, EndAt = now.AddDays(2) }]
+        };
+        var service = new EventManagementService(store, _audit.Object);
+
+        var created = await service.CreateEventAsync(9, Request(200));
+        var onCreate = await Assert.ThrowsAsync<BadRequestException>(() => service.CreateEventAsync(9, Request(201)));
+        await Assert.ThrowsAsync<BadRequestException>(() => service.UpdateEventAsync(9, created.Id, Request(201)));
+
+        Assert.Equal("Tên sự kiện không được vượt quá 200 ký tự.", onCreate.Message);
+    }
+
+    [Fact]
+    public async Task DescriptionLongerThanTheColumn_IsRejectedOnCreateAndUpdate()
+    {
+        var store = new InMemoryUnitOfWork();
+        store.Seed(new ContentCategory { Id = 1, IsActive = true });
+        var now = DateTime.UtcNow;
+        CreateEventRequestDto Request(int length) => new()
+        {
+            Title = "Sự kiện", Description = " " + new string('a', length) + " ", MainCategoryId = 1, ConfigVersion = EventConfigVersion.ActivityBased,
+            OpensAt = now, ClosesAt = now.AddDays(3),
+            Activities = [new UpsertEventActivityDto { ActivityType = EventActivityType.Submission, AllowedAudience = EventAudience.Creator, RegistrationStartAt = now, RegistrationEndAt = now.AddDays(1), StartAt = now, EndAt = now.AddDays(2) }]
+        };
+        var service = new EventManagementService(store, _audit.Object);
+
+        var created = await service.CreateEventAsync(9, Request(4000));
+        var onCreate = await Assert.ThrowsAsync<BadRequestException>(() => service.CreateEventAsync(9, Request(4001)));
+        await Assert.ThrowsAsync<BadRequestException>(() => service.UpdateEventAsync(9, created.Id, Request(4001)));
+
+        Assert.Equal("Mô tả sự kiện không được vượt quá 4000 ký tự.", onCreate.Message);
+    }
+
+    [Theory]
+    [InlineData(200)]
+    [InlineData(20)]
+    public async Task ClonedDraftTitle_FitsTheColumn(int length)
+    {
+        var store = new InMemoryUnitOfWork();
+        store.Seed(new Event { Id = 1, Title = new string('a', length), Status = EventStatus.Draft, ConfigVersion = EventConfigVersion.LegacyRoleBased, AssignedModeratorId = 9 });
+
+        var result = await new EventManagementService(store, _audit.Object).CloneLegacyDraftToActivityBasedAsync(9, 1);
+
+        Assert.EndsWith("a (Bản hoạt động)", result.Draft.Title);
+        Assert.Equal(Math.Min(200, length + " (Bản hoạt động)".Length), result.Draft.Title.Length);
+    }
+
+    [Fact]
+    public async Task EventsWithTheSameTitle_CreatedInTheSameSecond_GetDifferentSlugs()
+    {
+        var store = new InMemoryUnitOfWork();
+        store.Seed(new ContentCategory { Id = 1, IsActive = true });
+        var now = DateTime.UtcNow;
+        var title = new string('a', 200);
+        var service = new EventManagementService(store, _audit.Object);
+
+        for (var i = 0; i < 5; i++)
+        {
+            await service.CreateEventAsync(9, new CreateEventRequestDto
+            {
+                Title = title, Description = "Mô tả", MainCategoryId = 1, ConfigVersion = EventConfigVersion.ActivityBased,
+                OpensAt = now, ClosesAt = now.AddDays(3),
+                Activities = [new UpsertEventActivityDto { ActivityType = EventActivityType.Submission, AllowedAudience = EventAudience.Creator, RegistrationStartAt = now, RegistrationEndAt = now.AddDays(1), StartAt = now, EndAt = now.AddDays(2) }]
+            });
+        }
+
+        var slugs = store.Items<Event>().Select(item => item.Slug).ToList();
+        Assert.Equal(5, slugs.Distinct().Count());
+        Assert.All(slugs, slug => Assert.True(slug.Length + "-activity".Length <= 220));
+    }
+
+    [Fact]
     public async Task ActivityAward_PlatformCreditsZero_ThrowsBadRequest()
     {
         var store = new InMemoryUnitOfWork();

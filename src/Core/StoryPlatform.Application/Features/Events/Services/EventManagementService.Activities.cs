@@ -383,9 +383,10 @@ public partial class EventManagementService
                 : (await _uow.Repository<EventTaskDefinition>().FindAsync(t => t.EventRuleVersionId == activeRule.Id, cancellationToken: ct)).OrderBy(t => t.SortOrder).ToList();
             var sourceAwards = await _uow.Repository<EventAward>().FindAsync(a => a.EventId == source.Id, cancellationToken: ct);
 
+            const string cloneSuffix = " (Bản hoạt động)";
             var cloned = new Event
             {
-                Title = $"{source.Title} (Bản hoạt động)".Trim(),
+                Title = source.Title[..Math.Min(source.Title.Length, MaxTitleLength - cloneSuffix.Length)].TrimEnd() + cloneSuffix,
                 Slug = BuildSlug($"{source.Title}-activity"),
                 Description = source.Description,
                 BannerUrl = source.BannerUrl,

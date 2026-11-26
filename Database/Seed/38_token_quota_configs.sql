@@ -1,4 +1,4 @@
--- 38. token_quota_configs (5) - scope System / Personal (khong con Organization).
+-- 38. token_quota_configs (5) - scope System / Personal. Bang cu: luot AI nay nam trong credit_lots, khong con code nao doc bang nay; giu de seed phu du bang trong schema.
 INSERT INTO token_quota_configs ("Id", "Scope", "UserId", "QuotaLimit", "QuotaUsed", "PeriodStart", "PeriodEnd", "CreatedAt", "IsDeleted")
 VALUES
     (1, 'System', NULL, 10000, 3200, DATE_TRUNC('month', NOW())::date, (DATE_TRUNC('month', NOW()) + INTERVAL '1 month' - INTERVAL '1 day')::date, NOW() - INTERVAL '10 days', false),

@@ -4057,6 +4057,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
+                    b.Property<long>("MinimumPayoutVnd")
+                        .HasColumnType("bigint");
+
                     b.Property<int>("MinimumReadSeconds")
                         .HasColumnType("integer");
 
@@ -4087,6 +4090,8 @@ namespace StoryPlatform.Infrastructure.Migrations
                         {
                             t.HasCheckConstraint("CK_plan_settings_fund_percent", "\"ReadingFundPercent\" BETWEEN 0 AND 100 AND \"CreativeFundPercent\" BETWEEN 0 AND 100");
 
+                            t.HasCheckConstraint("CK_plan_settings_min_payout", "\"MinimumPayoutVnd\" BETWEEN 0 AND 1000000000");
+
                             t.HasCheckConstraint("CK_plan_settings_min_read_seconds", "\"MinimumReadSeconds\" BETWEEN 1 AND 3600");
                         });
 
@@ -4108,6 +4113,7 @@ namespace StoryPlatform.Infrastructure.Migrations
                             FreeWritingAssistPerDay = 5,
                             ImageRegenerationLimit = 3,
                             IsDeleted = false,
+                            MinimumPayoutVnd = 200000L,
                             MinimumReadSeconds = 60,
                             OutlineRegenerationLimit = 3,
                             PartnerMonthlyAiCredits = 6,

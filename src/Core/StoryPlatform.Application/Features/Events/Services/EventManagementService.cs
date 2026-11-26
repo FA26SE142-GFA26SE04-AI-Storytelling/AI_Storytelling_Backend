@@ -75,8 +75,7 @@ public partial class EventManagementService : IEventManagementService
         => InTransactionAsync(null, async () =>
         {
             ValidateCreateRequest(request);
-            var categoryExists = await _uow.Repository<ContentCategory>().ExistsAsync(c => c.Id == request.MainCategoryId && c.IsActive, ct);
-            if (!categoryExists) throw new BadRequestException("Danh mục chính của sự kiện không hợp lệ.");
+            await ValidateCategoryAsync(request.MainCategoryId, ct);
 
             var ev = new Event
             {
@@ -614,6 +613,14 @@ public partial class EventManagementService : IEventManagementService
         if (pendingAwards)
             throw new ConflictException("Còn suất giải thưởng chưa hoàn tất đối soát hoặc trao thưởng.");
 
+        // Suất không có người đủ điều kiện nhận: ngân sách coi như đã hoàn khi sự kiện đóng.
+        foreach (var award in eventAwards.Where(a => a.Status == EventAwardStatus.AwardProposed && a.ParticipationId == null))
+        {
+            award.Status = EventAwardStatus.UnclaimedBudgetReturned;
+            award.UpdatedAt = DateTime.UtcNow;
+            _uow.Repository<EventAward>().Update(award);
+        }
+
         var summary = await GetSummaryAsync(eventId, ct);
         ev.SummaryReportJson = JsonSerializer.Serialize(summary);
         ev.Status = EventStatus.Closed;
@@ -813,9 +820,16 @@ public partial class EventManagementService : IEventManagementService
         };
     }
 
+    private const int MaxTitleLength = 200;
+    private const int MaxDescriptionLength = 4000;
+
     private static void ValidateCreateRequest(CreateEventRequestDto req)
     {
         if (string.IsNullOrWhiteSpace(req.Title)) throw new BadRequestException("Tên sự kiện không được để trống.");
+        if (req.Title.Trim().Length > MaxTitleLength)
+            throw new BadRequestException($"Tên sự kiện không được vượt quá {MaxTitleLength} ký tự.");
+        if (req.Description.Trim().Length > MaxDescriptionLength)
+            throw new BadRequestException($"Mô tả sự kiện không được vượt quá {MaxDescriptionLength} ký tự.");
         if (req.ConfigVersion == EventConfigVersion.ActivityBased)
             ValidateActivityBasedDraftRequest(req);
         else
@@ -825,7 +839,9 @@ public partial class EventManagementService : IEventManagementService
     private static string BuildSlug(string title)
     {
         var baseSlug = new string(title.Trim().ToLowerInvariant().Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray()).Trim('-');
-        return $"{(string.IsNullOrEmpty(baseSlug) ? "event" : baseSlug)}-{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
+        // Hậu tố ngẫu nhiên: thời gian theo giây trùng nhau khi hai sự kiện cùng tên được tạo trong một giây.
+        // 10 ký tự để tên 200 ký tự (bản sao thêm "-activity") vẫn vừa cột Slug 220 ký tự.
+        return $"{(string.IsNullOrEmpty(baseSlug) ? "event" : baseSlug)}-{Guid.NewGuid().ToString("N")[..10]}";
     }
 
     private async Task<Dictionary<int, List<int>>> LoadPublishedEventStoryIdsByEventAsync(

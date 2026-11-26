@@ -1,4 +1,4 @@
--- 13. story_versions (27: 13 Parent versions, 14 Creator versions)
+-- 13. story_versions (28: 14 Parent versions, 14 Creator versions)
 -- Creator Story 11: versions 11 -> 12 (current); Creator Story 12: version 13 (Import/current).
 -- Command receipts and protected preview tokens are created by the API, not fabricated in seed data.
 INSERT INTO story_versions (

@@ -1,4 +1,4 @@
--- 37. subscription_plans (4) - Goi Doc, Goi Sang tao, Add-on cho phu huynh; Goi Creator cho Content Creator. Quyen loi: MaxChildProfiles, WeeklyNewLibraryStories (NULL = khong gioi han), CanCopyRoadmapTemplates, ReadAloudPerMonth, WritingAssistPerDay.
+-- 37. subscription_plans (5) - Personal cu (da xoa mem), Goi Doc, Goi Sang tao, Add-on cho phu huynh; Goi Creator cho Content Creator. Quyen loi: MaxChildProfiles, WeeklyNewLibraryStories (NULL = khong gioi han), CanCopyRoadmapTemplates, ReadAloudPerMonth, WritingAssistPerDay.
 INSERT INTO subscription_plans ("Id", "Name", "PlanType", "Audience", "PriceVnd", "AiCredits", "SubmitCredits", "IsActive", "MaxChildProfiles", "WeeklyNewLibraryStories", "CanCopyRoadmapTemplates", "ReadAloudPerMonth", "WritingAssistPerDay", "CreatedAt", "IsDeleted")
 VALUES
     (2, 'Gói Đọc', 'Reading', 'User', 49000, 0, 0, true, 4, NULL, true, 60, 5, NOW() - INTERVAL '60 days', false),

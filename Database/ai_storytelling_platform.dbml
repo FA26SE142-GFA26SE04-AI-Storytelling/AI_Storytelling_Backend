@@ -476,7 +476,6 @@ Enum TokenQuotaScope {
 
 Enum TopicRelation {
   FavoriteTopic
-  PriorityFocusArea
 }
 
 Enum UserRole {

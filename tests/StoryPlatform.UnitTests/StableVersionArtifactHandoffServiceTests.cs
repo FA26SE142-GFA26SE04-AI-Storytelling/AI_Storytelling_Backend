@@ -50,6 +50,23 @@ public sealed class StableVersionArtifactHandoffServiceTests
     }
 
     [Fact]
+    public async Task QueueArtifacts_VirtualRequestSnapshot_IncludesFavoriteTopicsAsInterests()
+    {
+        var store = Seed();
+        var learning = new LearningProfileDto
+        {
+            ChildProfileId = 1,
+            ReadingLevel = 2,
+            Topics = [new LearningProfileTopicDto { Topic = "Dinosaurs", Relation = TopicRelation.FavoriteTopic.ToString() }]
+        };
+        var service = new StableVersionArtifactHandoffService(store, new StubLearningService(learning), new StubSafetyService());
+
+        await service.QueueArtifactsAsync(1, 1, 1, null);
+
+        Assert.Contains("Dinosaurs", store.Items<StoryGenerationRequest>().Single().ContextSnapshotJson);
+    }
+
+    [Fact]
     public async Task QueueArtifacts_ReusesExistingGenerationRequest()
     {
         var store = Seed();
@@ -278,12 +295,12 @@ public sealed class StableVersionArtifactHandoffServiceTests
         return store;
     }
 
-    private sealed class StubLearningService : ILearningProfileService
+    private sealed class StubLearningService(LearningProfileDto? profile = null) : ILearningProfileService
     {
         public Task<LearningProfileDto> SetLearningProfileAsync(int childProfileId, int currentUserId, SetLearningProfileRequestDto request, CancellationToken cancellationToken = default) =>
             throw new NotImplementedException();
         public Task<LearningProfileDto> GetLearningProfileAsync(int childProfileId, int currentUserId, CancellationToken cancellationToken = default) =>
-            throw new NotFoundException("LearningProfile");
+            profile is null ? throw new NotFoundException("LearningProfile") : Task.FromResult(profile);
         public Task DeleteLearningProfileAsync(int childProfileId, int currentUserId, CancellationToken cancellationToken = default) =>
             throw new NotImplementedException();
     }

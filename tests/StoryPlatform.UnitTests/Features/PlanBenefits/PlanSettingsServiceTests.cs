@@ -43,6 +43,23 @@ public sealed class PlanSettingsServiceTests
     }
 
     [Fact]
+    public async Task MinimumPayout_DefaultsTo200k_CanBeSetToZero_AndIsKeptWhenAnOldClientOmitsIt()
+    {
+        Assert.Equal(200_000, (await _sut.GetAsync()).MinimumPayoutVnd);
+
+        var request = Defaults();
+        request.MinimumPayoutVnd = 0;
+        Assert.Equal(0, (await _sut.UpdateAsync(AdminId, request)).MinimumPayoutVnd);
+
+        request.MinimumPayoutVnd = 50_000;
+        await _sut.UpdateAsync(AdminId, request);
+        request.MinimumPayoutVnd = null;
+        await _sut.UpdateAsync(AdminId, request);
+
+        Assert.Equal(50_000, Assert.Single(_uow.Items<PlanSettings>()).MinimumPayoutVnd);
+    }
+
+    [Fact]
     public async Task Get_NoRow_ReturnsDefaults()
     {
         var empty = new InMemoryUnitOfWork();
@@ -105,6 +122,8 @@ public sealed class PlanSettingsServiceTests
     public static TheoryData<Action<UpdatePlanSettingsRequestDto>> InvalidRequests => new()
     {
         r => r.ReadingFundPercent = 101,
+        r => r.MinimumPayoutVnd = -1,
+        r => r.MinimumPayoutVnd = 1_000_000_001,
         r => r.CreativeFundPercent = -1,
         r => r.MinimumReadSeconds = 0,
         r => r.MinimumReadSeconds = 3601,

@@ -13,6 +13,8 @@ public class PlanSettingsDto
     public int PartnerMonthlyAiCredits { get; set; }
     public int PartnerMonthlySubmitCredits { get; set; }
     /// <summary>Thời gian đọc tối thiểu của lượt đọc hợp lệ (giây), 1–3600.</summary>
+    /// <summary>Số dư tối thiểu để Creator được chi (VND); 0 = không có mức tối thiểu.</summary>
+    public long MinimumPayoutVnd { get; set; }
     public int MinimumReadSeconds { get; set; }
     /// <summary>Lượt AI dùng thử cấp một lần khi có hồ sơ trẻ Active đầu tiên.</summary>
     public int TrialAiCredits { get; set; }
@@ -41,6 +43,8 @@ public class UpdatePlanSettingsRequestDto
 {
     public int ReadingFundPercent { get; set; }
     public int CreativeFundPercent { get; set; }
+    /// <summary>Bỏ trống thì giữ mức hiện tại (client cũ chưa gửi trường này). 0 = không có mức tối thiểu.</summary>
+    public long? MinimumPayoutVnd { get; set; }
     public int CreatorMonthlyAiCredits { get; set; }
     public int CreatorMonthlySubmitCredits { get; set; }
     public int PartnerMonthlyAiCredits { get; set; }

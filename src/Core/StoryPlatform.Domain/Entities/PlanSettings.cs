@@ -10,6 +10,8 @@ public class PlanSettings : BaseEntity
 
     public int ReadingFundPercent { get; set; } = 30;
     public int CreativeFundPercent { get; set; } = 10;
+    /// <summary>Số dư tối thiểu để Creator được chi (VND); 0 = không có mức tối thiểu, mọi số dư lớn hơn 0 đều được chi.</summary>
+    public long MinimumPayoutVnd { get; set; } = 200_000;
 
     public int CreatorMonthlyAiCredits { get; set; } = 2;
     public int CreatorMonthlySubmitCredits { get; set; } = 5;

@@ -1118,7 +1118,13 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
+                    b.Property<DateTime>("PeriodEnd")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime>("PeriodMonth")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("PeriodStart")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("TotalValidReads")
@@ -1129,11 +1135,14 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("PeriodMonth")
+                    b.HasIndex("PeriodStart")
                         .IsUnique()
                         .HasFilter("NOT \"IsDeleted\"");
 
-                    b.ToTable("creator_earning_periods", (string)null);
+                    b.ToTable("creator_earning_periods", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_creator_earning_periods_range", "\"PeriodEnd\" >= \"PeriodStart\"");
+                        });
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.CreatorPayoutAccount", b =>

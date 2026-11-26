@@ -707,6 +707,9 @@
   "CreatorPayoutController.Cancel#POST /api/v1/admin/creator-payouts/{payoutId:int}/cancel": [
     "Administrator"
   ],
+  "CreatorPayoutController.CloseNow#POST /api/v1/admin/creator-payouts/periods/close-now": [
+    "Administrator"
+  ],
   "CreatorPayoutController.GetCreator#GET /api/v1/admin/creator-payouts/creators/{creatorUserId:int}": [
     "Administrator"
   ],

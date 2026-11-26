@@ -1,4 +1,4 @@
--- 17. story_segments (11)
+-- 17. story_segments (15)
 -- Seed story_segments cho moi StoryScene de thoa man khoa ngoai va check constraint audio
 INSERT INTO story_segments (
     "Id", "StorySceneId", "SegmentOrder", "StartOffset", "EndOffset",

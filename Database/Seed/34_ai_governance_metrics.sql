@@ -1,4 +1,4 @@
--- 34. ai_governance_metrics (10 - 10 ngay gan nhat)
+-- 34. ai_governance_metrics (10 - 10 ngay gan nhat). Bang cu: khong con code nao doc; giu de seed phu du bang trong schema.
 INSERT INTO ai_governance_metrics ("Id", "MetricDate", "AvgLatencyMs", "GenerationSuccessRate", "RegenerationRate", "SafetyFlagRate", "ApprovalRate", "CreatedAt", "IsDeleted")
 VALUES
     (1, NOW() - INTERVAL '10 day', 1300, 92.500, 4.200, 2.100, 89.000, NOW() - INTERVAL '10 day', false),

@@ -1,4 +1,4 @@
--- 35. notifications (23)
+-- 35. notifications (26)
 INSERT INTO notifications ("Id", "RecipientUserId", "Type", "Payload", "Status", "ReadAt", "CreatedAt", "IsDeleted")
 VALUES
     (1, 2, 'SupervisionInvite', '{"childProfileId":1}', 'Read', NOW() - INTERVAL '39 days', NOW() - INTERVAL '40 days', false),

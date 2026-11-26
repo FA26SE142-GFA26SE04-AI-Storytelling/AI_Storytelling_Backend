@@ -1,4 +1,4 @@
--- 23. story_generation_jobs (5 outline jobs + one completed legacy media tree; no runnable work)
+-- 23. story_generation_jobs (8: 5 outline jobs + one completed legacy media tree of 3 jobs; no runnable work)
 INSERT INTO story_generation_jobs (
     "Id", "StoryId", "PromptCatalogVersionId", "GenerationRequestId", "StoryVersionId", "RequestedByUserId",
     "OperationKey", "Operation", "Stage", "Status", "AttemptNo", "MaxAttempts", "ConcurrencyToken",

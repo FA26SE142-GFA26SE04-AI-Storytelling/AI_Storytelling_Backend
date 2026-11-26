@@ -1,16 +1,13 @@
--- 31. child_profile_version_history (10)
+-- 31. child_profile_version_history (7) - dinh dang cau hinh nhu LearningProfileService / ChildProfileService ghi; chi cho be dang hoat dong.
 INSERT INTO child_profile_version_history (
     "Id", "ChildProfileId", "AppliedByUserId", "PreviousConfig", "NewConfig", "VersionStatus", "AppliedAt", "CreatedAt", "IsDeleted", "Source"
 )
 VALUES
-    (1, 1, 2, '{"readingLevel":2}', '{"readingLevel":3}', 'ActiveVersion', NOW() - INTERVAL '7 days', NOW() - INTERVAL '7 days', false, 'Manual'),
-    (2, 2, 3, '{"focus":"comprehension"}', '{"focus":"vocabulary"}', 'Superseded', NOW() - INTERVAL '6 days', NOW() - INTERVAL '6 days', false, 'Manual'),
-    (3, 3, 4, '{"content":"mixed"}', '{"content":"fairytale"}', 'ActiveVersion', NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days', false, 'Manual'),
-    (4, 4, 5, '{"readingLevel":4}', '{"readingLevel":4}', 'ActiveVersion', NOW() - INTERVAL '4 days', NOW() - INTERVAL '4 days', false, 'Manual'),
-    (5, 5, 6, '{"interventionLevel":0}', '{"interventionLevel":1}', 'DraftVersion', NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days', false, 'Manual'),
-    (6, 6, 7, '{"readingLevel":3}', '{"readingLevel":4}', 'ActiveVersion', NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days', false, 'Manual'),
-    (7, 7, 8, '{"pronunciationSupport":false}', '{"pronunciationSupport":true}', 'ActiveVersion', NOW() - INTERVAL '1 days', NOW() - INTERVAL '1 days', false, 'Manual'),
-    (8, 8, 9, '{"discussionLevel":"basic"}', '{"discussionLevel":"advanced"}', 'DraftVersion', NOW() - INTERVAL '1 days', NOW() - INTERVAL '1 days', false, 'Manual'),
-    (9, 9, 10, '{"reminderEnabled":false}', '{"reminderEnabled":true}', 'Superseded', NOW() - INTERVAL '1 days', NOW() - INTERVAL '1 days', false, 'Manual'),
-    (10, 10, 2, '{"preferredGenre":"mixed"}', '{"preferredGenre":"sports"}', 'ActiveVersion', NOW() - INTERVAL '1 days', NOW() - INTERVAL '1 days', false, 'Manual')
+    (1, 1, 2, '{"readingLevel":1,"readingMode":"ListenFirst","comprehensionGoal":"Hiểu được ý chính của câu chuyện","topics":[{"topic":"Động vật","relation":"FavoriteTopic"}]}', '{"readingLevel":2,"readingMode":"ListenFirst","comprehensionGoal":"Hiểu được ý chính của câu chuyện","topics":[{"topic":"Động vật","relation":"FavoriteTopic"}]}', 'ActiveVersion', NOW() - INTERVAL '7 days', NOW() - INTERVAL '7 days', false, 'Manual'),
+    (2, 2, 2, '{"ageBand":"Age_6_8"}', '{"ageBand":"Age_9_10"}', 'ActiveVersion', NOW() - INTERVAL '6 days', NOW() - INTERVAL '6 days', false, 'Manual'),
+    (3, 3, 3, '{"readingLevel":1,"readingMode":"ReadFirst","comprehensionGoal":"Nhận biết nhân vật chính","topics":[{"topic":"Phiêu lưu","relation":"PriorityFocusArea"}]}', '{"readingLevel":1,"readingMode":"ListenFirst","comprehensionGoal":"Nhận biết nhân vật chính","topics":[{"topic":"Phiêu lưu","relation":"PriorityFocusArea"}]}', 'ActiveVersion', NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days', false, 'Manual'),
+    (4, 4, 3, '{"readingLevel":4,"readingMode":"ReadFirst","comprehensionGoal":"Nhận biết nhân vật chính","topics":[{"topic":"Khoa học","relation":"FavoriteTopic"}]}', '{"readingLevel":4,"readingMode":"ReadFirst","comprehensionGoal":"Suy luận được bài học rút ra","topics":[{"topic":"Khoa học","relation":"FavoriteTopic"}]}', 'ActiveVersion', NOW() - INTERVAL '4 days', NOW() - INTERVAL '4 days', false, 'Manual'),
+    (6, 6, 4, '{"readingLevel":2,"readingMode":"ReadFirst","comprehensionGoal":"Hiểu mối quan hệ nhân quả trong truyện","topics":[{"topic":"Gia đình","relation":"FavoriteTopic"}]}', '{"readingLevel":3,"readingMode":"ReadFirst","comprehensionGoal":"Hiểu mối quan hệ nhân quả trong truyện","topics":[{"topic":"Gia đình","relation":"FavoriteTopic"}]}', 'ActiveVersion', NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days', false, 'Manual'),
+    (7, 7, 5, '{"readingLevel":1,"readingMode":"ListenFirst","comprehensionGoal":"Nhận biết từ vựng cơ bản","topics":[{"topic":"Động vật","relation":"FavoriteTopic"}]}', '{"readingLevel":1,"readingMode":"ListenFirst","comprehensionGoal":"Nhận biết từ vựng cơ bản","topics":[{"topic":"Siêu nhân","relation":"FavoriteTopic"}]}', 'ActiveVersion', NOW() - INTERVAL '1 days', NOW() - INTERVAL '1 days', false, 'Manual'),
+    (8, 8, 5, '{"readingLevel":4,"readingMode":"ReadFirst","comprehensionGoal":"Phân tích được động cơ nhân vật","topics":[{"topic":"Biển cả","relation":"PriorityFocusArea"}]}', '{"readingLevel":5,"readingMode":"ReadFirst","comprehensionGoal":"Phân tích được động cơ nhân vật","topics":[{"topic":"Biển cả","relation":"PriorityFocusArea"}]}', 'ActiveVersion', NOW() - INTERVAL '1 days', NOW() - INTERVAL '1 days', false, 'Manual')
 ON CONFLICT ("Id") DO NOTHING;

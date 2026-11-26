@@ -1,4 +1,4 @@
--- 15. story_scenes (11)
+-- 15. story_scenes (15)
 -- Seed moi StoryVersion Ready thanh mot scene bao phu chinh xac toan bo Content.
 INSERT INTO story_scenes (
     "Id", "StoryVersionId", "SceneIndex", "TextRangeStart", "TextRangeEnd",

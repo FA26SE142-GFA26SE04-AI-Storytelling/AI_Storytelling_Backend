@@ -1,4 +1,4 @@
--- 76. creator_tier_evaluations (1): ket qua xet cap Creator doi tac thang truoc cua creator_demo (Id 13), Luong 5 5g.
+-- 76. creator_tier_evaluations (2): ket qua xet cap Creator doi tac thang truoc cua creator_demo (Id 13), Luong 5 5g.
 -- Chua dat (it truyen Published, it luot doc hop le) nen van la Creator thuong; thang hien tai duoc xet khi chay that.
 INSERT INTO creator_tier_evaluations (
     "Id", "CreatorUserId", "PeriodMonth", "WindowStart", "WindowEnd", "PublishedStories", "CompletionRate",

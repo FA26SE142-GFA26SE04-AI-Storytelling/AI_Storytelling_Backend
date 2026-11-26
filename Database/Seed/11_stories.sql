@@ -1,4 +1,4 @@
--- 11. stories (22: 13 Parent, 9 Creator)
+-- 11. stories (23: 14 Parent, 9 Creator)
 -- Creator: Id 11 = manual V2, Id 12 = imported text V1; author is creator_demo (Id 13).
 -- WF-L5A fixtures: Id 11 = first submit/withdraw; Id 13 = creator resubmit;
 -- Id 14 = recent pending resubmission for moderator queue/history/compare;

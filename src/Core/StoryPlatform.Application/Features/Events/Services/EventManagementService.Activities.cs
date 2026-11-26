@@ -307,6 +307,19 @@ public partial class EventManagementService
         var mySubs = await _uow.Repository<EventSubmission>().FindAsync(
             s => s.EventId == ev.Id && s.CreatorUserId == userId && !s.IsDeleted, cancellationToken: ct);
 
+        // Chỉ hoạt động nguồn xét giải mới có hạn khiếu nại (sau khi công bố kết quả).
+        var appealSourceActIds = new HashSet<int>();
+        if (ev.ResultsPublishedAt.HasValue)
+        {
+            var eventAwards = await _uow.Repository<EventAward>().FindAsync(
+                a => a.EventId == ev.Id && !a.IsDeleted, cancellationToken: ct);
+            appealSourceActIds = eventAwards
+                .Select(a => EventResultsQueryService.ResolveSourceActivityId(a, activities))
+                .Where(id => id.HasValue)
+                .Select(id => id!.Value)
+                .ToHashSet();
+        }
+
         var result = new List<EventActivityUserStateDto>(activities.Count);
         foreach (var act in activities.OrderBy(a => a.StartAt).ThenBy(a => a.Id))
         {
@@ -328,7 +341,10 @@ public partial class EventManagementService
                 IsRegistered = part != null,
                 ParticipationId = part?.Id,
                 ParticipationStatus = part?.Status,
-                AppealDeadlineAt = EventAppealWindow.DeadlineFor(part),
+                AppealDeadlineAt = part != null && appealSourceActIds.Contains(act.Id) &&
+                                   part.Status is EventParticipationStatus.Verified or EventParticipationStatus.VerificationFailed
+                    ? ev.ResultsPublishedAt?.AddHours(EventAppealWindow.Hours)
+                    : null,
                 CanRegister = ev.Status == EventStatus.Published && eligible && part == null &&
                               now >= act.RegistrationStartAt && now <= act.RegistrationEndAt,
                 CanSubmit = ev.Status == EventStatus.Published && eligible && activePart &&

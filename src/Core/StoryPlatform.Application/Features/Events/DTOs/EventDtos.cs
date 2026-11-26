@@ -20,6 +20,7 @@ public class EventSummaryDto
     public string? BannerUrl { get; set; }
     public int MainCategoryId { get; set; }
     public string? MainCategoryName { get; set; }
+    public List<int> EventStoryIds { get; set; } = new();
     public string TargetAgeBands { get; set; } = string.Empty;
     public EventStatus Status { get; set; }
     public EventConfigVersion ConfigVersion { get; set; } = EventConfigVersion.LegacyRoleBased;
@@ -33,6 +34,7 @@ public class EventSummaryDto
     public DateTime? VotingEndAt { get; set; }
     public EventVotingScheduleDto? CreatorVotingSchedule { get; set; }
     public DateTime? ResultsFinalizedAt { get; set; }
+    public DateTime? ResultsPublishedAt { get; set; }
     public long BudgetVnd { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? PublishedAt { get; set; }
@@ -108,6 +110,112 @@ public class EventAwardSlotDto
     public int? ParticipationId { get; set; }
     public EventAwardStatus Status { get; set; }
     public DateTime? ClaimDeadlineAt { get; set; }
+    public string? WinnerName { get; set; }
+    public string? WinnerStoryTitle { get; set; }
+    public string? ManualAssignmentNote { get; set; }
+    public bool IsManualAssignment { get; set; }
+    public string? RevokedReason { get; set; }
+    public DateTime? RevokedAt { get; set; }
+}
+
+public class ManualAssignAwardRequestDto
+{
+    public int? ParticipationId { get; set; }
+    public string Reason { get; set; } = string.Empty;
+}
+
+public class RevokeAwardRequestDto
+{
+    public string Reason { get; set; } = string.Empty;
+    public int? ReplacementParticipationId { get; set; }
+    /// <summary>Đơn khiếu nại đang mở được kết luận "Chấp nhận" cùng lúc thu hồi (dùng được cả sau hạn 48 giờ).</summary>
+    public int? AppealId { get; set; }
+}
+
+public class EventRecapDto
+{
+    public int StoriesRead { get; set; }
+    public int Submissions { get; set; }
+    public int Votes { get; set; }
+    public int TasksCompleted { get; set; }
+    public int TasksTotal { get; set; }
+}
+
+public class MyActivityResultDto
+{
+    public int ParticipationId { get; set; }
+    /// <summary>Hồ sơ này gửi được khiếu nại ngay lúc này (hoạt động nguồn xét giải, chưa có đơn mở).</summary>
+    public bool CanAppeal { get; set; }
+    public EventActivityType ActivityType { get; set; }
+    public EventParticipationStatus Status { get; set; }
+    public string? Reason { get; set; }
+}
+
+public class MyAwardDto
+{
+    public int AwardId { get; set; }
+    public string RankOrTier { get; set; } = string.Empty;
+    public int SlotIndex { get; set; }
+    public string RewardName { get; set; } = string.Empty;
+    public EventRewardType RewardType { get; set; }
+    public int CreditGrantAmount { get; set; }
+    public int SubmitCreditGrantAmount { get; set; }
+    public long UnitValueVnd { get; set; }
+    public EventAwardStatus Status { get; set; }
+    public DateTime? ClaimOpensAt { get; set; }
+    public DateTime? ClaimDeadlineAt { get; set; }
+    public string? RevokedReason { get; set; }
+    public bool AsksChildNameConsent { get; set; }
+}
+
+public class MyEventResultDto
+{
+    public int EventId { get; set; }
+    public string EventTitle { get; set; } = string.Empty;
+    public DateTime? EndedAt { get; set; }
+    public DateTime? ResultsPublishedAt { get; set; }
+    public DateTime? AppealDeadlineAt { get; set; }
+    public bool CanAppeal { get; set; }
+    public EventRecapDto Recap { get; set; } = new();
+    public List<MyActivityResultDto> Activities { get; set; } = new();
+    public List<MyAwardDto> Awards { get; set; } = new();
+}
+
+public class PublicAwardDto
+{
+    public string RankOrTier { get; set; } = string.Empty;
+    public int SlotIndex { get; set; }
+    public string RewardName { get; set; } = string.Empty;
+    public EventAwardResultSource? ResultSource { get; set; }
+    public string? StoryTitle { get; set; }
+    public string? WinnerName { get; set; }
+    public List<string> ChildNicknames { get; set; } = new();
+    public int ChildCount { get; set; }
+}
+
+public class PublicEventResultsDto
+{
+    public int EventId { get; set; }
+    public string EventTitle { get; set; } = string.Empty;
+    public DateTime ResultsPublishedAt { get; set; }
+    public int ParticipantCount { get; set; }
+    public int StoryCount { get; set; }
+    public List<PublicAwardDto> Awards { get; set; } = new();
+}
+
+public class EventAwardCandidateDto
+{
+    public int ParticipationId { get; set; }
+    public int UserId { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+    public string? StoryTitle { get; set; }
+    public int Rank { get; set; }
+    public decimal? RubricScore { get; set; }
+    public decimal? AverageStars { get; set; }
+    public int? ValidVoteCount { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    public int? CurrentAwardId { get; set; }
+    public string? CurrentAwardRankOrTier { get; set; }
 }
 
 public class EventActivityDto
@@ -180,6 +288,7 @@ public class EventDetailDto : EventSummaryDto
     public int? LeadModeratorId { get; set; }
     public List<int>? AssistantModeratorIds { get; set; }
     public bool? CanOperateEvent { get; set; }
+    public DateTime? AppealWindowEndsAt { get; set; }
     public List<EventTrackDto> Tracks { get; set; } = new();
     public List<EventActivityDto> Activities { get; set; } = new();
     public List<EventActivityUserStateDto> MyActivityStates { get; set; } = new();
@@ -202,7 +311,6 @@ public class CreateEventRequestDto
     public string Description { get; set; } = string.Empty;
     public string? BannerUrl { get; set; }
     public int MainCategoryId { get; set; }
-    public string? MainCategoryName { get; set; }
     public string TargetAgeBands { get; set; } = "6-8,9-10";
     public EventConfigVersion ConfigVersion { get; set; } = EventConfigVersion.LegacyRoleBased;
     public EventFormat Format { get; set; } = EventFormat.Standard;
@@ -405,6 +513,8 @@ public class CreateAppealRequestDto
     public int ParticipationId { get; set; }
     public string ReasonText { get; set; } = string.Empty;
     public string? EvidenceJson { get; set; }
+    public EventAppealKind Kind { get; set; } = EventAppealKind.Verification;
+    public int? TargetAwardId { get; set; }
 }
 
 public class DecideAppealRequestDto
@@ -420,6 +530,9 @@ public class EventAppealDto
     public int ParticipationId { get; set; }
     public int AppellantUserId { get; set; }
     public string ReasonText { get; set; } = string.Empty;
+    public EventAppealKind Kind { get; set; } = EventAppealKind.Verification;
+    public int? TargetAwardId { get; set; }
+    public string? TargetAwardLabel { get; set; }
     public EventAppealStatus Status { get; set; }
     public string? ResolutionNote { get; set; }
     public DateTime CreatedAt { get; set; }
@@ -441,6 +554,7 @@ public class ClaimRewardRequestDto
     public string? BankName { get; set; }
     public string? BankAccountNumber { get; set; }
     public string? BankAccountHolder { get; set; }
+    public bool? ShowChildNames { get; set; }
 }
 
 public sealed class EventRewardRecipientDto
@@ -554,6 +668,12 @@ public class EventVoteDto
     public string? DisqualifiedReason { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
+    /// <summary>Tên truyện được bình chọn (chỉ điền ở danh sách phiếu cho người vận hành).</summary>
+    public string? StoryTitle { get; set; }
+    /// <summary>Tên hiển thị của người bình chọn (họ tên, thiếu thì tên đăng nhập).</summary>
+    public string? VoterName { get; set; }
+    /// <summary>Thời điểm bé đọc xong lượt đọc làm bằng chứng cho phiếu.</summary>
+    public DateTime? ReadingCompletedAt { get; set; }
 }
 
 public class EventLeaderboardEntryDto

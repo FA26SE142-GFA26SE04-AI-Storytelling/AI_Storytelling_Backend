@@ -43,13 +43,17 @@ public partial class EventManagementService : IEventManagementService
         }
         var categoryRepo = _uow.Repository<ContentCategory>();
         var categoryIds = items.Select(e => e.MainCategoryId).Distinct().ToList();
-        var categoryNames = categoryRepo != null && categoryIds.Count > 0
-            ? (await categoryRepo.FindAsync(c => categoryIds.Contains(c.Id), cancellationToken: ct))
-                .ToDictionary(c => c.Id, c => c.DisplayName)
-            : new Dictionary<int, string>();
+        var categoryList = categoryRepo != null && categoryIds.Count > 0
+            ? await categoryRepo.FindAsync(c => categoryIds.Contains(c.Id), cancellationToken: ct)
+            : null;
+        var categoryNames = categoryList?.ToDictionary(c => c.Id, c => c.DisplayName) ?? new Dictionary<int, string>();
+        var storyIdsByEvent = await LoadPublishedEventStoryIdsByEventAsync(items.Select(e => e.Id).ToList(), ct);
 
         return items.OrderByDescending(e => e.CreatedAt)
-            .Select(e => MapSummary(e, categoryNames.GetValueOrDefault(e.MainCategoryId)))
+            .Select(e => MapSummary(
+                e,
+                categoryNames.GetValueOrDefault(e.MainCategoryId),
+                storyIdsByEvent.GetValueOrDefault(e.Id)))
             .ToList();
     }
 
@@ -57,7 +61,9 @@ public partial class EventManagementService : IEventManagementService
     {
         var ev = await _uow.Repository<Event>().GetByIdAsync(eventId, ct)
             ?? throw new NotFoundException(nameof(Event), eventId);
-        if (!includeUnpublished && ev.Status is not (EventStatus.Published or EventStatus.Closed))
+        var exposesPublishedResults = ev.Status == EventStatus.Paused &&
+            ev.ConfigVersion == EventConfigVersion.ActivityBased && ev.ResultsPublishedAt.HasValue;
+        if (!includeUnpublished && ev.Status is not (EventStatus.Published or EventStatus.Closed) && !exposesPublishedResults)
             throw new NotFoundException(nameof(Event), eventId);
         if (currentUserRole == UserRole.Moderator && currentUserId.HasValue &&
             ev.Status is not (EventStatus.Published or EventStatus.Closed))
@@ -484,7 +490,8 @@ public partial class EventManagementService : IEventManagementService
         var awards = await _uow.Repository<EventAward>().FindAsync(a => a.EventId == eventId, cancellationToken: ct);
 
         var fulfilledAwards = awards.Where(a => a.Status == EventAwardStatus.Fulfilled).ToList();
-        var activeAwards = awards.Where(a => a.ParticipationId.HasValue && a.Status != EventAwardStatus.Expired && a.Status != EventAwardStatus.UnclaimedBudgetReturned).ToList();
+        var activeAwards = awards.Where(a => a.ParticipationId.HasValue &&
+            a.Status is not (EventAwardStatus.Expired or EventAwardStatus.UnclaimedBudgetReturned or EventAwardStatus.Revoked)).ToList();
 
         var eventEndAt = ev.ClosesAt ?? (activities.Count > 0
             ? activities.Max(a => a.EndAt)
@@ -573,10 +580,17 @@ public partial class EventManagementService : IEventManagementService
             : Array.Empty<EventActivity>();
         EventExecution.EnsureEnded(ev, tracks, activities, allowPaused: true);
         var eventAwards = await _uow.Repository<EventAward>().FindAsync(a => a.EventId == eventId && !a.IsDeleted, cancellationToken: ct);
-        if (eventAwards.Count > 0 && !ev.ResultsFinalizedAt.HasValue && !eventAwards.Any(a => a.Status is
-                EventAwardStatus.AwaitingClaim or EventAwardStatus.Claimed or EventAwardStatus.FulfillmentProcessing or
-                EventAwardStatus.Fulfilled or EventAwardStatus.Expired or EventAwardStatus.UnclaimedBudgetReturned or
-                EventAwardStatus.Failed))
+        if (eventAwards.Count > 0 && ev.ConfigVersion == EventConfigVersion.ActivityBased)
+        {
+            if (!EventExecution.PublishedResultsAt(ev, eventAwards).HasValue)
+                throw new ConflictException("Admin cần công bố kết quả trước khi đóng sự kiện.");
+            if (ev.ResultsPublishedAt is { } publishedAt && DateTime.UtcNow < publishedAt.AddHours(EventAppealWindow.Hours))
+                throw new ConflictException("Cần chờ hết hạn khiếu nại trước khi đóng sự kiện.");
+        }
+        else if (eventAwards.Count > 0 && !ev.ResultsFinalizedAt.HasValue && !eventAwards.Any(a => a.Status is
+                EventAwardStatus.AppealHold or EventAwardStatus.AwaitingClaim or EventAwardStatus.Claimed or
+                EventAwardStatus.FulfillmentProcessing or EventAwardStatus.Fulfilled or EventAwardStatus.Expired or
+                EventAwardStatus.UnclaimedBudgetReturned or EventAwardStatus.Failed or EventAwardStatus.Revoked))
             throw new ConflictException("Cần chốt và duyệt danh sách trao giải trước khi đóng sự kiện.");
         if (await _uow.Repository<EventParticipation>().ExistsAsync(p => p.EventId == eventId &&
                 (p.Status == EventParticipationStatus.Registered || p.Status == EventParticipationStatus.MissionCompleted ||
@@ -593,9 +607,9 @@ public partial class EventManagementService : IEventManagementService
 
         var pendingAwards = await _uow.Repository<EventAward>().ExistsAsync(
             a => a.EventId == eventId && a.ParticipationId != null &&
-                 (a.Status == EventAwardStatus.AwardProposed || a.Status == EventAwardStatus.AwaitingClaim ||
-                  a.Status == EventAwardStatus.Claimed || a.Status == EventAwardStatus.FulfillmentProcessing ||
-                  a.Status == EventAwardStatus.Failed), ct);
+                 (a.Status == EventAwardStatus.AwardProposed || a.Status == EventAwardStatus.AppealHold ||
+                  a.Status == EventAwardStatus.AwaitingClaim || a.Status == EventAwardStatus.Claimed ||
+                  a.Status == EventAwardStatus.FulfillmentProcessing || a.Status == EventAwardStatus.Failed), ct);
         if (pendingAwards)
             throw new ConflictException("Còn suất giải thưởng chưa hoàn tất đối soát hoặc trao thưởng.");
 
@@ -727,11 +741,23 @@ public partial class EventManagementService : IEventManagementService
             ? (await _uow.Repository<EventModeratorAssignment>().FindAsync(assignment => assignment.EventId == ev.Id, cancellationToken: ct))
                 .Select(assignment => assignment.ModeratorId).OrderBy(id => id).ToList()
             : null;
+        var canOperate = staffView && (currentUserRole == UserRole.Administrator ||
+            EventModeratorAccess.OwnerId(ev) == currentUserId ||
+            (currentUserId.HasValue && assistantIds!.Contains(currentUserId.Value)));
+        var appealWindowEndsAt = ev.ConfigVersion == EventConfigVersion.ActivityBased
+            ? (ev.ResultsPublishedAt?.AddHours(EventAppealWindow.Hours))
+            : (canOperate && !ev.ResultsFinalizedAt.HasValue
+                ? await EventAppealWindow.GetLatestOpenDeadlineAsync(_uow, ev.Id, DateTime.UtcNow, ct)
+                : null);
+        var awardDtos = canOperate
+            ? await EventAwardEnricher.MapForOperatorsAsync(_uow, ev.Id, awards, activityMap, ct)
+            : awards.Select(a => EventAwardEnricher.MapBase(a, activityMap, includeOperatorFields: false)).ToList();
 
         var categoryRepo = _uow.Repository<ContentCategory>();
         var mainCategory = categoryRepo != null
             ? await categoryRepo.GetByIdAsync(ev.MainCategoryId, ct)
             : null;
+        var storyIdsByEvent = await LoadPublishedEventStoryIdsByEventAsync([ev.Id], ct);
 
         return new EventDetailDto
         {
@@ -740,9 +766,8 @@ public partial class EventManagementService : IEventManagementService
                 : null,
             LeadModeratorId = staffView ? EventModeratorAccess.OwnerId(ev) : null,
             AssistantModeratorIds = currentUserRole == UserRole.Administrator ? assistantIds : null,
-            CanOperateEvent = staffView ? currentUserRole == UserRole.Administrator ||
-                EventModeratorAccess.OwnerId(ev) == currentUserId ||
-                (currentUserId.HasValue && assistantIds!.Contains(currentUserId.Value)) : null,
+            CanOperateEvent = staffView ? canOperate : null,
+            AppealWindowEndsAt = appealWindowEndsAt,
             Id = ev.Id,
             Title = ev.Title,
             Slug = ev.Slug,
@@ -750,6 +775,7 @@ public partial class EventManagementService : IEventManagementService
             BannerUrl = ev.BannerUrl,
             MainCategoryId = ev.MainCategoryId,
             MainCategoryName = mainCategory?.DisplayName,
+            EventStoryIds = storyIdsByEvent.GetValueOrDefault(ev.Id) ?? new List<int>(),
             TargetAgeBands = ev.TargetAgeBands,
             Status = ev.Status,
             ConfigVersion = ev.ConfigVersion,
@@ -765,6 +791,7 @@ public partial class EventManagementService : IEventManagementService
             VotingEndAt = ev.VotingEndAt,
             CreatorVotingSchedule = EventVoting.CreatorSchedule(ev),
             ResultsFinalizedAt = ev.ResultsFinalizedAt,
+            ResultsPublishedAt = EventExecution.PublishedResultsAt(ev, awards),
             BudgetVnd = ev.BudgetVnd,
             CreatedAt = ev.CreatedAt,
             PublishedAt = ev.PublishedAt,
@@ -788,25 +815,7 @@ public partial class EventManagementService : IEventManagementService
             Activities = activities.OrderBy(a => a.StartAt).ThenBy(a => a.Id).Select(MapActivity).ToList(),
             MyActivityStates = myStates,
             ActiveRule = activeRule == null ? null : MapRule(activeRule, tasks),
-            Awards = awards.Select(a => new EventAwardSlotDto
-            {
-                Id = a.Id,
-                TrackId = a.TrackId,
-                EventActivityId = a.EventActivityId,
-                ActivityType = a.EventActivityId.HasValue && activityMap.TryGetValue(a.EventActivityId.Value, out var act) ? act.ActivityType : null,
-                ResultSource = a.ResultSource,
-                TargetAudience = a.TargetAudience,
-                RankOrTier = a.RankOrTier,
-                SlotIndex = a.SlotIndex,
-                RewardType = a.RewardType,
-                RewardName = a.RewardName,
-                UnitValueVnd = a.UnitValueVnd,
-                CreditGrantAmount = a.CreditGrantAmount,
-                SubmitCreditGrantAmount = a.SubmitCreditGrantAmount,
-                ParticipationId = a.ParticipationId,
-                Status = a.Status,
-                ClaimDeadlineAt = a.ClaimDeadlineAt
-            }).ToList(),
+            Awards = awardDtos,
             EventStoriesCount = storyCount
         };
     }
@@ -835,7 +844,46 @@ public partial class EventManagementService : IEventManagementService
         return $"{(string.IsNullOrEmpty(baseSlug) ? "event" : baseSlug)}-{Guid.NewGuid().ToString("N")[..10]}";
     }
 
-    private static EventSummaryDto MapSummary(Event ev, string? mainCategoryName = null) => new()
+    private async Task<Dictionary<int, List<int>>> LoadPublishedEventStoryIdsByEventAsync(
+        IReadOnlyCollection<int> eventIds, CancellationToken ct)
+    {
+        var linkRepo = _uow.Repository<EventStory>();
+        if (linkRepo == null || eventIds.Count == 0)
+        {
+            return new Dictionary<int, List<int>>();
+        }
+
+        var links = await linkRepo.FindAsync(
+            s => eventIds.Contains(s.EventId) && s.IsActive && !s.IsDeleted && s.Source != EventStorySource.ParentSubmission,
+            cancellationToken: ct);
+        if (links == null || links.Count == 0)
+        {
+            return new Dictionary<int, List<int>>();
+        }
+
+        var storyIds = links.Select(s => s.StoryId).Distinct().ToList();
+        var storyRepo = _uow.Repository<Story>();
+        HashSet<int>? publishedIds = null;
+        if (storyRepo != null)
+        {
+            var stories = await storyRepo.FindAsync(
+                s => storyIds.Contains(s.Id) && s.IsPublished && !s.IsDeleted,
+                cancellationToken: ct);
+            if (stories != null)
+            {
+                publishedIds = stories.Select(s => s.Id).ToHashSet();
+            }
+        }
+
+        return links
+            .Where(s => publishedIds == null || publishedIds.Contains(s.StoryId))
+            .GroupBy(s => s.EventId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(x => x.StoryId).Distinct().ToList());
+    }
+
+    private static EventSummaryDto MapSummary(Event ev, string? mainCategoryName = null, List<int>? eventStoryIds = null) => new()
     {
         Id = ev.Id,
         Title = ev.Title,
@@ -844,6 +892,7 @@ public partial class EventManagementService : IEventManagementService
         BannerUrl = ev.BannerUrl,
         MainCategoryId = ev.MainCategoryId,
         MainCategoryName = mainCategoryName,
+        EventStoryIds = eventStoryIds ?? new List<int>(),
         TargetAgeBands = ev.TargetAgeBands,
         Status = ev.Status,
         ConfigVersion = ev.ConfigVersion,
@@ -859,6 +908,7 @@ public partial class EventManagementService : IEventManagementService
         VotingEndAt = ev.VotingEndAt,
         CreatorVotingSchedule = EventVoting.CreatorSchedule(ev),
         ResultsFinalizedAt = ev.ResultsFinalizedAt,
+        ResultsPublishedAt = ev.ResultsPublishedAt,
         BudgetVnd = ev.BudgetVnd,
         CreatedAt = ev.CreatedAt,
         PublishedAt = ev.PublishedAt,

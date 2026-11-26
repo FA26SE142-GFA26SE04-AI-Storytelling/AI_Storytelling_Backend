@@ -866,14 +866,22 @@ public class EventWorkflowRegressionTests
             Status = EventStatus.Published,
             MainCategoryId = 12,
         });
+        store.Seed(new Story { Id = 401, Title = "Truyện dự thi đã duyệt", IsPublished = true });
+        store.Seed(new Story { Id = 402, Title = "Truyện nháp chưa xuất bản", IsPublished = false });
+        store.Seed(new Story { Id = 403, Title = "Truyện phụ huynh", IsPublished = true });
+        store.Seed(new EventStory { Id = 501, EventId = 301, StoryId = 401, Source = EventStorySource.CreatorSubmission, IsActive = true });
+        store.Seed(new EventStory { Id = 502, EventId = 301, StoryId = 402, Source = EventStorySource.ModeratorSeed, IsActive = true });
+        store.Seed(new EventStory { Id = 503, EventId = 301, StoryId = 403, Source = EventStorySource.ParentSubmission, IsActive = true });
 
         var svc = new EventManagementService(store, audit);
         var list = await svc.ListEventsAsync(includeDrafts: false);
         var summary = Assert.Single(list);
         Assert.Equal("Phiêu lưu", summary.MainCategoryName);
+        Assert.Equal(new[] { 401 }, summary.EventStoryIds);
 
         var detail = await svc.GetEventDetailAsync(301);
         Assert.Equal("Phiêu lưu", detail.MainCategoryName);
+        Assert.Equal(new[] { 401 }, detail.EventStoryIds);
     }
 
     private sealed class ProgressTracingUnitOfWork(

@@ -756,6 +756,9 @@
   "EventsController.ApproveAwards#POST {eventId:int}/awards/approve": [
     "Administrator"
   ],
+  "EventsController.AwardCandidates#GET awards/{awardId:int}/candidates": [
+    "Moderator"
+  ],
   "EventsController.CastVote#POST {eventId:int}/votes": [
     "ContentCreator",
     "User"
@@ -772,6 +775,9 @@
   ],
   "EventsController.CompleteTask#POST {eventId:int}/tasks/{taskDefinitionId:int}/complete": [
     "User"
+  ],
+  "EventsController.ConfirmAwards#POST {eventId:int}/awards/confirm": [
+    "Moderator"
   ],
   "EventsController.Create#POST ": [
     "Moderator"
@@ -843,6 +849,9 @@
     "Administrator",
     "Moderator"
   ],
+  "EventsController.ManualAssignAward#PUT awards/{awardId:int}/assignment": [
+    "Moderator"
+  ],
   "EventsController.MissionDashboard#GET {eventId:int}/mission-dashboard": [
     "ContentCreator",
     "User"
@@ -852,6 +861,10 @@
     "User"
   ],
   "EventsController.MyParticipations#GET my-participations": [
+    "ContentCreator",
+    "User"
+  ],
+  "EventsController.MyResults#GET my-results": [
     "ContentCreator",
     "User"
   ],
@@ -881,6 +894,10 @@
   "EventsController.ProposeAwards#POST {eventId:int}/awards/propose": [
     "Moderator"
   ],
+  "EventsController.PublicResults#GET {eventId:int}/results": [
+    "ContentCreator",
+    "User"
+  ],
   "EventsController.Publish#POST {eventId:int}/publish": [
     "Moderator"
   ],
@@ -889,6 +906,9 @@
     "User"
   ],
   "EventsController.ReviewParent#POST {eventId:int}/submissions/{submissionId:int}/review-parent": [
+    "Moderator"
+  ],
+  "EventsController.RevokeAward#POST awards/{awardId:int}/revoke": [
     "Moderator"
   ],
   "EventsController.RewardRecipient#GET awards/{awardId:int}/recipient": [

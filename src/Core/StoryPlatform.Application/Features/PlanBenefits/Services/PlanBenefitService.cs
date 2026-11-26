@@ -39,7 +39,7 @@ public class PlanBenefitService(IUnitOfWork unitOfWork, IPlanSettingsProvider se
             .Select(item => item.Plan)
             .FirstOrDefault(item => item is { PlanType: PlanType.Reading or PlanType.Creative });
 
-        return plan == null
+        var benefits = plan == null
             ? FreeBenefits(settings)
             : new PlanBenefitsDto
             {
@@ -51,6 +51,15 @@ public class PlanBenefitService(IUnitOfWork unitOfWork, IPlanSettingsProvider se
                 ReadAloudPerMonth = plan.ReadAloudPerMonth,
                 WritingAssistPerDay = plan.WritingAssistPerDay
             };
+
+        if (user is { Role: UserRole.User, WeeklyNewLibraryStoriesOverride: >= 0 }
+            && benefits.WeeklyNewLibraryStories.HasValue)
+        {
+            benefits.WeeklyNewLibraryStories = Math.Max(
+                benefits.WeeklyNewLibraryStories.Value, user.WeeklyNewLibraryStoriesOverride.Value);
+        }
+
+        return benefits;
     }
 
     private static PlanBenefitsDto FreeBenefits(PlanSettings settings) => new()

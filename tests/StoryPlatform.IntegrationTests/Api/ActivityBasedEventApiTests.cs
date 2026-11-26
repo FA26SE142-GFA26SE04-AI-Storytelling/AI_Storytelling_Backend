@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using StoryPlatform.Application.Features.Events.DTOs;
+using StoryPlatform.Application.Features.Events.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using StoryPlatform.Infrastructure.Persistence;
@@ -319,7 +320,22 @@ public sealed class ActivityBasedEventApiTests(ApiFactory factory) : IClassFixtu
 
         (await modClient.PostAsJsonAsync($"/api/v1/events/{eventId}/verify", new { })).EnsureSuccessStatusCode();
         (await modClient.PostAsJsonAsync($"/api/v1/events/{eventId}/awards/propose", new { })).EnsureSuccessStatusCode();
+        // Admin chỉ duyệt được sau khi Moderator phụ trách xác nhận danh sách.
+        Assert.Equal(HttpStatusCode.Conflict,
+            (await adminClient.PostAsJsonAsync($"/api/v1/events/{eventId}/awards/approve", new { })).StatusCode);
+        (await modClient.PostAsJsonAsync($"/api/v1/events/{eventId}/awards/confirm", new { })).EnsureSuccessStatusCode();
         (await adminClient.PostAsJsonAsync($"/api/v1/events/{eventId}/awards/approve", new { })).EnsureSuccessStatusCode();
+        await factory.WithDbAsync(async db =>
+        {
+            var ev = await db.Set<Event>().SingleAsync(e => e.Id == eventId);
+            ev.ResultsPublishedAt = DateTime.UtcNow.AddHours(-49);
+            await db.SaveChangesAsync();
+        });
+        using (var scope = factory.Services.CreateScope())
+        {
+            var sweep = scope.ServiceProvider.GetRequiredService<IEventResultSweepService>();
+            await sweep.SweepEndedEventsAsync();
+        }
         var myRewards = await parentClient.GetFromJsonAsync<ApiEnvelope<List<EventAwardSlotDto>>>("/api/v1/events/my-rewards");
         var awardId = Assert.Single(myRewards!.Data!).Id;
         (await parentClient.PostAsJsonAsync($"/api/v1/events/awards/{awardId}/claim",
@@ -507,20 +523,39 @@ public sealed class ActivityBasedEventApiTests(ApiFactory factory) : IClassFixtu
         (await modClient.PostAsJsonAsync($"/api/v1/events/{eventId}/verify", new { })).EnsureSuccessStatusCode();
         (await modClient.PostAsJsonAsync($"/api/v1/events/{eventId}/awards/propose", new { })).EnsureSuccessStatusCode();
         var approvalUrl = $"/api/v1/events/{eventId}/awards/approve";
+        var confirmUrl = $"/api/v1/events/{eventId}/awards/confirm";
+        // Chưa xác nhận -> Admin chưa duyệt được.
         Assert.Equal(HttpStatusCode.Conflict, (await adminClient.PostAsJsonAsync(approvalUrl, new { })).StatusCode);
-        // Advance only the test fixture's verification timestamp past the appeal window.
-        await factory.WithDbAsync(async db =>
-        {
-            var failed = await db.Set<EventParticipation>().Where(p => p.EventId == eventId &&
-                p.Status == EventParticipationStatus.VerificationFailed).ToListAsync();
-            Assert.NotEmpty(failed);
-            foreach (var p in failed) p.VerifiedAt = DateTime.UtcNow.AddHours(-49);
-            await db.SaveChangesAsync();
-        });
-        (await adminClient.PostAsJsonAsync($"/api/v1/events/{eventId}/awards/approve", new { })).EnsureSuccessStatusCode();
+        // Moderator xác nhận không cần chờ 48h; Admin duyệt = công bố (AppealHold).
+        (await modClient.PostAsJsonAsync(confirmUrl, new { })).EnsureSuccessStatusCode();
+        var rewardsBeforePublication =
+            await creatorClient.GetFromJsonAsync<ApiEnvelope<List<EventAwardSlotDto>>>("/api/v1/events/my-rewards");
+        Assert.Empty(rewardsBeforePublication!.Data!);
+        (await adminClient.PostAsJsonAsync(approvalUrl, new { })).EnsureSuccessStatusCode();
+        (await adminClient.PostAsJsonAsync(approvalUrl, new { })).EnsureSuccessStatusCode();
 
         var evRow = await factory.WithDbAsync(db => db.Set<Event>().SingleAsync(e => e.Id == eventId));
         Assert.False(string.IsNullOrWhiteSpace(evRow.FinalLeaderboardSnapshotJson));
+        Assert.NotNull(evRow.ResultsPublishedAt);
+        var publishedNotices = await factory.WithDbAsync(db => db.Notifications
+            .Where(n => n.Type == NotificationType.EventResultPublished &&
+                (n.RecipientUserId == creator.Id || n.RecipientUserId == parent.Id))
+            .Select(n => n.RecipientUserId).OrderBy(id => id).ToListAsync());
+        Assert.Equal(new[] { creator.Id, parent.Id }.OrderBy(id => id), publishedNotices);
+
+        // Tạm dừng sau khi công bố vẫn phải mở nhận thưởng khi hết hạn khiếu nại.
+        await factory.WithDbAsync(async db =>
+        {
+            var ev = await db.Set<Event>().SingleAsync(e => e.Id == eventId);
+            ev.Status = EventStatus.Paused;
+            ev.ResultsPublishedAt = DateTime.UtcNow.AddHours(-49);
+            await db.SaveChangesAsync();
+        });
+        using (var scope = factory.Services.CreateScope())
+        {
+            var sweep = scope.ServiceProvider.GetRequiredService<IEventResultSweepService>();
+            await sweep.SweepEndedEventsAsync();
+        }
 
         var creatorRewards = await creatorClient.GetFromJsonAsync<ApiEnvelope<List<EventAwardSlotDto>>>("/api/v1/events/my-rewards");
         var awardId = Assert.Single(creatorRewards!.Data!).Id;

@@ -16,6 +16,55 @@ public class PublicStoryReviewServiceTests
 {
     private readonly PublicStoryReviewHarness _h = new();
 
+    private StoryPlatform.Application.Features.Moderation.Services.PublicStoryReviewService SutWithStorage(
+        Mock<StoryPlatform.Application.Features.MediaStorage.Interfaces.IMediaStorage> storage) =>
+        new(_h.UnitOfWork.Object, _h.Audit.Object, _h.Notifications.Object, storage.Object, _h.Quota);
+
+    /// <summary>Đưa media về đường dẫn trong kho (không phải https) để gói duyệt phải ký URL.</summary>
+    private void UseStoragePaths()
+    {
+        foreach (var asset in _h.Assets.Where(x => x.Url != null))
+            asset.Url = asset.Type == MediaType.Illustration ? $"82/missing-{asset.Id}.png" : $"89/ok-{asset.Id}.mp3";
+    }
+
+    [Fact]
+    public async Task GetPackageAsync_KeepsThePackage_WhenOneMediaFileCannotBeSigned()
+    {
+        _h.MakeApprovable();
+        UseStoragePaths();
+        var storage = new Mock<StoryPlatform.Application.Features.MediaStorage.Interfaces.IMediaStorage>();
+        storage.Setup(x => x.GetSignedUrlAsync(It.Is<string>(p => p.StartsWith("82/")), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("Object not found"));
+        storage.Setup(x => x.GetSignedUrlAsync(It.Is<string>(p => p.StartsWith("89/")), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string p, TimeSpan _, CancellationToken _) => $"https://signed.test/{p}");
+
+        var package = await SutWithStorage(storage).GetPackageAsync(PublicStoryReviewHarness.ModeratorId, PublicStoryReviewHarness.ItemId);
+
+        var images = package.Scenes.SelectMany(s => s.Illustrations).ToList();
+        var audio = package.Scenes.SelectMany(s => s.Segments).Where(s => s.AudioUrl != null).ToList();
+        Assert.NotEmpty(images);
+        Assert.All(images, i => Assert.Null(i.Url));
+        Assert.NotEmpty(audio);
+        Assert.All(audio, s => Assert.StartsWith("https://signed.test/89/", s.AudioUrl));
+        Assert.Equal(images.Count, package.UnavailableMediaCount);
+        Assert.False(package.CanApprove);
+        Assert.Contains(package.ApproveBlockers, b => b.Code == ApproveBlockerCodes.MediaUnavailable);
+    }
+
+    [Fact]
+    public async Task GetPackageAsync_StillCancels_WhenTheRequestIsCancelled()
+    {
+        _h.MakeApprovable();
+        UseStoragePaths();
+        using var cts = new CancellationTokenSource();
+        var storage = new Mock<StoryPlatform.Application.Features.MediaStorage.Interfaces.IMediaStorage>();
+        storage.Setup(x => x.GetSignedUrlAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .Returns((string _, TimeSpan _, CancellationToken _) => { cts.Cancel(); throw new OperationCanceledException(cts.Token); });
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            SutWithStorage(storage).GetPackageAsync(PublicStoryReviewHarness.ModeratorId, PublicStoryReviewHarness.ItemId, cts.Token));
+    }
+
     [Fact]
     public async Task Uploaded_audio_requires_every_segment_heard_even_with_word_timings()
     {

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using StoryPlatform.Domain.Entities;
+using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Infrastructure.Persistence.Configurations.Events;
 
@@ -174,6 +175,7 @@ public class EventAppealConfiguration : IEntityTypeConfiguration<EventAppeal>
         builder.HasKey(x => x.Id);
         builder.Property(x => x.ReasonText).HasMaxLength(2000).IsRequired();
         builder.Property(x => x.ResolutionNote).HasMaxLength(2000);
+        builder.Property(x => x.Kind).HasConversion<string>().HasMaxLength(24).HasDefaultValue(EventAppealKind.Verification).IsRequired();
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(24).IsRequired();
 
         builder.HasOne(x => x.Participation).WithMany().HasForeignKey(x => x.ParticipationId).OnDelete(DeleteBehavior.Restrict);
@@ -212,17 +214,19 @@ public class EventAwardConfiguration : IEntityTypeConfiguration<EventAward>
         builder.Property(x => x.ResultSource).HasConversion<string>().HasMaxLength(32);
         builder.Property(x => x.TargetAudience).HasConversion<string>().HasMaxLength(20);
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
+        builder.Property(x => x.ManualAssignmentNote).HasMaxLength(500);
+        builder.Property(x => x.RevokedReason).HasMaxLength(500);
 
         builder.HasOne(x => x.Event).WithMany().HasForeignKey(x => x.EventId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.Activity).WithMany().HasForeignKey(x => x.EventActivityId).OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(x => new { x.EventId, x.TrackId, x.RankOrTier, x.SlotIndex })
             .IsUnique()
             .HasDatabaseName("IX_event_awards_ActiveSlot")
-            .HasFilter("\"TrackId\" IS NOT NULL AND \"Status\" NOT IN ('Expired', 'UnclaimedBudgetReturned', 'Failed') AND NOT \"IsDeleted\"");
+            .HasFilter("\"TrackId\" IS NOT NULL AND \"Status\" NOT IN ('Expired', 'UnclaimedBudgetReturned', 'Failed', 'Revoked') AND NOT \"IsDeleted\"");
         builder.HasIndex(x => new { x.EventId, x.EventActivityId, x.RankOrTier, x.SlotIndex })
             .IsUnique()
             .HasDatabaseName("IX_event_awards_ActiveActivitySlot")
-            .HasFilter("\"EventActivityId\" IS NOT NULL AND \"Status\" NOT IN ('Expired', 'UnclaimedBudgetReturned', 'Failed') AND NOT \"IsDeleted\"");
+            .HasFilter("\"EventActivityId\" IS NOT NULL AND \"Status\" NOT IN ('Expired', 'UnclaimedBudgetReturned', 'Failed', 'Revoked') AND NOT \"IsDeleted\"");
         builder.HasQueryFilter(x => !x.IsDeleted);
     }
 }

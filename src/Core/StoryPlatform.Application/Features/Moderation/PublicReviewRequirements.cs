@@ -72,4 +72,6 @@ public static class ApproveBlockerCodes
     public const string ChecklistIncomplete = "checklist_incomplete";
     public const string NoLabels = "no_labels";
     public const string InactiveLabels = "labels_inactive";
+    /// <summary>Có tranh/âm thanh không ký được URL (file không còn trong kho lưu trữ).</summary>
+    public const string MediaUnavailable = "media_image_audio_unavailable";
 }

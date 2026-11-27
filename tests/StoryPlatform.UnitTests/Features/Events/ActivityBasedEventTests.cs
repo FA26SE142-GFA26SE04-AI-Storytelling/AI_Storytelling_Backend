@@ -1231,4 +1231,366 @@ public sealed class ActivityBasedEventTests
         await Assert.ThrowsAsync<ConflictException>(() =>
             rewardSvc.RevokeAwardAsync(1, replaced.Id, new RevokeAwardRequestDto { Reason = "Lần nữa", AppealId = appeal.Id }));
     }
+
+    private (UserAccount Author, UserAccount Voter, ChildProfile VoterChild, EventActivity VoteAct, EventRuleVersion Rule) SeedVotingScenario(
+        bool seedReadingSession = true, bool seedActiveRule = true)
+    {
+        var author = _uow.Seed(new UserAccount { Id = 10, Email = "author@test.local", Role = UserRole.ContentCreator });
+        var voter = _uow.Seed(new UserAccount { Id = 11, Email = "voter@test.local", Role = UserRole.User });
+        var voterChild = _uow.Seed(new ChildProfile { Id = 51, OwnerUserId = voter.Id, Status = ChildProfileStatus.Active });
+        _uow.Seed(new Event { Id = 1, Status = EventStatus.Published, ConfigVersion = EventConfigVersion.ActivityBased });
+        var voteAct = _uow.Seed(new EventActivity
+        {
+            Id = 20, EventId = 1, ActivityType = EventActivityType.Voting, AllowedAudience = EventAudience.Parent,
+            RegistrationStartAt = _now.AddHours(-2), RegistrationEndAt = _now.AddHours(2),
+            StartAt = _now.AddHours(-2), EndAt = _now.AddHours(2), MinVotesPerSubmission = 1
+        });
+        EventRuleVersion rule = new() { Id = 30, EventId = 1, IsActive = seedActiveRule, RulesText = "Vote rules" };
+        if (seedActiveRule)
+            _uow.Seed(rule);
+        _uow.Seed(new Story { Id = 100, AuthorUserId = author.Id, IsPublished = true, Status = StoryStatus.Ready, Title = "Truyện dự thi" });
+        _uow.Seed(new StoryVersion { Id = 200, StoryId = 100, VersionNo = 1, IsCurrent = true });
+        _uow.Seed(new EventSubmission { Id = 250, EventId = 1, StoryId = 100, LockedStoryVersionId = 200, Status = EventSubmissionStatus.Approved });
+        _uow.Seed(new EventStory { Id = 300, EventId = 1, StoryId = 100, StoryVersionId = 200, Source = EventStorySource.CreatorSubmission, EventSubmissionId = 250, IsActive = true });
+        if (seedReadingSession)
+        {
+            _uow.Seed(new ReadingSession
+            {
+                Id = 400, ChildProfileId = voterChild.Id, StoryId = 100, StoryVersionId = 200,
+                Status = SessionStatus.Completed, StartedAt = _now.AddMinutes(-20), CompletedAt = _now.AddMinutes(-5)
+            });
+        }
+        return (author, voter, voterChild, voteAct, rule);
+    }
+
+    [Fact]
+    public async Task CastVote_Voting_WithoutRegistration_NoActiveRule_ThrowsConflict()
+    {
+        var (_, voter, _, voteAct, _) = SeedVotingScenario(seedActiveRule: false);
+        var svc = new EventParticipationService(_uow, _audit.Object);
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            svc.CastVoteAsync(voter.Id, 1, new CastEventVoteRequestDto { StoryId = 100, Stars = 5 }));
+
+        Assert.Equal("Sự kiện chưa có phiên bản thể lệ hoạt động.", ex.Message);
+        Assert.Equal(0, _uow.Items<EventParticipation>().Count(p => p.EventId == 1 && p.EventActivityId == voteAct.Id && p.UserId == voter.Id));
+    }
+
+    [Fact]
+    public async Task CastVote_Voting_WithoutRegistration_CreatesParticipationAndVote()
+    {
+        var (_, voter, _, voteAct, rule) = SeedVotingScenario();
+        var svc = new EventParticipationService(_uow, _audit.Object);
+
+        var vote = await svc.CastVoteAsync(voter.Id, 1, new CastEventVoteRequestDto { StoryId = 100, Stars = 5 });
+
+        var part = Assert.Single(_uow.Items<EventParticipation>(), p => p.EventId == 1 && p.EventActivityId == voteAct.Id && p.UserId == voter.Id);
+        Assert.Equal(rule.Id, part.AcceptedRuleVersionId);
+        Assert.Equal(EventParticipationStatus.MissionCompleted, part.Status);
+        var savedVote = Assert.Single(_uow.Items<EventVote>(), v => v.Id == vote.Id);
+        Assert.Equal(part.Id, savedVote.ParticipationId);
+        _audit.Verify(a => a.LogAsync(
+            voter.Id, "EventActivityRegistered", nameof(EventParticipation), part.Id, null, It.IsAny<object>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CastVote_Voting_FailedCheck_DoesNotCreateParticipation()
+    {
+        var (_, voter, _, voteAct, _) = SeedVotingScenario(seedReadingSession: false);
+        var svc = new EventParticipationService(_uow, _audit.Object);
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            svc.CastVoteAsync(voter.Id, 1, new CastEventVoteRequestDto { StoryId = 100, Stars = 5 }));
+
+        Assert.Contains("Bé cần đọc xong", ex.Message);
+        Assert.Equal(0, _uow.Items<EventParticipation>().Count(p => p.EventId == 1 && p.EventActivityId == voteAct.Id && p.UserId == voter.Id));
+    }
+
+    [Fact]
+    public async Task CastVote_Voting_ExistingParticipation_ReusesParticipation()
+    {
+        var (_, voter, _, voteAct, rule) = SeedVotingScenario();
+        _uow.Seed(new EventParticipation { Id = 41, EventId = 1, EventActivityId = voteAct.Id, UserId = voter.Id, AcceptedRuleVersionId = rule.Id, Status = EventParticipationStatus.Registered });
+        var svc = new EventParticipationService(_uow, _audit.Object);
+
+        var vote = await svc.CastVoteAsync(voter.Id, 1, new CastEventVoteRequestDto { StoryId = 100, Stars = 4 });
+
+        Assert.Equal(4, vote.Stars);
+        _audit.Verify(a => a.LogAsync(
+            voter.Id, "EventActivityRegistered", nameof(EventParticipation), It.IsAny<int>(), null, It.IsAny<object>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CastVote_Voting_DisqualifiedParticipation_StillForbidden()
+    {
+        var (_, voter, _, voteAct, rule) = SeedVotingScenario();
+        _uow.Seed(new EventParticipation { Id = 41, EventId = 1, EventActivityId = voteAct.Id, UserId = voter.Id, AcceptedRuleVersionId = rule.Id, Status = EventParticipationStatus.Disqualified });
+        var svc = new EventParticipationService(_uow, _audit.Object);
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            svc.CastVoteAsync(voter.Id, 1, new CastEventVoteRequestDto { StoryId = 100, Stars = 5 }));
+
+        Assert.Equal("Bạn chưa đăng ký hợp lệ cho hoạt động bình chọn.", ex.Message);
+    }
+
+    [Fact]
+    public async Task Detail_Voting_UnregisteredParent_CanVoteWithoutRegister()
+    {
+        var (_, voter, _, _, _) = SeedVotingScenario();
+        var svc = new EventManagementService(_uow, _audit.Object);
+
+        var detail = await svc.GetEventDetailAsync(1, currentUserId: voter.Id, currentUserRole: UserRole.User);
+        var state = Assert.Single(detail.MyActivityStates, s => s.ActivityType == EventActivityType.Voting);
+
+        Assert.False(state.CanRegister);
+        Assert.True(state.CanVote);
+        Assert.False(state.IsRegistered);
+    }
+
+    [Fact]
+    public async Task Detail_Voting_OutsideWindow_CannotVote()
+    {
+        var (_, voter, _, voteAct, _) = SeedVotingScenario();
+        voteAct.EndAt = _now.AddMinutes(-1);
+        var svc = new EventManagementService(_uow, _audit.Object);
+
+        var detail = await svc.GetEventDetailAsync(1, currentUserId: voter.Id, currentUserRole: UserRole.User);
+        var state = Assert.Single(detail.MyActivityStates, s => s.ActivityType == EventActivityType.Voting);
+
+        Assert.False(state.CanRegister);
+        Assert.False(state.CanVote);
+    }
+
+    [Fact]
+    public async Task Detail_Voting_Disqualified_CannotVote()
+    {
+        var (_, voter, _, voteAct, rule) = SeedVotingScenario();
+        _uow.Seed(new EventParticipation { Id = 41, EventId = 1, EventActivityId = voteAct.Id, UserId = voter.Id, AcceptedRuleVersionId = rule.Id, Status = EventParticipationStatus.Disqualified });
+        var svc = new EventManagementService(_uow, _audit.Object);
+
+        var detail = await svc.GetEventDetailAsync(1, currentUserId: voter.Id, currentUserRole: UserRole.User);
+        var state = Assert.Single(detail.MyActivityStates, s => s.ActivityType == EventActivityType.Voting);
+
+        Assert.False(state.CanRegister);
+        Assert.False(state.CanVote);
+        Assert.True(state.IsRegistered);
+    }
+
+    [Fact]
+    public async Task Create_NormalizesVotingRegistrationWindow()
+    {
+        _uow.Seed(new ContentCategory { Id = 1, IsActive = true });
+        var svc = new EventManagementService(_uow, _audit.Object);
+        var startAt = _now.AddDays(3);
+        var endAt = _now.AddDays(6);
+
+        var created = await svc.CreateEventAsync(9, new CreateEventRequestDto
+        {
+            Title = "Vote normalize", MainCategoryId = 1, ConfigVersion = EventConfigVersion.ActivityBased,
+            OpensAt = _now, ClosesAt = _now.AddDays(10),
+            Activities = [new UpsertEventActivityDto
+            {
+                ActivityType = EventActivityType.Voting,
+                AllowedAudience = EventAudience.Parent,
+                RegistrationStartAt = startAt.AddDays(-2),
+                RegistrationEndAt = startAt.AddDays(-1),
+                StartAt = startAt,
+                EndAt = endAt,
+                MaxRegistrations = 10
+            }]
+        });
+
+        var voteAct = Assert.Single(created.Activities, a => a.ActivityType == EventActivityType.Voting);
+        Assert.Equal(startAt, voteAct.RegistrationStartAt);
+        Assert.Equal(endAt, voteAct.RegistrationEndAt);
+        Assert.Null(voteAct.MaxRegistrations);
+    }
+
+    [Fact]
+    public async Task Update_NormalizesVotingRegistrationWindow()
+    {
+        _uow.Seed(new ContentCategory { Id = 1, IsActive = true });
+        var svc = new EventManagementService(_uow, _audit.Object);
+        var startAt = _now.AddDays(3);
+        var endAt = _now.AddDays(6);
+
+        var created = await svc.CreateEventAsync(9, new CreateEventRequestDto
+        {
+            Title = "Vote update normalize", MainCategoryId = 1, ConfigVersion = EventConfigVersion.ActivityBased,
+            OpensAt = _now, ClosesAt = _now.AddDays(10),
+            Activities = [new UpsertEventActivityDto
+            {
+                ActivityType = EventActivityType.Voting,
+                AllowedAudience = EventAudience.Parent,
+                RegistrationStartAt = startAt,
+                RegistrationEndAt = endAt,
+                StartAt = startAt,
+                EndAt = endAt
+            }]
+        });
+
+        var updated = await svc.UpdateEventAsync(9, created.Id, new CreateEventRequestDto
+        {
+            Title = "Vote update normalize", MainCategoryId = 1, ConfigVersion = EventConfigVersion.ActivityBased,
+            OpensAt = _now, ClosesAt = _now.AddDays(10),
+            Activities = [new UpsertEventActivityDto
+            {
+                ActivityType = EventActivityType.Voting,
+                AllowedAudience = EventAudience.Parent,
+                RegistrationStartAt = startAt,
+                RegistrationEndAt = endAt.AddDays(2),
+                StartAt = startAt,
+                EndAt = endAt,
+                MaxRegistrations = 25
+            }]
+        });
+
+        var voteAct = Assert.Single(updated.Activities, a => a.ActivityType == EventActivityType.Voting);
+        Assert.Equal(startAt, voteAct.RegistrationStartAt);
+        Assert.Equal(endAt, voteAct.RegistrationEndAt);
+        Assert.Null(voteAct.MaxRegistrations);
+    }
+
+    [Fact]
+    public async Task Register_Voting_IgnoresMaxRegistrations()
+    {
+        var (_, voter1, _, voteAct, rule) = SeedVotingScenario();
+        var voter2 = _uow.Seed(new UserAccount { Id = 12, Email = "voter2@test.local", Role = UserRole.User, Status = AccountStatus.Active });
+        _uow.Seed(new ChildProfile { Id = 52, OwnerUserId = voter2.Id, Status = ChildProfileStatus.Active });
+        voteAct.MaxRegistrations = 1;
+        _uow.Seed(new EventParticipation { Id = 41, EventId = 1, EventActivityId = voteAct.Id, UserId = voter1.Id, AcceptedRuleVersionId = rule.Id });
+
+        var svc = new EventParticipationService(_uow, _audit.Object);
+        var result = await svc.RegisterAsync(voter2.Id, 1, new RegisterEventRequestDto { ActivityType = EventActivityType.Voting, AcceptRules = true });
+
+        Assert.Equal(voter2.Id, result.UserId);
+        Assert.Equal(EventActivityType.Voting, result.ActivityType);
+    }
+
+    [Fact]
+    public async Task CloneLegacyDraftToActivityBased_NormalizesVotingRegistrationWindow()
+    {
+        _uow.Seed(new ContentCategory { Id = 1, Code = "story", DisplayName = "Truyện", IsActive = true });
+        var voteStart = _now.AddDays(7);
+        var voteEnd = _now.AddDays(10);
+        _uow.Seed(new Event
+        {
+            Id = 1, Title = "Sự kiện Cũ Có Vote", Slug = "old-vote-draft", Description = "Mô tả", MainCategoryId = 1,
+            Status = EventStatus.Draft, ConfigVersion = EventConfigVersion.LegacyRoleBased,
+            Format = EventFormat.Standard, ScoringMode = EventScoringMode.ParentVoteAverage,
+            SubmissionCutoffAt = _now.AddDays(5), ReviewCutoffAt = _now.AddDays(6),
+            VotingStartAt = voteStart, VotingEndAt = voteEnd,
+            BudgetVnd = 1_000_000L, CreatedByUserId = 9, AssignedModeratorId = 9
+        });
+        _uow.Seed(new EventTrack
+        {
+            Id = 10, EventId = 1, TrackType = EventTrackType.Creator,
+            RegistrationStartAt = _now, RegistrationEndAt = _now.AddDays(5),
+            ExecutionStartAt = _now, ExecutionEndAt = _now.AddDays(5)
+        });
+        _uow.Seed(new EventTrack
+        {
+            Id = 11, EventId = 1, TrackType = EventTrackType.Parent,
+            RegistrationStartAt = _now, RegistrationEndAt = _now.AddDays(10),
+            ExecutionStartAt = _now.AddDays(6), ExecutionEndAt = _now.AddDays(10)
+        });
+
+        var svc = new EventManagementService(_uow, _audit.Object);
+        var cloned = await svc.CloneLegacyDraftToActivityBasedAsync(9, 1);
+
+        var voteAct = Assert.Single(cloned.Draft.Activities, a => a.ActivityType == EventActivityType.Voting);
+        Assert.Equal(voteStart, voteAct.RegistrationStartAt);
+        Assert.Equal(voteEnd, voteAct.RegistrationEndAt);
+        Assert.Equal(voteStart, voteAct.StartAt);
+        Assert.Equal(voteEnd, voteAct.EndAt);
+        Assert.Null(voteAct.MaxRegistrations);
+    }
+
+    [Fact]
+    public async Task GetVotingStories_UnregisteredParent_ListsApprovedSubmissionsWithReadState()
+    {
+        _uow.Seed(new UserAccount { Id = 10, Email = "parent@test.local", Role = UserRole.User });
+        _uow.Seed(new Event { Id = 1, Status = EventStatus.Published, ConfigVersion = EventConfigVersion.ActivityBased });
+        _uow.Seed(new EventActivity
+        {
+            Id = 3, EventId = 1, ActivityType = EventActivityType.Voting, AllowedAudience = EventAudience.Parent,
+            StartAt = _now.AddHours(-1), EndAt = _now.AddHours(1)
+        });
+        _uow.Seed(new ChildProfile { Id = 7, OwnerUserId = 10 });
+        _uow.Seed(new Story { Id = 11, IsPublished = true, AuthorUserId = 20 });
+        _uow.Seed(new Story { Id = 12, IsPublished = true, AuthorUserId = 20 });
+        _uow.Seed(new Story { Id = 13, IsPublished = true, AuthorUserId = 20 });
+        _uow.Seed(new EventSubmission { Id = 14, EventId = 1, StoryId = 12, LockedStoryVersionId = 21, Status = EventSubmissionStatus.Approved });
+        _uow.Seed(new EventSubmission { Id = 15, EventId = 1, StoryId = 13, LockedStoryVersionId = 22, Status = EventSubmissionStatus.Approved });
+        _uow.Seed(new EventStory { EventId = 1, StoryId = 11, StoryVersionId = 20, Source = EventStorySource.ModeratorSeed });
+        _uow.Seed(new EventStory { EventId = 1, StoryId = 12, StoryVersionId = 21, Source = EventStorySource.CreatorSubmission, EventSubmissionId = 14 });
+        _uow.Seed(new EventStory { EventId = 1, StoryId = 13, StoryVersionId = 23, Source = EventStorySource.CreatorSubmission, EventSubmissionId = 15 });
+
+        var svc = new EventParticipationService(_uow, _audit.Object);
+
+        var before = await svc.GetVotingStoriesAsync(10, 1);
+        var item = Assert.Single(before);
+        Assert.Equal(12, item.StoryId);
+        Assert.False(item.HasFamilyRead);
+
+        _uow.Seed(new ReadingSession { ChildProfileId = 7, StoryId = 12, StoryVersionId = 21, Status = SessionStatus.Completed, CompletedAt = _now });
+        var after = await svc.GetVotingStoriesAsync(10, 1);
+        Assert.True(Assert.Single(after).HasFamilyRead);
+    }
+
+    [Fact]
+    public async Task GetVotingStories_ExcludesOwnStory()
+    {
+        var (_, voter, _, _, _) = SeedVotingScenario();
+        _uow.Items<Story>().Single(s => s.Id == 100).AuthorUserId = voter.Id;
+        var svc = new EventParticipationService(_uow, _audit.Object);
+
+        var list = await svc.GetVotingStoriesAsync(voter.Id, 1);
+
+        Assert.Empty(list);
+    }
+
+    [Fact]
+    public async Task GetVotingStories_NonParent_Forbidden()
+    {
+        var (author, _, _, _, _) = SeedVotingScenario();
+        var svc = new EventParticipationService(_uow, _audit.Object);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => svc.GetVotingStoriesAsync(author.Id, 1));
+    }
+
+    [Fact]
+    public async Task GetVotingStories_NoVotingActivity_NotFound()
+    {
+        _uow.Seed(new UserAccount { Id = 10, Email = "parent@test.local", Role = UserRole.User });
+        _uow.Seed(new Event { Id = 1, Status = EventStatus.Published, ConfigVersion = EventConfigVersion.ActivityBased });
+        var svc = new EventParticipationService(_uow, _audit.Object);
+
+        await Assert.ThrowsAsync<NotFoundException>(() => svc.GetVotingStoriesAsync(10, 1));
+    }
+
+    [Fact]
+    public async Task GetVotingStories_UnpublishedEvent_ReturnsEmpty()
+    {
+        var (_, voter, _, _, _) = SeedVotingScenario();
+        _uow.Items<Event>().Single(e => e.Id == 1).Status = EventStatus.Draft;
+        var svc = new EventParticipationService(_uow, _audit.Object);
+
+        var list = await svc.GetVotingStoriesAsync(voter.Id, 1);
+
+        Assert.Empty(list);
+    }
+
+    [Fact]
+    public async Task GetVotingStories_ClosedEvent_StillListsStories()
+    {
+        var (_, voter, _, _, _) = SeedVotingScenario();
+        _uow.Items<Event>().Single(e => e.Id == 1).Status = EventStatus.Closed;
+        var svc = new EventParticipationService(_uow, _audit.Object);
+
+        var list = await svc.GetVotingStoriesAsync(voter.Id, 1);
+
+        var item = Assert.Single(list);
+        Assert.Equal(100, item.StoryId);
+    }
 }

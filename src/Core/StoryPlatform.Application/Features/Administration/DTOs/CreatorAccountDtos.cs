@@ -13,6 +13,12 @@ public class CreatorAccountDto
     /// <summary>Registered (chưa xác thực email), AwaitingApproval (chờ duyệt đơn), Active hoặc Suspended.</summary>
     public string Status { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Trạng thái đơn đăng ký mới nhất (Pending, Approved, Rejected); null khi tài khoản không có đơn (seed, Admin cấp).
+    /// AwaitingApproval + Rejected = đơn bị từ chối, Creator cần đăng nhập để nộp lại.
+    /// </summary>
+    public string? LatestApplicationStatus { get; set; }
+
     public int PublishedStoryCount { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? LastLoginAt { get; set; }

@@ -46,6 +46,12 @@ public partial class EventManagementService
 
         foreach (var act in request.Activities)
         {
+            if (act.ActivityType == EventActivityType.Voting)
+            {
+                act.RegistrationStartAt = act.StartAt;
+                act.RegistrationEndAt = act.EndAt;
+                act.MaxRegistrations = null;
+            }
             if (request.OpensAt is { } start && request.ClosesAt is { } end)
             {
                 var dates = new (string Label, DateTime? At)[]
@@ -346,6 +352,7 @@ public partial class EventManagementService
                     ? ev.ResultsPublishedAt?.AddHours(EventAppealWindow.Hours)
                     : null,
                 CanRegister = ev.Status == EventStatus.Published && eligible && part == null &&
+                              act.ActivityType != EventActivityType.Voting &&
                               now >= act.RegistrationStartAt && now <= act.RegistrationEndAt,
                 CanSubmit = ev.Status == EventStatus.Published && eligible && activePart &&
                             act.ActivityType == EventActivityType.Submission &&
@@ -354,7 +361,8 @@ public partial class EventManagementService
                 CanDoMissions = ev.Status == EventStatus.Published && eligible && activePart &&
                                 act.ActivityType == EventActivityType.ReadingMissions &&
                                 now >= act.StartAt && now <= act.EndAt,
-                CanVote = ev.Status == EventStatus.Published && eligible && activePart &&
+                CanVote = ev.Status == EventStatus.Published && eligible &&
+                          (part == null || part.Status != EventParticipationStatus.Disqualified) &&
                           act.ActivityType == EventActivityType.Voting &&
                           now >= act.StartAt && now <= act.EndAt,
                 SubmissionsCount = subCount,
@@ -462,10 +470,11 @@ public partial class EventManagementService
                         EventId = cloned.Id,
                         ActivityType = EventActivityType.Voting,
                         AllowedAudience = EventAudience.Parent,
-                        RegistrationStartAt = parentTrack.RegistrationStartAt,
+                        RegistrationStartAt = source.VotingStartAt.Value,
                         RegistrationEndAt = source.VotingEndAt.Value,
                         StartAt = source.VotingStartAt.Value,
                         EndAt = source.VotingEndAt.Value,
+                        MaxRegistrations = null,
                         MinVotesPerSubmission = Math.Max(1, source.MinVotesPerSubmission)
                     };
                     await _uow.Repository<EventActivity>().AddAsync(voteAct, ct);

@@ -53,9 +53,27 @@ public class CreatorPayoutDto
 public class CreatorPeriodEarningEntryDto
 {
     public DateTime PeriodMonth { get; set; }
+    public DateTime PeriodStart { get; set; }
+    /// <summary>Ngày cuối kỳ (tính cả ngày này).</summary>
+    public DateTime PeriodEnd { get; set; }
     public int ValidReads { get; set; }
     public long AmountVnd { get; set; }
     public DateTime CreditedAt { get; set; }
+}
+
+/// <summary>Kết quả Admin bấm Chốt kỳ ngay.</summary>
+public class CreatorEarningPeriodDto
+{
+    public int Id { get; set; }
+    public DateTime PeriodStart { get; set; }
+    /// <summary>Ngày cuối kỳ (tính cả ngày này).</summary>
+    public DateTime PeriodEnd { get; set; }
+    public long CreatorFundVnd { get; set; }
+    public int TotalValidReads { get; set; }
+    public long DistributedVnd { get; set; }
+    /// <summary>Số Creator được cộng thu nhập trong kỳ.</summary>
+    public int CreditedCreators { get; set; }
+    public DateTime ClosedAt { get; set; }
 }
 
 /// <summary>Một dòng trong danh sách chi của Admin.</summary>

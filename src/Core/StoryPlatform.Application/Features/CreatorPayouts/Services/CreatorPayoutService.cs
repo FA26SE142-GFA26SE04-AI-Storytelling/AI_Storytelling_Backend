@@ -65,7 +65,7 @@ public class CreatorPayoutService : ICreatorPayoutService
             .ToList();
         var periods = (await _unitOfWork.Repository<CreatorEarningPeriod>().FindAsync(
                 period => periodIds.Contains(period.Id), cancellationToken: cancellationToken))
-            .ToDictionary(period => period.Id, period => period.PeriodMonth);
+            .ToDictionary(period => period.Id);
         var reversals = entries
             .Where(entry => entry.Type == CreatorBalanceEntryType.PayoutReversal && entry.ReversedEntryId != null)
             .ToDictionary(entry => entry.ReversedEntryId!.Value);
@@ -88,14 +88,20 @@ public class CreatorPayoutService : ICreatorPayoutService
                 .ToList(),
             Earnings = entries
                 .Where(entry => entry.Type == CreatorBalanceEntryType.PeriodEarning && entry.EarningPeriodId != null)
-                .Select(entry => new CreatorPeriodEarningEntryDto
+                .Select(entry =>
                 {
-                    PeriodMonth = periods.GetValueOrDefault(entry.EarningPeriodId!.Value),
-                    ValidReads = entry.ValidReads ?? 0,
-                    AmountVnd = entry.AmountVnd,
-                    CreditedAt = entry.CreatedAt
+                    var period = periods.GetValueOrDefault(entry.EarningPeriodId!.Value);
+                    return new CreatorPeriodEarningEntryDto
+                    {
+                        PeriodMonth = period?.PeriodMonth ?? default,
+                        PeriodStart = period?.PeriodStart ?? default,
+                        PeriodEnd = period?.PeriodEnd ?? default,
+                        ValidReads = entry.ValidReads ?? 0,
+                        AmountVnd = entry.AmountVnd,
+                        CreditedAt = entry.CreatedAt
+                    };
                 })
-                .OrderByDescending(entry => entry.PeriodMonth)
+                .OrderByDescending(entry => entry.PeriodStart).ThenByDescending(entry => entry.CreditedAt)
                 .ToList()
         };
     }
@@ -374,29 +380,71 @@ public class CreatorPayoutService : ICreatorPayoutService
         }
 
         // Kỳ là tháng dương lịch trước đó, cùng cách tính kỳ (theo ngày) của thống kê thu nhập dự kiến (5f).
-        var periodStart = DateTime.SpecifyKind(new DateTime(today.Year, today.Month, 1).AddMonths(-1), DateTimeKind.Utc);
-        var periodEnd = periodStart.AddMonths(1).AddDays(-1);
-        var periods = _unitOfWork.Repository<CreatorEarningPeriod>();
-        if (await periods.ExistsAsync(period => period.PeriodMonth == periodStart, cancellationToken))
+        var monthStart = DateTime.SpecifyKind(new DateTime(today.Year, today.Month, 1).AddMonths(-1), DateTimeKind.Utc);
+        var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+        return await ClosePeriodAsync(monthStart, monthEnd, now, null, cancellationToken) != null;
+    }
+
+    public async Task<CreatorEarningPeriodDto> CloseNowAsync(
+        int adminUserId, DateTime now, CancellationToken cancellationToken = default)
+    {
+        var today = DateTime.SpecifyKind(VietnamTime.LocalDate(now), DateTimeKind.Utc);
+        var previousMonthStart = DateTime.SpecifyKind(new DateTime(today.Year, today.Month, 1).AddMonths(-1), DateTimeKind.Utc);
+        var closed = await ClosePeriodAsync(previousMonthStart, today, now, adminUserId, cancellationToken)
+            ?? throw new ConflictException("Thu nhập đã được chốt đến hết hôm nay. Lần chốt sau bắt đầu từ ngày mai.");
+        var (period, creditedCreators) = closed;
+        return new CreatorEarningPeriodDto
         {
-            return false;
+            Id = period.Id,
+            PeriodStart = period.PeriodStart,
+            PeriodEnd = period.PeriodEnd,
+            CreatorFundVnd = period.CreatorFundVnd,
+            TotalValidReads = period.TotalValidReads,
+            DistributedVnd = period.DistributedVnd,
+            CreditedCreators = creditedCreators,
+            ClosedAt = period.ClosedAt
+        };
+    }
+
+    /// <summary>Ngày đầu của kỳ kế tiếp: ngày sau kỳ đã chốt gần nhất, nhưng không trước <paramref name="earliestStart"/>.</summary>
+    private async Task<DateTime> NextPeriodStartAsync(DateTime earliestStart, CancellationToken cancellationToken)
+    {
+        var closed = await _unitOfWork.Repository<CreatorEarningPeriod>().FindAsync(
+            period => period.PeriodEnd >= earliestStart, cancellationToken: cancellationToken);
+        return closed.Count == 0 ? earliestStart : closed.Max(period => period.PeriodEnd).AddDays(1);
+    }
+
+    /// <summary>
+    /// Chốt các ngày chưa chốt trong [earliestStart, periodEnd] thành một kỳ và cộng thu nhập vào số dư từng Creator.
+    /// Trả null khi các ngày này đã chốt hết. Giữ khoá chốt kỳ nên worker và Admin bấm cùng lúc không cộng trùng.
+    /// </summary>
+    private async Task<(CreatorEarningPeriod Period, int CreditedCreators)?> ClosePeriodAsync(
+        DateTime earliestStart, DateTime periodEnd, DateTime now, int? adminUserId, CancellationToken cancellationToken)
+    {
+        if (await NextPeriodStartAsync(earliestStart, cancellationToken) > periodEnd)
+        {
+            return null;
         }
 
+        var periods = _unitOfWork.Repository<CreatorEarningPeriod>();
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
             await _unitOfWork.AcquireTransactionLockAsync(PeriodCloseLockId, cancellationToken);
-            if (await periods.ExistsAsync(period => period.PeriodMonth == periodStart, cancellationToken))
+            var periodStart = await NextPeriodStartAsync(earliestStart, cancellationToken);
+            if (periodStart > periodEnd)
             {
                 await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                return false;
+                return null;
             }
 
             var earnings = await _statistics.GetPeriodEarningsAsync(periodStart, periodEnd, cancellationToken);
             var credited = earnings.Creators.Where(row => row.EarningsVnd > 0).ToList();
             var period = new CreatorEarningPeriod
             {
-                PeriodMonth = periodStart,
+                PeriodMonth = new DateTime(periodStart.Year, periodStart.Month, 1, 0, 0, 0, DateTimeKind.Utc),
+                PeriodStart = periodStart,
+                PeriodEnd = periodEnd,
                 CreatorFundVnd = earnings.CreatorFundVnd,
                 TotalValidReads = earnings.TotalValidReads,
                 DistributedVnd = credited.Sum(row => row.EarningsVnd),
@@ -421,8 +469,21 @@ public class CreatorPayoutService : ICreatorPayoutService
                 }, cancellationToken);
             }
 
+            if (adminUserId != null)
+            {
+                await _auditLogWriter.LogAsync(
+                    adminUserId, "CreatorEarningPeriodClosedNow", nameof(CreatorEarningPeriod), period.Id, null,
+                    new
+                    {
+                        periodStart, periodEnd, creatorFundVnd = period.CreatorFundVnd,
+                        totalValidReads = period.TotalValidReads, distributedVnd = period.DistributedVnd,
+                        creditedCreators = credited.Count
+                    },
+                    cancellationToken);
+            }
+
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
-            return true;
+            return (period, credited.Count);
         }
         catch
         {

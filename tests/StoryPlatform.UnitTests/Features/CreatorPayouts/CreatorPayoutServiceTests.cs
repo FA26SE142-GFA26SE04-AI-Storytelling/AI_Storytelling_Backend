@@ -365,6 +365,8 @@ public sealed class CreatorPayoutServiceTests
             It.IsAny<CancellationToken>()), Times.Once);
         var period = Assert.Single(_store.Items<CreatorEarningPeriod>());
         Assert.Equal(new DateTime(2026, 11, 1, 0, 0, 0, DateTimeKind.Utc), period.PeriodMonth);
+        Assert.Equal(new DateTime(2026, 11, 1, 0, 0, 0, DateTimeKind.Utc), period.PeriodStart);
+        Assert.Equal(new DateTime(2026, 11, 30, 0, 0, 0, DateTimeKind.Utc), period.PeriodEnd);
         Assert.Equal(845_000, period.DistributedVnd);
         Assert.Equal(655_000, BalanceOf(CreatorA));
         Assert.Equal(228_600, BalanceOf(CreatorC));                           // cộng dồn sang kỳ sau
@@ -405,6 +407,105 @@ public sealed class CreatorPayoutServiceTests
         Assert.True(await _sut.CloseDuePeriodAsync(new DateTime(2027, 1, 10, 3, 0, 0, DateTimeKind.Utc)));
 
         Assert.Equal(new DateTime(2026, 12, 1, 0, 0, 0, DateTimeKind.Utc), Assert.Single(_store.Items<CreatorEarningPeriod>()).PeriodMonth);
+    }
+
+    // ---------- Chốt kỳ ngay ----------
+
+    private static DateTime Day(int month, int day, int year = 2026) => new(year, month, day, 0, 0, 0, DateTimeKind.Utc);
+
+    private void SeedPeriod(int id, DateTime start, DateTime end) =>
+        _store.Seed(new CreatorEarningPeriod
+        {
+            Id = id, PeriodMonth = new DateTime(start.Year, start.Month, 1, 0, 0, 0, DateTimeKind.Utc),
+            PeriodStart = start, PeriodEnd = end
+        });
+
+    private void VerifyEarningsFor(DateTime start, DateTime end) =>
+        _statistics.Verify(s => s.GetPeriodEarningsAsync(start, end, It.IsAny<CancellationToken>()), Times.Once);
+
+    [Fact]
+    public async Task CloseNow_AfterPreviousMonthClosed_ClosesFromDay1ToToday_CreditsAtOnce_AndLogsAudit()
+    {
+        SeedPeriod(1, Day(10, 1), Day(10, 31));
+        SetMinimumPayout(0);
+        SeedCreator(CreatorA, 0);
+        SetupEarnings((CreatorA, 28, 69_000), (6, 1, 0));
+        // 16:00 UTC ngày 26/11 = 23:00 ngày 26/11 giờ Việt Nam.
+        var now = new DateTime(2026, 11, 26, 16, 0, 0, DateTimeKind.Utc);
+
+        var closed = await _sut.CloseNowAsync(AdminId, now);
+
+        VerifyEarningsFor(Day(11, 1), Day(11, 26));
+        Assert.Equal(Day(11, 1), closed.PeriodStart);
+        Assert.Equal(Day(11, 26), closed.PeriodEnd);
+        Assert.Equal(69_000, closed.DistributedVnd);
+        Assert.Equal(1, closed.CreditedCreators);
+        Assert.Equal(69_000, BalanceOf(CreatorA));
+        Assert.Equal([CreatorA], (await _sut.GetDueAsync()).Select(row => row.CreatorUserId));   // mức chi tối thiểu 0
+        Assert.Contains($"lock:{int.MinValue}", _store.Calls);
+        _audit.Verify(a => a.LogAsync(AdminId, "CreatorEarningPeriodClosedNow", nameof(CreatorEarningPeriod), closed.Id,
+            null, It.IsAny<object>(), It.IsAny<CancellationToken>()), Times.Once);
+
+        var earning = Assert.Single((await _sut.GetOverviewAsync(CreatorA)).Earnings);
+        Assert.Equal(Day(11, 1), earning.PeriodStart);
+        Assert.Equal(Day(11, 26), earning.PeriodEnd);
+    }
+
+    [Fact]
+    public async Task CloseNow_TwiceTheSameDay_IsConflict_AndDoesNotCreditTwice()
+    {
+        SeedPeriod(1, Day(10, 1), Day(10, 31));
+        SeedCreator(CreatorA, 0);
+        SetupEarnings((CreatorA, 10, 50_000));
+        var now = new DateTime(2026, 11, 26, 3, 0, 0, DateTimeKind.Utc);
+        await _sut.CloseNowAsync(AdminId, now);
+
+        await Assert.ThrowsAsync<ConflictException>(() => _sut.CloseNowAsync(AdminId, now.AddHours(5)));
+
+        Assert.Equal(50_000, BalanceOf(CreatorA));
+        Assert.Equal(2, _store.Items<CreatorEarningPeriod>().Count());
+    }
+
+    [Fact]
+    public async Task CloseNow_NothingClosedYet_StartsFromDay1OfPreviousMonth()
+    {
+        SetupEarnings();
+
+        await _sut.CloseNowAsync(AdminId, new DateTime(2026, 11, 26, 3, 0, 0, DateTimeKind.Utc));
+
+        VerifyEarningsFor(Day(10, 1), Day(11, 26));
+    }
+
+    [Fact]
+    public async Task CloseDue_AfterCloseNow_ClosesOnlyTheRestOfTheMonth()
+    {
+        SeedPeriod(1, Day(10, 1), Day(10, 31));
+        SeedPeriod(2, Day(11, 1), Day(11, 26));
+        _store.Seed(new PlanSettings { Id = PlanSettings.SingletonId, CreatorPeriodCloseDay = 1 });
+        SetupEarnings();
+        var now = new DateTime(2026, 12, 1, 3, 0, 0, DateTimeKind.Utc);
+
+        Assert.True(await _sut.CloseDuePeriodAsync(now));
+        Assert.False(await _sut.CloseDuePeriodAsync(now.AddHours(1)));
+
+        VerifyEarningsFor(Day(11, 27), Day(11, 30));
+        Assert.Equal(Day(11, 1), _store.Items<CreatorEarningPeriod>().Single(period => period.PeriodStart == Day(11, 27)).PeriodMonth);
+    }
+
+    [Fact]
+    public async Task CloseNow_BeforeTheMonthlyClose_CoversTheRestOfLastMonth_SoTheWorkerSkipsIt()
+    {
+        SeedPeriod(1, Day(10, 1), Day(10, 31));
+        SeedPeriod(2, Day(11, 1), Day(11, 26));
+        SetupEarnings();
+
+        // Ngày chốt mặc định là 8: ngày 3/12 worker chưa chốt tháng 11, Admin bấm Chốt kỳ ngay.
+        await _sut.CloseNowAsync(AdminId, new DateTime(2026, 12, 3, 3, 0, 0, DateTimeKind.Utc));
+        Assert.False(await _sut.CloseDuePeriodAsync(new DateTime(2026, 12, 8, 3, 0, 0, DateTimeKind.Utc)));
+
+        VerifyEarningsFor(Day(11, 27), Day(12, 3));
+        _statistics.Verify(s => s.GetPeriodEarningsAsync(It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]

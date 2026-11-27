@@ -565,4 +565,171 @@ public sealed class ActivityBasedEventApiTests(ApiFactory factory) : IClassFixtu
         var claimed = (await claimRes.Content.ReadFromJsonAsync<ApiEnvelope<EventAwardSlotDto>>())!.Data!;
         Assert.Equal(EventAwardStatus.FulfillmentProcessing, claimed.Status);
     }
+
+    [Fact]
+    public async Task VotingWithoutRegistration_ApiFlow_CreatesImplicitParticipationAndListsStoriesForUnregisteredAndClosedEvent()
+    {
+        var moderator = await factory.AddUserAsync(UserRole.Moderator);
+        var admin = await factory.AddUserAsync(UserRole.Administrator);
+        var creator = await factory.AddUserAsync(UserRole.ContentCreator);
+        var parent = await factory.AddUserAsync(UserRole.User);
+        var child = await ApiSeed.ChildAsync(factory, parent.Id);
+
+        var modClient = factory.ClientFor(moderator);
+        var adminClient = factory.ClientFor(admin);
+        var creatorClient = factory.ClientFor(creator);
+        var parentClient = factory.ClientFor(parent);
+
+        int categoryId, creatorStoryId, currentVerId, credId;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var cat = new ContentCategory { Code = "act-votenoreg-" + Guid.NewGuid().ToString("N")[..6], DisplayName = "Bình chọn không cần đăng ký", IsActive = true };
+            db.ContentCategories.Add(cat);
+            await db.SaveChangesAsync();
+            categoryId = cat.Id;
+
+            var cStory = new Story
+            {
+                AuthorUserId = creator.Id, Scope = StoryScope.Creator, Source = StorySource.Manual,
+                Status = StoryStatus.Ready, IsPublished = true, PublishedAt = DateTime.UtcNow,
+                OutputMode = StoryOutputMode.ReadingMediaOnly, Title = "Truyện Bình Chọn Mở", AgeBand = "6-8", Language = "vi"
+            };
+            db.Stories.Add(cStory);
+            await db.SaveChangesAsync();
+            creatorStoryId = cStory.Id;
+
+            var v1 = new StoryVersion { StoryId = cStory.Id, VersionNo = 1, IsCurrent = true, Title = "v1", Content = "Nội dung dự thi", Moderation = new() { ReviewStatus = VersionReviewStatus.Approved } };
+            v1.AuthoringMetadata.StoryId = cStory.Id;
+            db.StoryVersions.Add(v1);
+            var cred = new ChildAccessCredential { ChildProfileId = child.Id, CreatedByUserId = parent.Id };
+            db.ChildAccessCredentials.Add(cred);
+            await db.SaveChangesAsync();
+            currentVerId = v1.Id;
+            credId = cred.Id;
+        }
+
+        var now = DateTime.UtcNow;
+        var createRes = await modClient.PostAsJsonAsync("/api/v1/events", new
+        {
+            configVersion = "ActivityBased",
+            title = "Sự kiện Bình chọn Không Cần Đăng Ký",
+            description = "Kiểm tra luồng bình chọn không cần đăng ký.",
+            mainCategoryId = categoryId,
+            targetAgeBands = "6-8",
+            budgetVnd = 0L,
+            activities = new object[]
+            {
+                new
+                {
+                    activityType = "Submission", allowedAudience = "Creator",
+                    registrationStartAt = now.AddDays(-2), registrationEndAt = now.AddHours(2),
+                    startAt = now.AddDays(-2), endAt = now.AddHours(2), reviewCutoffAt = now.AddHours(2),
+                    grantAiCredits = 0, maxSubmissionsPerUser = 1
+                },
+                new
+                {
+                    activityType = "Voting", allowedAudience = "Parent",
+                    registrationStartAt = now.AddDays(-1), registrationEndAt = now.AddHours(5),
+                    startAt = now.AddHours(2), endAt = now.AddHours(5),
+                    maxRegistrations = 1,
+                    minVotesPerSubmission = 1
+                }
+            },
+            awardSlots = new object[]
+            {
+                new
+                {
+                    activityType = "Voting", resultSource = "VotingAverage", targetAudience = "Creator",
+                    rankOrTier = "Giải Bình chọn", slotCount = 1, rewardType = "PhysicalGift", rewardName = "Cúp", unitValueVnd = 0L
+                }
+            }
+        });
+        createRes.EnsureSuccessStatusCode();
+        var created = (await createRes.Content.ReadFromJsonAsync<ApiEnvelope<EventDetailDto>>())!.Data!;
+        var eventId = created.Id;
+        var voteActivity = Assert.Single(created.Activities!, a => a.ActivityType == EventActivityType.Voting);
+        Assert.Equal(voteActivity.StartAt, voteActivity.RegistrationStartAt);
+        Assert.Equal(voteActivity.EndAt, voteActivity.RegistrationEndAt);
+        Assert.Null(voteActivity.MaxRegistrations);
+
+        (await modClient.PostAsJsonAsync($"/api/v1/events/{eventId}/rules", new
+        {
+            rulesText = "Thể lệ bình chọn.",
+            completionMode = "AllMandatory",
+            tasks = Array.Empty<object>()
+        })).EnsureSuccessStatusCode();
+        (await modClient.PostAsJsonAsync($"/api/v1/events/{eventId}/submit-approval", new { })).EnsureSuccessStatusCode();
+        (await adminClient.PostAsJsonAsync($"/api/v1/events/{eventId}/approve", new { approved = true })).EnsureSuccessStatusCode();
+        (await modClient.PostAsJsonAsync($"/api/v1/events/{eventId}/publish", new { })).EnsureSuccessStatusCode();
+
+        (await creatorClient.PostAsJsonAsync($"/api/v1/events/{eventId}/register", new { activityType = "Submission", acceptRules = true })).EnsureSuccessStatusCode();
+        (await creatorClient.PostAsJsonAsync($"/api/v1/events/{eventId}/activities/submission/submit", new { storyId = creatorStoryId })).EnsureSuccessStatusCode();
+
+        // Open voting window & seed reading session.
+        await factory.WithDbAsync(async db =>
+        {
+            var sub = await db.EventActivities.SingleAsync(a => a.EventId == eventId && a.ActivityType == EventActivityType.Submission);
+            var vote = await db.EventActivities.SingleAsync(a => a.EventId == eventId && a.ActivityType == EventActivityType.Voting);
+            sub.EndAt = now.AddMinutes(-40);
+            sub.ReviewCutoffAt = now.AddMinutes(-35);
+            vote.StartAt = now.AddMinutes(-30);
+            vote.EndAt = now.AddMinutes(30);
+            await db.SaveChangesAsync();
+        });
+
+        // Creator cannot view voting-stories -> 403.
+        Assert.Equal(HttpStatusCode.Forbidden, (await creatorClient.GetAsync($"/api/v1/events/{eventId}/voting-stories")).StatusCode);
+
+        // Unregistered Parent can browse voting-stories and detail shows CanRegister=false, CanVote=true, IsRegistered=false.
+        var detailBefore = (await parentClient.GetFromJsonAsync<ApiEnvelope<EventDetailDto>>($"/api/v1/events/{eventId}"))!.Data!;
+        var voteStateBefore = Assert.Single(detailBefore.MyActivityStates!, s => s.ActivityType == EventActivityType.Voting);
+        Assert.False(voteStateBefore.CanRegister);
+        Assert.True(voteStateBefore.CanVote);
+        Assert.False(voteStateBefore.IsRegistered);
+
+        var storiesBeforeRead = (await parentClient.GetFromJsonAsync<ApiEnvelope<List<EventStoryLibraryItemDto>>>($"/api/v1/events/{eventId}/voting-stories"))!.Data!;
+        var storyBeforeRead = Assert.Single(storiesBeforeRead);
+        Assert.Equal(creatorStoryId, storyBeforeRead.StoryId);
+        Assert.False(storyBeforeRead.HasFamilyRead);
+
+        // First vote (no registration, no consent flag) before child reads -> 409 and no participation created.
+        Assert.Equal(HttpStatusCode.Conflict, (await parentClient.PostAsJsonAsync($"/api/v1/events/{eventId}/votes", new { storyId = creatorStoryId, stars = 5 })).StatusCode);
+        var partsAfterFailed = await factory.WithDbAsync(db => db.Set<EventParticipation>().CountAsync(p => p.EventId == eventId && p.UserId == parent.Id));
+        Assert.Equal(0, partsAfterFailed);
+
+        // Child completes reading -> HasFamilyRead becomes true -> first vote succeeds & creates participation.
+        await factory.WithDbAsync(async db =>
+        {
+            db.ReadingSessions.Add(new ReadingSession
+            {
+                ChildProfileId = child.Id, StoryId = creatorStoryId, StoryVersionId = currentVerId,
+                Status = SessionStatus.Completed, StartedAt = now.AddMinutes(-10), CompletedAt = now.AddMinutes(-5),
+                ChildAccessCredentialId = credId
+            });
+            await db.SaveChangesAsync();
+        });
+
+        var storiesAfterRead = (await parentClient.GetFromJsonAsync<ApiEnvelope<List<EventStoryLibraryItemDto>>>($"/api/v1/events/{eventId}/voting-stories"))!.Data!;
+        Assert.True(Assert.Single(storiesAfterRead).HasFamilyRead);
+
+        (await parentClient.PostAsJsonAsync($"/api/v1/events/{eventId}/votes", new { storyId = creatorStoryId, stars = 4 })).EnsureSuccessStatusCode();
+        var partsAfterVote = await factory.WithDbAsync(db => db.Set<EventParticipation>().Where(p => p.EventId == eventId && p.UserId == parent.Id).ToListAsync());
+        var createdPart = Assert.Single(partsAfterVote);
+        Assert.Equal(EventParticipationStatus.MissionCompleted, createdPart.Status);
+
+        // Updating the vote reuses the participation created by the first vote.
+        (await parentClient.PostAsJsonAsync($"/api/v1/events/{eventId}/votes", new { storyId = creatorStoryId, stars = 5, comment = "Tuyệt vời" })).EnsureSuccessStatusCode();
+
+        // After event is Closed, voting-stories remains browsable.
+        await factory.WithDbAsync(async db =>
+        {
+            var ev = await db.Set<Event>().SingleAsync(e => e.Id == eventId);
+            ev.Status = EventStatus.Closed;
+            await db.SaveChangesAsync();
+        });
+        var closedStories = (await parentClient.GetFromJsonAsync<ApiEnvelope<List<EventStoryLibraryItemDto>>>($"/api/v1/events/{eventId}/voting-stories"))!.Data!;
+        var closedItem = Assert.Single(closedStories);
+        Assert.Equal(5, closedItem.MyVoteStars);
+    }
 }

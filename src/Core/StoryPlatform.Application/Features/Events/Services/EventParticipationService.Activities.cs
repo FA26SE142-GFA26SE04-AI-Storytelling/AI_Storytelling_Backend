@@ -17,6 +17,16 @@ namespace StoryPlatform.Application.Features.Events.Services;
 
 public partial class EventParticipationService
 {
+    private static EventParticipation NewActivityParticipation(int eventId, int activityId, int userId, int ruleVersionId) => new()
+    {
+        EventId = eventId,
+        TrackId = null,
+        EventActivityId = activityId,
+        UserId = userId,
+        AcceptedRuleVersionId = ruleVersionId,
+        Status = EventParticipationStatus.Registered
+    };
+
     private static bool IsActivityRoleEligible(EventAudience audience, UserRole role) => audience switch
     {
         EventAudience.Creator => role == UserRole.ContentCreator,
@@ -58,10 +68,12 @@ public partial class EventParticipationService
         }
 
         var now = DateTime.UtcNow;
-        if (now < act.RegistrationStartAt || now > act.RegistrationEndAt)
+        if (act.ActivityType == EventActivityType.Voting
+                ? now > act.EndAt
+                : (now < act.RegistrationStartAt || now > act.RegistrationEndAt))
             throw new ConflictException("Ngoài thời gian đăng ký của hoạt động.");
 
-        if (act.MaxRegistrations is int cap)
+        if (act.ActivityType != EventActivityType.Voting && act.MaxRegistrations is int cap)
         {
             var currentCount = await _uow.Repository<EventParticipation>().CountAsync(
                 p => p.EventId == ev.Id && p.EventActivityId == act.Id && !p.IsDeleted, ct);
@@ -101,15 +113,7 @@ public partial class EventParticipationService
             }
         }
 
-        var participation = new EventParticipation
-        {
-            EventId = ev.Id,
-            TrackId = null,
-            EventActivityId = act.Id,
-            UserId = user.Id,
-            AcceptedRuleVersionId = activeRule.Id,
-            Status = EventParticipationStatus.Registered
-        };
+        var participation = NewActivityParticipation(ev.Id, act.Id, user.Id, activeRule.Id);
         await _uow.Repository<EventParticipation>().AddAsync(participation, ct);
 
         if (act.ActivityType == EventActivityType.Submission && act.GrantAiCredits > 0)
@@ -394,7 +398,7 @@ public partial class EventParticipationService
 
         var summary = EventMissionEvaluator.Evaluate(rule, definitions, progresses, enforceMandatoryInAllModes: true);
 
-        var storyItems = await LoadActivityStoriesAsync(ev, participation, act, ct);
+        var storyItems = await LoadActivityStoriesAsync(ev, participation.UserId, act, ct);
 
         return new EventMissionDashboardDto
         {
@@ -422,8 +426,30 @@ public partial class EventParticipationService
         };
     }
 
+    public async Task<IReadOnlyList<EventStoryLibraryItemDto>> GetVotingStoriesAsync(int userId, int eventId, CancellationToken ct = default)
+    {
+        var ev = await _uow.Repository<Event>().GetByIdAsync(eventId, ct)
+            ?? throw new NotFoundException(nameof(Event), eventId);
+        if (ev.ConfigVersion != EventConfigVersion.ActivityBased)
+            throw new NotFoundException(nameof(EventActivity), eventId);
+
+        var votingAct = await _uow.Repository<EventActivity>().FirstOrDefaultAsync(
+            a => a.EventId == eventId && a.ActivityType == EventActivityType.Voting, cancellationToken: ct)
+            ?? throw new NotFoundException(nameof(EventActivity), eventId);
+
+        var user = await _uow.Repository<UserAccount>().GetByIdAsync(userId, ct)
+            ?? throw new NotFoundException(nameof(UserAccount), userId);
+        if (user.Role != UserRole.User)
+            throw new ForbiddenException("Bản đầu hoạt động bình chọn chỉ mở cho Parent.");
+
+        if (ev.Status is not (EventStatus.Published or EventStatus.Closed))
+            return Array.Empty<EventStoryLibraryItemDto>();
+
+        return await LoadActivityStoriesAsync(ev, userId, votingAct, ct);
+    }
+
     private async Task<List<EventStoryLibraryItemDto>> LoadActivityStoriesAsync(
-        Event ev, EventParticipation participation, EventActivity act, CancellationToken ct)
+        Event ev, int userId, EventActivity act, CancellationToken ct)
     {
         var storyItems = new List<EventStoryLibraryItemDto>();
         if (act.ActivityType is EventActivityType.ReadingMissions or EventActivityType.Voting)
@@ -447,7 +473,7 @@ public partial class EventParticipationService
             }
 
             var children = await _uow.Repository<ChildProfile>().FindAsync(
-                c => c.OwnerUserId == participation.UserId && !c.IsDeleted, cancellationToken: ct);
+                c => c.OwnerUserId == userId && !c.IsDeleted, cancellationToken: ct);
             var childIds = children.Select(c => c.Id).ToHashSet();
             var childAgeBands = children.Select(c => c.AgeBand.ToString()).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var storyIds = eventStories.Select(es => es.StoryId).Distinct().ToList();
@@ -458,7 +484,7 @@ public partial class EventParticipationService
                          (act.ActivityType != EventActivityType.Voting || (s.CompletedAt >= act.StartAt && s.CompletedAt <= act.EndAt)),
                     cancellationToken: ct);
             var myVotes = (await _uow.Repository<EventVote>().FindAsync(
-                v => v.EventId == ev.Id && v.ParentUserId == participation.UserId && !v.IsDeleted,
+                v => v.EventId == ev.Id && v.ParentUserId == userId && !v.IsDeleted,
                 cancellationToken: ct)).ToDictionary(v => v.StoryId);
 
             var daySeed = VietnamTime.LocalDate(now).DayOfYear;
@@ -467,7 +493,7 @@ public partial class EventParticipationService
             {
                 var story = await _uow.Repository<Story>().GetByIdAsync(es.StoryId, ct);
                 if (story == null || !story.IsPublished || story.IsDeleted) continue;
-                if (act.ActivityType == EventActivityType.Voting && story.AuthorUserId == participation.UserId) continue;
+                if (act.ActivityType == EventActivityType.Voting && story.AuthorUserId == userId) continue;
                 var hasRead = sessions.Any(s => s.StoryId == es.StoryId && s.StoryVersionId == es.StoryVersionId);
                 myVotes.TryGetValue(es.StoryId, out var vote);
                 rawItems.Add((new EventStoryLibraryItemDto
@@ -482,7 +508,7 @@ public partial class EventParticipationService
                     HasFamilyRead = hasRead,
                     MyVoteStars = vote is { IsDisqualified: false } ? vote.Stars : null,
                     MyVoteComment = vote is { IsDisqualified: false } ? vote.Comment : null
-                }, childAgeBands.Contains(story.AgeBand), HashCode.Combine(participation.UserId, ev.Id, daySeed, es.StoryId)));
+                }, childAgeBands.Contains(story.AgeBand), HashCode.Combine(userId, ev.Id, daySeed, es.StoryId)));
             }
 
             storyItems = rawItems
@@ -536,8 +562,17 @@ public partial class EventParticipationService
         var participation = await _uow.Repository<EventParticipation>().FirstOrDefaultAsync(
             p => p.EventId == ev.Id && p.EventActivityId == votingAct.Id && p.UserId == parentUserId && !p.IsDeleted,
             cancellationToken: ct);
-        if (participation == null || participation.Status == EventParticipationStatus.Disqualified)
+        if (participation?.Status == EventParticipationStatus.Disqualified)
             throw new ForbiddenException("Bạn chưa đăng ký hợp lệ cho hoạt động bình chọn.");
+
+        EventRuleVersion? activeRule = null;
+        // Bình chọn mở tự do, không cần đăng ký: lượt tham gia tự tạo ở phiếu đầu, gắn thể lệ đang áp dụng.
+        if (participation == null)
+        {
+            activeRule = await _uow.Repository<EventRuleVersion>().FirstOrDefaultAsync(
+                r => r.EventId == ev.Id && r.IsActive, cancellationToken: ct)
+                ?? throw new ConflictException("Sự kiện chưa có phiên bản thể lệ hoạt động.");
+        }
 
         var eventStory = await _uow.Repository<EventStory>().FirstOrDefaultAsync(
             es => es.EventId == ev.Id && es.StoryId == request.StoryId && es.IsActive, cancellationToken: ct)
@@ -576,6 +611,14 @@ public partial class EventParticipationService
             cancellationToken: ct);
         if (existing != null && existing.IsDisqualified)
             throw new ConflictException("Phiếu bình chọn này đã bị loại do vi phạm và không thể chỉnh sửa.");
+
+        if (participation == null)
+        {
+            participation = NewActivityParticipation(ev.Id, votingAct.Id, parentUserId, activeRule!.Id);
+            await _uow.Repository<EventParticipation>().AddAsync(participation, ct);
+            await _uow.SaveChangesAsync(ct);
+            await _audit.LogAsync(parentUserId, "EventActivityRegistered", nameof(EventParticipation), participation.Id, null, new { ev.Id, votingAct.ActivityType }, ct);
+        }
 
         var comment = string.IsNullOrWhiteSpace(request.Comment) ? null : request.Comment.Trim();
         if (existing == null)

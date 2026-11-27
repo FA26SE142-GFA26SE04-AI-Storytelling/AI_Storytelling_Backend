@@ -346,7 +346,7 @@ public partial class EventParticipationService : IEventParticipationService
             if (voting != null)
             {
                 dashboard.VotingStories = targetAct.Id == voting.Id ? dashboard.Stories :
-                    await LoadActivityStoriesAsync(ev, parts.First(p => p.EventActivityId == voting.Id), voting, ct);
+                    await LoadActivityStoriesAsync(ev, userId, voting, ct);
             }
             return dashboard;
         }

@@ -40,6 +40,7 @@ public interface IEventParticipationService
     Task<EventSubmissionDto> ReviewParentStoryAsync(int userId, int eventId, int submissionId, ReviewParentEventSubmissionDto request, CancellationToken ct = default);
     Task<IReadOnlyList<EventSubmissionDto>> ListMySubmissionsAsync(int userId, int eventId, CancellationToken ct = default);
     Task<EventMissionDashboardDto> GetMissionDashboardAsync(int userId, int eventId, CancellationToken ct = default);
+    Task<IReadOnlyList<EventStoryLibraryItemDto>> GetVotingStoriesAsync(int userId, int eventId, CancellationToken ct = default);
     Task<EventMissionDashboardDto> RecordTaskProgressAsync(int userId, int eventId, int taskDefinitionId, CompleteEventTaskRequestDto request, CancellationToken ct = default);
     Task<EventVoteDto> CastVoteAsync(int parentUserId, int eventId, CastEventVoteRequestDto request, CancellationToken ct = default);
     Task<IReadOnlyList<EventVoteDto>> ListVotesAsync(int eventId, CancellationToken ct = default);

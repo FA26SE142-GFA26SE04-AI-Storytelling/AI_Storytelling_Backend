@@ -63,8 +63,12 @@ public class CreatorAccountService : ICreatorAccountService
             orderBy: source => source.OrderByDescending(user => user.CreatedAt).ThenByDescending(user => user.Id),
             cancellationToken: cancellationToken);
 
-        var counts = await PublishedCountsAsync(items.Select(user => user.Id).ToList(), cancellationToken);
-        var result = items.Select(user => MapToDto(user, counts.GetValueOrDefault(user.Id))).ToList();
+        var ids = items.Select(user => user.Id).ToList();
+        var counts = await PublishedCountsAsync(ids, cancellationToken);
+        var applications = await LatestApplicationStatusesAsync(ids, cancellationToken);
+        var result = items
+            .Select(user => MapToDto(user, counts.GetValueOrDefault(user.Id), applications.GetValueOrDefault(user.Id)))
+            .ToList();
         return new PagedResult<CreatorAccountDto>(result, totalCount, pageIndex, pageSize);
     }
 
@@ -72,7 +76,8 @@ public class CreatorAccountService : ICreatorAccountService
     {
         var creator = await RequireCreatorAsync(creatorUserId, cancellationToken);
         var counts = await PublishedCountsAsync([creator.Id], cancellationToken);
-        return MapToDto(creator, counts.GetValueOrDefault(creator.Id));
+        var applications = await LatestApplicationStatusesAsync([creator.Id], cancellationToken);
+        return MapToDto(creator, counts.GetValueOrDefault(creator.Id), applications.GetValueOrDefault(creator.Id));
     }
 
     public async Task<DeactivateCreatorResultDto> DeactivateAsync(
@@ -299,6 +304,24 @@ public class CreatorAccountService : ICreatorAccountService
         return published.GroupBy(story => story.AuthorUserId).ToDictionary(group => group.Key, group => group.Count());
     }
 
+    /// <summary>Trạng thái đơn đăng ký mới nhất của từng Creator (cùng thứ tự với CreatorApplicationService.LatestOfAsync).</summary>
+    private async Task<Dictionary<int, string>> LatestApplicationStatusesAsync(
+        IReadOnlyList<int> creatorIds, CancellationToken cancellationToken)
+    {
+        if (creatorIds.Count == 0)
+        {
+            return [];
+        }
+
+        var applications = await _unitOfWork.Repository<CreatorApplication>().FindAsync(
+            item => creatorIds.Contains(item.ApplicantUserId), cancellationToken: cancellationToken);
+        return applications
+            .GroupBy(item => item.ApplicantUserId)
+            .ToDictionary(
+                group => group.Key,
+                group => group.OrderByDescending(item => item.CreatedAt).ThenByDescending(item => item.Id).First().Status.ToString());
+    }
+
     private Task<UserAccount> RequireAdministratorAsync(int adminUserId, CancellationToken cancellationToken) =>
         _accessPolicy.EnsureAsync(
             adminUserId, Permissions.Admin.CreatorAccountManage,
@@ -316,13 +339,15 @@ public class CreatorAccountService : ICreatorAccountService
         return creator;
     }
 
-    private static CreatorAccountDto MapToDto(UserAccount user, int publishedStoryCount) => new()
+    private static CreatorAccountDto MapToDto(
+        UserAccount user, int publishedStoryCount, string? latestApplicationStatus = null) => new()
     {
         Id = user.Id,
         Username = user.Username,
         FullName = user.FullName,
         Email = user.Email,
         Status = user.Status.ToString(),
+        LatestApplicationStatus = latestApplicationStatus,
         PublishedStoryCount = publishedStoryCount,
         CreatedAt = user.CreatedAt,
         LastLoginAt = user.LastLoginAt

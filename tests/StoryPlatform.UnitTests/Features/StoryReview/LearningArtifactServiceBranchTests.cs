@@ -258,7 +258,6 @@ public sealed class LearningArtifactServiceBranchTests
         await Service(store).GenerateQuizAsync(1, 1);
 
         Assert.Equal("Nhận biết nhân vật", sent!.ComprehensionGoal);
-        Assert.Equal(75m, sent.ComprehensionThresholdPercent);
         Assert.Equal("mèo", Assert.Single(sent.Vocabulary).Term);
     }
 
@@ -275,7 +274,6 @@ public sealed class LearningArtifactServiceBranchTests
 
         Assert.Equal("9-10", sent!.AgeBand);
         Assert.Null(sent.ComprehensionGoal);
-        Assert.Null(sent.ComprehensionThresholdPercent);
     }
 
     // ---- helpers ----
@@ -304,7 +302,7 @@ public sealed class LearningArtifactServiceBranchTests
             store.Seed(new ChildProfile { Id = 1, OwnerUserId = 1, Nickname = "Bi", AgeBand = AgeBand.Age_9_10, Language = "vi" });
         if (withLearningProfile)
             store.Seed(new LearningProfile { Id = 1, ChildProfileId = 1, ReadingLevel = 2, ComprehensionGoal = "Nhận biết nhân vật" });
-        store.Seed(new SafetyPolicy { Id = 1, ChildProfileId = 1, ComprehensionThresholdPercent = 75m });
+        store.Seed(new SafetyPolicy { Id = 1, ChildProfileId = 1 });
         return store;
     }
 

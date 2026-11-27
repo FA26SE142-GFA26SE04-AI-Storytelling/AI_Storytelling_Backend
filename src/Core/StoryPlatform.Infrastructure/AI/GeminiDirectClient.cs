@@ -446,7 +446,6 @@ YÊU CẦU:
 - Độ tuổi: {request.AgeBand} tuổi
 - Ngôn ngữ: {request.Language}
 - Mục tiêu đọc hiểu: {request.ComprehensionGoal ?? "Hiểu nội dung chính của truyện"}
-{(request.ComprehensionThresholdPercent.HasValue ? $"- Ngưỡng đọc hiểu mục tiêu: {request.ComprehensionThresholdPercent.Value:F0}%" : "")}
 - BẮT BUỘC tạo đúng 3 câu hỏi với 3 loại (type) khác nhau:
   1. ""multiple_choice"": câu hỏi trắc nghiệm 4 lựa chọn (options có 4 đáp án, correctOptionIndex là 0-3, correctAnswer là đáp án đúng nằm trong options).
   2. ""true_false"": câu hỏi đúng/sai (options là [""Đúng"", ""Sai""], correctAnswer là ""true"" hoặc ""false"", correctOptionIndex là 0 nếu đúng, 1 nếu sai).

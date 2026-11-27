@@ -6,6 +6,9 @@ namespace StoryPlatform.Application.Features.ChildProfiles.Safety;
 /// </summary>
 public static class StoryLengthRules
 {
+    /// <summary>Độ dài nhỏ nhất phụ huynh được đặt.</summary>
+    public const int MinimumTarget = 300;
+
     /// <summary>AI được viết tối đa 110% độ dài đích (khớp LearningGenerationProfile.ForAge).</summary>
     public const decimal UpperTolerance = 1.1m;
 
@@ -18,7 +21,10 @@ public static class StoryLengthRules
     public static int CapFor(int? storyLengthTarget, int requestedCap) =>
         storyLengthTarget is > 0 ? Math.Max(requestedCap, UpperBound(storyLengthTarget.Value)) : requestedCap;
 
-    /// <summary>Độ dài đích và trần dùng khi sinh truyện cho một bé.</summary>
+    /// <summary>
+    /// Độ dài tự chỉnh chỉ được thấp hơn hoặc bằng mặc định theo mức đọc; trần là UpperBound(target).
+    /// Giới hạn cũ thấp hơn mặc định được giữ nguyên làm cả độ dài đích và trần.
+    /// </summary>
     /// <param name="storyLengthTarget">Số phụ huynh tự chỉnh; null = theo mức đọc.</param>
     /// <param name="storedCap"><c>SafetyPolicy.MaxStoryLength</c> đang lưu.</param>
     /// <param name="levelDefaultTarget">Độ dài mặc định theo nhóm tuổi và mức đọc (900 hoặc 1500).</param>
@@ -26,7 +32,8 @@ public static class StoryLengthRules
     {
         if (storyLengthTarget is > 0)
         {
-            return (storyLengthTarget.Value, CapFor(storyLengthTarget, storedCap));
+            var target = Math.Min(storyLengthTarget.Value, levelDefaultTarget);
+            return (target, UpperBound(target));
         }
 
         // Giới hạn thấp hơn mặc định do phụ huynh đặt từ trước khi có "độ dài truyện": giữ nguyên làm độ dài đích và trần.
@@ -35,6 +42,6 @@ public static class StoryLengthRules
             return (storedCap, storedCap);
         }
 
-        return (levelDefaultTarget, Math.Max(storedCap, UpperBound(levelDefaultTarget)));
+        return (levelDefaultTarget, UpperBound(levelDefaultTarget));
     }
 }

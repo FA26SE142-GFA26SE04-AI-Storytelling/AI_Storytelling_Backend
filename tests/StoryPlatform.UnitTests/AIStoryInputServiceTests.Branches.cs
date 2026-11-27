@@ -162,28 +162,6 @@ public sealed partial class AIStoryInputServiceTests
     }
 
     [Fact]
-    public async Task GetContextAsync_ComprehensionWindowZero_ThrowsBadRequest()
-    {
-        var store = CreateEligibleUnitOfWork();
-        store.Items<SafetyPolicy>().Single().ComprehensionWindowSize = 0;
-
-        var error = await Assert.ThrowsAsync<BadRequestException>(() => ParentService(store).GetContextAsync(1, 1));
-
-        Assert.Equal("Cấu hình comprehension của Safety Policy không hợp lệ.", error.Message);
-    }
-
-    [Fact]
-    public async Task GetContextAsync_ComprehensionThresholdAbove100_ThrowsBadRequest()
-    {
-        var store = CreateEligibleUnitOfWork();
-        store.Items<SafetyPolicy>().Single().ComprehensionThresholdPercent = 101m;
-
-        var error = await Assert.ThrowsAsync<BadRequestException>(() => ParentService(store).GetContextAsync(1, 1));
-
-        Assert.Equal("Cấu hình comprehension của Safety Policy không hợp lệ.", error.Message);
-    }
-
-    [Fact]
     public async Task GetContextAsync_MaxStoryLengthZero_ThrowsBadRequest()
     {
         var store = CreateEligibleUnitOfWork();

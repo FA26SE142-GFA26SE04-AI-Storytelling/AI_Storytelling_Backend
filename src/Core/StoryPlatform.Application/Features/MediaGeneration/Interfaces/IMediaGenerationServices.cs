@@ -86,6 +86,8 @@ public interface IMediaGenerationJobProcessor
 {
     Task<MediaJobProcessResult> ProcessNextAsync(CancellationToken cancellationToken = default);
     Task<MediaJobProcessResult> ProcessBranchNextAsync(StoryPlatform.Domain.Enums.MediaType type, CancellationToken cancellationToken = default);
+    /// <summary>Lúc rảnh: tạo bù một audio câu hướng dẫn cho truyện có media từ trước. True nếu đã làm một câu.</summary>
+    Task<bool> BackfillListeningInstructionAudioAsync(CancellationToken cancellationToken = default) => Task.FromResult(false);
 }
 
 public interface IMediaGenerationJobFailureFinalizer

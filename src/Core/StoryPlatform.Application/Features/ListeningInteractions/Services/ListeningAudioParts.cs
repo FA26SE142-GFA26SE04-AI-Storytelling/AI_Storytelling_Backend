@@ -3,23 +3,41 @@ using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.ListeningInteractions.Services;
 
-public sealed record ListeningAudioPart(int? OptionId, string PartKey, string Text);
+/// <param name="Required">
+/// False: vẫn tạo audio nhưng thiếu thì không ẩn tương tác, không chặn readiness (truyện cũ tạo trước khi có phần này).
+/// </param>
+public sealed record ListeningAudioPart(int? OptionId, string PartKey, string Text, bool Required = true);
 
 /// <summary>Các câu cần đọc của tương tác; bỏ qua trường rỗng và option đã xoá.</summary>
 public static class ListeningAudioParts
 {
     public const string Prompt = "prompt", Wait = "wait", Match = "match", NoMatch = "noMatch",
-        Hint = "hint", Text = "text", Feedback = "feedback";
+        Hint = "hint", Text = "text", Feedback = "feedback", Instruction = "instruction";
+
+    /// <summary>
+    /// Câu hướng dẫn cố định cho loại không có câu hỏi (Prompt), để bé chưa biết chữ nghe được phải làm gì.
+    /// Câu do hệ thống viết sẵn, không do AI sinh. Null với loại đã có Prompt hoặc không hiện cho trẻ.
+    /// </summary>
+    public static string? InstructionFor(ListeningInteraction interaction) => interaction.Type switch
+    {
+        ListeningInteractionType.RolePlay => string.IsNullOrWhiteSpace(interaction.CharacterName)
+            ? "Em hãy nghe mẫu rồi nói theo câu này nhé!"
+            : $"Em hãy đóng vai {interaction.CharacterName.Trim()}, nghe mẫu rồi nói theo câu này nhé!",
+        ListeningInteractionType.FillBlank => "Em hãy nghe câu rồi điền chữ còn thiếu vào chỗ trống nhé!",
+        ListeningInteractionType.EventOrdering => "Em hãy chạm vào các thẻ theo đúng thứ tự chuyện xảy ra trong truyện nhé!",
+        _ => null
+    };
 
     public static IReadOnlyList<ListeningAudioPart> For(
         ListeningInteraction interaction, IReadOnlyList<ListeningInteractionOption> options)
     {
         var parts = new List<ListeningAudioPart>();
-        void Add(int? optionId, string key, string? value)
+        void Add(int? optionId, string key, string? value, bool required = true)
         {
-            if (!string.IsNullOrWhiteSpace(value)) parts.Add(new ListeningAudioPart(optionId, key, value));
+            if (!string.IsNullOrWhiteSpace(value)) parts.Add(new ListeningAudioPart(optionId, key, value, required));
         }
 
+        Add(null, Instruction, InstructionFor(interaction), required: false);
         switch (interaction.Type)
         {
             case ListeningInteractionType.ReadAloud:

@@ -330,7 +330,7 @@ public class ChildReadingService : IChildReadingService
         IReadOnlyList<ListeningInteractionAttempt> attempts = interactionIds.Count == 0 ? [] :
             await _unitOfWork.Repository<ListeningInteractionAttempt>().FindAsync(
                 attempt => attempt.ReadingSessionId == sessionId && !attempt.IsDeleted, cancellationToken: ct);
-        var listening = ChildListeningContent.Build(sessionId, scenes, segments, interactions, options, assets, attempts);
+        var listening = ChildListeningContent.Build(sessionId, scenes, segments, interactions, options, assets, attempts, beats);
         var progress = await _unitOfWork.Repository<ReadingProgress>().FirstOrDefaultAsync(
             row => row.ChildProfileId == childProfileId && row.StoryId == session.StoryId, cancellationToken: ct);
 

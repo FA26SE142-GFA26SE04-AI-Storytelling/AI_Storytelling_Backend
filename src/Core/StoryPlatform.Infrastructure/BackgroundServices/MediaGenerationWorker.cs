@@ -39,12 +39,16 @@ public sealed class MediaGenerationWorker : BackgroundService
                 // If this worker were registered as Singleton, this would be incorrect and could cause bugs.
                 // The scoped service resolution here ensures fresh DbContext per iteration.
                 MediaJobProcessResult result;
+                var backfilled = false;
                 await using (var scope = _scopeFactory.CreateAsyncScope())
                 {
                     var processor = scope.ServiceProvider.GetRequiredService<IMediaGenerationJobProcessor>();
                     result = await processor.ProcessNextAsync(stoppingToken);
+                    // Rảnh thì tạo bù audio câu hướng dẫn cho truyện cũ, mỗi vòng một câu.
+                    if (!result.JobFound)
+                        backfilled = await processor.BackfillListeningInstructionAudioAsync(stoppingToken);
                 }
-                if (!result.JobFound)
+                if (!result.JobFound && !backfilled)
                 {
                     await Task.Delay(
                         TimeSpan.FromSeconds(Math.Clamp(_options.IdleDelaySeconds, 1, 30)), stoppingToken);

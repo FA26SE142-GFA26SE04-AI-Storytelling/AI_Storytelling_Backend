@@ -12,10 +12,13 @@ public class CreatorEarningPeriodConfiguration : IEntityTypeConfiguration<Creato
 
         builder.HasKey(x => x.Id);
 
-        // Mỗi tháng chốt một lần: hai lượt worker chạy cùng lúc không cộng thu nhập hai lần.
-        builder.HasIndex(x => x.PeriodMonth)
+        // Các kỳ nối tiếp nhau nên mỗi ngày đầu kỳ chỉ có một dòng: hai lượt chốt cùng lúc không cộng thu nhập hai lần.
+        builder.HasIndex(x => x.PeriodStart)
             .IsUnique()
             .HasFilter("NOT \"IsDeleted\"");
+
+        builder.ToTable(table => table.HasCheckConstraint("CK_creator_earning_periods_range",
+            "\"PeriodEnd\" >= \"PeriodStart\""));
 
         builder.HasQueryFilter(x => !x.IsDeleted);
     }

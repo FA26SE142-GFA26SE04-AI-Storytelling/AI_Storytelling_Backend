@@ -89,6 +89,11 @@ public class ReadingInteractionDto
     public string? Kind { get; set; }
     /// <summary>Câu hỏi (Checkpoint, PicturePrediction).</summary>
     public string? Prompt { get; set; }
+    /// <summary>
+    /// Câu hướng dẫn cố định cho RolePlay, FillBlank, EventOrdering (loại không có Prompt).
+    /// Audio ở AudioUrls["instruction"]; truyện tạo media trước khi có phần này thì không có audio.
+    /// </summary>
+    public string? Instruction { get; set; }
     /// <summary>RolePlay: nhân vật trẻ nói theo.</summary>
     public string? CharacterName { get; set; }
     /// <summary>RolePlay: câu thoại để trẻ nói theo.</summary>
@@ -103,7 +108,7 @@ public class ReadingInteractionDto
     public string? WaitFeedback { get; set; }
     /// <summary>PicturePrediction: nghe hết scene này rồi mới phát phản hồi của hình đã chọn.</summary>
     public int? RevealSceneIndex { get; set; }
-    /// <summary>Audio của cả tương tác theo AudioPartKey: prompt, wait, match, noMatch, hint.</summary>
+    /// <summary>Audio của cả tương tác theo AudioPartKey: prompt, instruction, wait, match, noMatch, hint, text.</summary>
     public Dictionary<string, string> AudioUrls { get; set; } = new();
     /// <summary>Thẻ của Checkpoint, PicturePrediction, EventOrdering (đã xáo). Rỗng với RolePlay, FillBlank.</summary>
     public List<ReadingInteractionOptionDto> Options { get; set; } = new();
@@ -114,7 +119,7 @@ public class ReadingInteractionOptionDto
     /// <summary>Dùng làm optionId hoặc trong orderedOptionIds khi gửi câu trả lời.</summary>
     public int Id { get; set; }
     public string Text { get; set; } = string.Empty;
-    /// <summary>PicturePrediction: hình của lựa chọn.</summary>
+    /// <summary>PicturePrediction: hình của lựa chọn. EventOrdering: tranh minh hoạ của đoạn truyện có sự kiện đó (null nếu chưa có tranh).</summary>
     public string? ImageUrl { get; set; }
     /// <summary>Audio đọc chữ trên thẻ.</summary>
     public string? AudioUrl { get; set; }

@@ -737,10 +737,6 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
         {
             throw new BadRequestException("Safety Score Threshold phải nằm trong khoảng 0 đến 100.");
         }
-        if (safety.ComprehensionThresholdPercent is < 0m or > 100m || safety.ComprehensionWindowSize <= 0)
-        {
-            throw new BadRequestException("Cấu hình comprehension của Safety Policy không hợp lệ.");
-        }
 
         var personalCategories = await _unitOfWork.Repository<SafetyPolicyCategory>().FindAsync(
             item => item.SafetyPolicyId == safety.Id,
@@ -809,8 +805,6 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
             safety.ParentalGateEnabled,
             safety.SafetyScoreThreshold,
             learning.ComprehensionGoal,
-            safety.ComprehensionThresholdPercent,
-            safety.ComprehensionWindowSize,
             safety.ConsentPolicyVersion,
             safety.ConsentRecordedAt);
 
@@ -976,8 +970,6 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
         SafetyScoreThreshold = context.Snapshot.SafetyScoreThreshold,
         ReadabilityScoreThreshold = context.Snapshot.ReadabilityScoreThreshold,
         ComprehensionGoal = context.Snapshot.ComprehensionGoal,
-        ComprehensionThresholdPercent = context.Snapshot.ComprehensionThresholdPercent,
-        ComprehensionWindowSize = context.Snapshot.ComprehensionWindowSize,
         Interests = context.Snapshot.Interests,
         AllowedCategoryCodes = context.Snapshot.AllowedCategoryCodes,
         RestrictedCategoryCodes = context.Snapshot.RestrictedCategoryCodes,

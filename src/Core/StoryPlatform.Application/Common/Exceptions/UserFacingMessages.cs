@@ -324,20 +324,41 @@ public static partial class UserFacingMessages
         return Generic;
     }
 
-    /// <summary>Lỗi kiểm tra dữ liệu đầu vào: giữ câu tiếng Việt, đổi câu mặc định tiếng Anh của ASP.NET.</summary>
+    private const string BadFormat = "Dữ liệu gửi lên không đúng định dạng. Bạn tải lại trang rồi thử lại nhé.";
+
+    /// <summary>
+    /// Lỗi kiểm tra dữ liệu đầu vào: giữ câu tiếng Việt; câu mặc định tiếng Anh của ASP.NET đổi sang tiếng Việt
+    /// và giữ tên ô (tên thuộc tính hoặc [Display]) cùng giới hạn, để người dùng biết ô nào cần sửa.
+    /// </summary>
     public static string TranslateValidation(string message)
     {
         var text = message.Trim();
         if (VietnamesePattern().IsMatch(text)) return text;
-        if (text.Contains("is required", StringComparison.OrdinalIgnoreCase)) return Missing;
-        if (text.Contains("must be between", StringComparison.OrdinalIgnoreCase) ||
-            text.Contains("maximum length", StringComparison.OrdinalIgnoreCase) ||
-            text.Contains("minimum length", StringComparison.OrdinalIgnoreCase))
-            return "Có thông tin vượt quá giới hạn cho phép (quá dài, quá ngắn hoặc ngoài khoảng). Bạn kiểm tra lại nhé.";
+
+        Match m;
+        if ((m = RequiredPattern().Match(text)).Success)
+            return IsRequestBody(m) ? BadFormat : $"{Field(m)}: không được để trống.";
+        if ((m = StringMinMaxPattern().Match(text)).Success) return $"{Field(m)}: từ {m.Groups["min"].Value} đến {m.Groups["max"].Value} ký tự.";
+        if ((m = StringMaxPattern().Match(text)).Success) return $"{Field(m)}: tối đa {m.Groups["max"].Value} ký tự.";
+        if ((m = CollectionMaxPattern().Match(text)).Success) return $"{Field(m)}: tối đa {m.Groups["max"].Value} ký tự hoặc mục.";
+        if ((m = CollectionMinPattern().Match(text)).Success) return $"{Field(m)}: tối thiểu {m.Groups["min"].Value} ký tự hoặc mục.";
+        if ((m = RangePattern().Match(text)).Success)
+            return m.Groups["max"].Value is "2147483647" or "9223372036854775807"
+                ? $"{Field(m)}: phải từ {m.Groups["min"].Value} trở lên."
+                : $"{Field(m)}: phải từ {m.Groups["min"].Value} đến {m.Groups["max"].Value}.";
+        if ((m = RegexPattern().Match(text)).Success) return $"{Field(m)}: không đúng định dạng.";
+        if ((m = EmailPattern().Match(text)).Success) return $"{Field(m)}: email không hợp lệ.";
+        if ((m = JsonPathPattern().Match(text)).Success) return $"{m.Groups["field"].Value}: sai kiểu dữ liệu.";
         if (text.Contains("JSON", StringComparison.OrdinalIgnoreCase) || text.Contains("could not be converted", StringComparison.OrdinalIgnoreCase))
-            return "Dữ liệu gửi lên không đúng định dạng. Bạn tải lại trang rồi thử lại nhé.";
+            return BadFormat;
+        if (text.Contains("is required", StringComparison.OrdinalIgnoreCase)) return Missing;
         return Translate(text) == Generic ? Invalid : Translate(text);
     }
+
+    private static string Field(Match match) => match.Groups["field"].Value;
+
+    // "The request field is required." là cả thân request bị thiếu/hỏng (đi kèm lỗi JSON), không phải một ô.
+    private static bool IsRequestBody(Match match) => Field(match) is "request" or "dto" or "body";
 
     /// <summary>Mã lỗi gốc (để ghi log / trả kèm trong errors), null nếu message không phải mã.</summary>
     public static string? CodeOf(string? message)
@@ -362,4 +383,32 @@ public static partial class UserFacingMessages
 
     [GeneratedRegex(@"[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex VietnamesePattern();
+
+    // Câu mặc định của DataAnnotations / System.Text.Json (tiếng Anh).
+    [GeneratedRegex(@"^The (?<field>.+?) field is required\.$", RegexOptions.CultureInvariant)]
+    private static partial Regex RequiredPattern();
+
+    [GeneratedRegex(@"^The field (?<field>.+?) must be a string with a minimum length of (?<min>\d+) and a maximum length of (?<max>\d+)\.$", RegexOptions.CultureInvariant)]
+    private static partial Regex StringMinMaxPattern();
+
+    [GeneratedRegex(@"^The field (?<field>.+?) must be a string with a maximum length of (?<max>\d+)\.$", RegexOptions.CultureInvariant)]
+    private static partial Regex StringMaxPattern();
+
+    [GeneratedRegex(@"^The field (?<field>.+?) must be a string or array type with a maximum length of '(?<max>\d+)'\.$", RegexOptions.CultureInvariant)]
+    private static partial Regex CollectionMaxPattern();
+
+    [GeneratedRegex(@"^The field (?<field>.+?) must be a string or array type with a minimum length of '(?<min>\d+)'\.$", RegexOptions.CultureInvariant)]
+    private static partial Regex CollectionMinPattern();
+
+    [GeneratedRegex(@"^The field (?<field>.+?) must be between (?<min>-?[\d.,]+) and (?<max>-?[\d.,]+)\.$", RegexOptions.CultureInvariant)]
+    private static partial Regex RangePattern();
+
+    [GeneratedRegex(@"^The field (?<field>.+?) must match the regular expression ", RegexOptions.CultureInvariant)]
+    private static partial Regex RegexPattern();
+
+    [GeneratedRegex(@"^The (?<field>.+?) field is not a valid e-mail address\.$", RegexOptions.CultureInvariant)]
+    private static partial Regex EmailPattern();
+
+    [GeneratedRegex(@"Path: \$\.(?:[^.|\s]+\.)*(?<field>[^.|\s\[]+)", RegexOptions.CultureInvariant)]
+    private static partial Regex JsonPathPattern();
 }

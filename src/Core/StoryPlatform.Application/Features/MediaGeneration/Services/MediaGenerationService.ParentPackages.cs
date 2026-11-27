@@ -135,8 +135,11 @@ public sealed partial class MediaGenerationService
                 foreach (var interaction in interactions)
                 {
                     foreach (var part in ListeningAudioParts.For(interaction, options))
-                        selected.Add((ListeningMediaRequirements.FindAudio(assets, interaction.Id, part.OptionId, part.PartKey)
-                            ?? throw new ConflictException("MEDIA_PACKAGE_INCOMPLETE")).Id);
+                    {
+                        var audio = ListeningMediaRequirements.FindAudio(assets, interaction.Id, part.OptionId, part.PartKey);
+                        if (audio is null && !part.Required) continue;
+                        selected.Add((audio ?? throw new ConflictException("MEDIA_PACKAGE_INCOMPLETE")).Id);
+                    }
                     if (interaction.Type == ListeningInteractionType.PicturePrediction)
                         foreach (var option in options.Where(x => x.ListeningInteractionId == interaction.Id && !x.IsDeleted))
                             selected.Add((ListeningMediaRequirements.FindImage(assets, option.Id)

@@ -10,7 +10,7 @@ public static class ListeningMediaRequirements
         IReadOnlyList<ListeningInteractionOption> options, IReadOnlyList<MediaAsset> assets)
     {
         var missing = new List<string>();
-        foreach (var part in ListeningAudioParts.For(interaction, options))
+        foreach (var part in ListeningAudioParts.For(interaction, options).Where(x => x.Required))
             if (FindAudio(assets, interaction.Id, part.OptionId, part.PartKey) is null)
                 missing.Add($"{interaction.Id}:{(part.OptionId is int optionId ? $"o{optionId}" : "i")}:{part.PartKey}");
         if (interaction.Type != ListeningInteractionType.PicturePrediction) return missing;

@@ -112,7 +112,6 @@ public sealed record GenerateQuizRequest
     public string AgeBand { get; init; } = string.Empty;
     public string Language { get; init; } = "vi";
     public string? ComprehensionGoal { get; init; }
-    public decimal? ComprehensionThresholdPercent { get; init; }
 }
 
 public sealed record GenerateListeningInteractionRequest

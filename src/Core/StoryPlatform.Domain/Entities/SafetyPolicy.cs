@@ -24,8 +24,6 @@ public class SafetyPolicy : BaseEntity
     public virtual UserAccount? ConsentedByUser { get; set; }
     public decimal? SafetyScoreThreshold { get; set; }
     public decimal? ReadabilityScoreThreshold { get; set; }
-    public decimal ComprehensionThresholdPercent { get; set; } = 70m;
-    public int ComprehensionWindowSize { get; set; } = 3;
     public bool StoryWishesEnabled { get; set; } = true;
     public bool AllowInteractiveStories { get; set; } = true;
     public bool ChildCreationEnabled { get; set; } = true;

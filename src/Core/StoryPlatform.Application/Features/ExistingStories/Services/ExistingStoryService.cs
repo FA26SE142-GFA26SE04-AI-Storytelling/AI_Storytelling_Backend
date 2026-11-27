@@ -256,7 +256,6 @@ public sealed class ExistingStoryService : IExistingStoryService
                     comprehensionGoal = learning.ComprehensionGoal,
                     parentalGateEnabled = policyContext.Policy.ParentalGateEnabled,
                     safetyScoreThreshold = policyContext.Policy.SafetyScoreThreshold,
-                    comprehensionThresholdPercent = policyContext.Policy.ComprehensionThresholdPercent,
                     source = "existing_story_import"
                 }, JsonOptions),
                 AcceptedInputJson = JsonSerializer.Serialize(new { title = story.Title, length = normalized.Length }, JsonOptions),
@@ -384,8 +383,6 @@ public sealed class ExistingStoryService : IExistingStoryService
             throw new BadRequestException("CONSENT_REQUIRED: Child Profile chưa có consent hợp lệ để sử dụng AI.");
         if (policy.SafetyScoreThreshold is < 0m or > 100m)
             throw new BadRequestException("Safety Score Threshold phải nằm trong khoảng 0 đến 100.");
-        if (policy.ComprehensionThresholdPercent is < 0m or > 100m || policy.ComprehensionWindowSize <= 0)
-            throw new BadRequestException("Cấu hình comprehension của Safety Policy không hợp lệ.");
 
         var personal = await _unitOfWork.Repository<SafetyPolicyCategory>().FindAsync(
             item => item.SafetyPolicyId == policy.Id,

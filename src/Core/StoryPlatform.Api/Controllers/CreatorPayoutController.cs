@@ -11,7 +11,7 @@ namespace StoryPlatform.Api.Controllers;
 /// <summary>
 /// Chi trả cho Creator (Luồng 5, 5h). Hệ thống không chuyển tiền: Admin chuyển khoản ngoài hệ thống rồi đánh dấu Đã chi.
 /// Creator chỉ xem và sửa dữ liệu của chính mình (mã Creator lấy từ token); việc cộng thu nhập kỳ vào số dư chạy tự động
-/// ngày 8 hằng tháng (SubscriptionCycleWorker).
+/// vào ngày chốt Admin đặt trong cấu hình gói, mặc định ngày 8 hằng tháng (SubscriptionCycleWorker), hoặc khi Admin bấm Chốt kỳ ngay.
 /// </summary>
 [Route("api/v1/creator-payouts")]
 public class CreatorPayoutController : BaseApiController
@@ -69,6 +69,18 @@ public class CreatorPayoutController : BaseApiController
     {
         var result = await _service.MarkPaidAsync(GetCurrentUserId(), creatorUserId, request, cancellationToken);
         return HandleResult(result, "Đã ghi nhận lần chi.");
+    }
+
+    /// <summary>
+    /// Chốt kỳ ngay (dùng khi demo): chốt thu nhập từ ngày sau kỳ đã chốt gần nhất đến hết hôm nay và cộng vào số dư ngay,
+    /// không chờ ngày chốt hằng tháng. Lượt đọc còn lại của hôm nay tính vào lần chốt sau từ ngày mai.
+    /// </summary>
+    [HttpPost("/api/v1/admin/creator-payouts/periods/close-now")]
+    [HasPermission(Permissions.Admin.CreatorPayoutManage)]
+    public async Task<ActionResult<ApiResponse<CreatorEarningPeriodDto>>> CloseNow(CancellationToken cancellationToken)
+    {
+        var result = await _service.CloseNowAsync(GetCurrentUserId(), DateTime.UtcNow, cancellationToken);
+        return HandleResult(result, "Đã chốt kỳ thu nhập đến hết hôm nay.");
     }
 
     /// <summary>Huỷ một lần chi (chuyển nhầm, ngân hàng trả lại) kèm lý do; số dư được cộng lại.</summary>

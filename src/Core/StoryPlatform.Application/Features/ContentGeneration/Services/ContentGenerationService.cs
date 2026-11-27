@@ -649,7 +649,6 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                 AgeBand = state.Context.AgeBand,
                 Language = state.Context.Language,
                 ComprehensionGoal = state.Context.ComprehensionGoal,
-                ComprehensionThresholdPercent = state.Context.ComprehensionThresholdPercent,
                 Vocabulary = vocabulary.Select(item => new GeneratedVocabularyItemDto(item.Term, item.Definition)).ToArray()
             }, cancellationToken);
             try

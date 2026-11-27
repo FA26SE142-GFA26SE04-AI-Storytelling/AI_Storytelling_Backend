@@ -770,6 +770,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
         return new OutlineProgressDto
         {
             StoryId = story.Id,
+            ChildProfileId = story.ChildProfileId,
             StoryStatus = ToSnake(story.Status.ToString()),
             CurrentVersion = current is null ? null : ToDto(current),
             ActiveOperation = active is null ? null : ToSnake(active.Operation.ToString()),

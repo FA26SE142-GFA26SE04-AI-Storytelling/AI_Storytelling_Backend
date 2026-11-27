@@ -139,8 +139,7 @@ public sealed class LearningArtifactServiceTests
         uow.Seed(new SafetyPolicy
         {
             Id = 1,
-            ChildProfileId = 1,
-            ComprehensionThresholdPercent = 75m
+            ChildProfileId = 1
         });
         return uow;
     }

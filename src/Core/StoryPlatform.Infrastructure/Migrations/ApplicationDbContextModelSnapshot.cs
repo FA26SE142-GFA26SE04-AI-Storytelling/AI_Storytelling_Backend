@@ -1118,7 +1118,13 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
+                    b.Property<DateTime>("PeriodEnd")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime>("PeriodMonth")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("PeriodStart")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("TotalValidReads")
@@ -1129,11 +1135,14 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("PeriodMonth")
+                    b.HasIndex("PeriodStart")
                         .IsUnique()
                         .HasFilter("NOT \"IsDeleted\"");
 
-                    b.ToTable("creator_earning_periods", (string)null);
+                    b.ToTable("creator_earning_periods", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_creator_earning_periods_range", "\"PeriodEnd\" >= \"PeriodStart\"");
+                        });
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.CreatorPayoutAccount", b =>
@@ -4033,6 +4042,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int>("CreatorMonthlySubmitCredits")
                         .HasColumnType("integer");
 
+                    b.Property<int>("CreatorPeriodCloseDay")
+                        .HasColumnType("integer");
+
                     b.Property<int>("CreatorWritingAssistPerDay")
                         .HasColumnType("integer");
 
@@ -4088,6 +4100,8 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.ToTable("plan_settings", null, t =>
                         {
+                            t.HasCheckConstraint("CK_plan_settings_creator_period_close_day", "\"CreatorPeriodCloseDay\" BETWEEN 1 AND 28");
+
                             t.HasCheckConstraint("CK_plan_settings_fund_percent", "\"ReadingFundPercent\" BETWEEN 0 AND 100 AND \"CreativeFundPercent\" BETWEEN 0 AND 100");
 
                             t.HasCheckConstraint("CK_plan_settings_min_payout", "\"MinimumPayoutVnd\" BETWEEN 0 AND 1000000000");
@@ -4105,6 +4119,7 @@ namespace StoryPlatform.Infrastructure.Migrations
                             CreativeFundPercent = 10,
                             CreatorMonthlyAiCredits = 2,
                             CreatorMonthlySubmitCredits = 5,
+                            CreatorPeriodCloseDay = 8,
                             CreatorWritingAssistPerDay = 20,
                             FreeCanCopyRoadmapTemplates = false,
                             FreeMaxChildProfiles = 1,
@@ -4972,14 +4987,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasDefaultValue("ReviewFirst");
 
                     b.Property<int>("ChildProfileId")
-                        .HasColumnType("integer");
-
-                    b.Property<decimal>("ComprehensionThresholdPercent")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("decimal(5,2)")
-                        .HasDefaultValue(70m);
-
-                    b.Property<int>("ComprehensionWindowSize")
                         .HasColumnType("integer");
 
                     b.Property<int>("ConsentPolicyVersion")

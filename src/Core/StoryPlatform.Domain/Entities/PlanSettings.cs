@@ -12,6 +12,8 @@ public class PlanSettings : BaseEntity
     public int CreativeFundPercent { get; set; } = 10;
     /// <summary>Số dư tối thiểu để Creator được chi (VND); 0 = không có mức tối thiểu, mọi số dư lớn hơn 0 đều được chi.</summary>
     public long MinimumPayoutVnd { get; set; } = 200_000;
+    /// <summary>Ngày trong tháng (giờ Việt Nam, 1-28) chốt kỳ thu nhập Creator của tháng trước và cộng vào số dư.</summary>
+    public int CreatorPeriodCloseDay { get; set; } = 8;
 
     public int CreatorMonthlyAiCredits { get; set; } = 2;
     public int CreatorMonthlySubmitCredits { get; set; } = 5;

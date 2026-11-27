@@ -61,6 +61,14 @@ public sealed class OutlineServiceBranchTests
     }
 
     [Fact]
+    public async Task GetCurrentAsync_ReturnsTheStoryChildProfileForTheOwner()
+    {
+        var progress = await Service(OutlineServiceTests.Seed()).GetCurrentAsync(1, 1);
+
+        Assert.Equal(1, progress.ChildProfileId);
+    }
+
+    [Fact]
     public async Task GetCurrentAsync_UnknownStory_ThrowsNotFound()
     {
         var error = await Assert.ThrowsAsync<NotFoundException>(() => Service(OutlineServiceTests.Seed()).GetCurrentAsync(1, 42));

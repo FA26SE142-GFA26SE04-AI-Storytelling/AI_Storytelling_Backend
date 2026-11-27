@@ -7,6 +7,7 @@ using StoryPlatform.Application.Features.AIStoryInput.Guardrails;
 using StoryPlatform.Application.Features.AIStoryInput.Models;
 using StoryPlatform.Application.Features.AIStoryInput.Services;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Safety;
 using StoryPlatform.Application.Features.TokenQuota.Interfaces;
 using StoryPlatform.Application.Features.TokenQuota.Services;
 using StoryPlatform.Domain.Entities;
@@ -17,6 +18,26 @@ namespace StoryPlatform.UnitTests;
 
 public sealed partial class AIStoryInputServiceTests
 {
+    [Fact]
+    public void CreativeInput_TooLongTopic_ReturnsVietnameseFieldMessage()
+    {
+        var request = new SubmitAIStoryInputRequestDto
+        {
+            Topic = new string('a', 201),
+            Lesson = "Biết chia sẻ",
+            VocabularyLevel = "level_2",
+            ChildProfileId = 1,
+            IdempotencyKey = "idem-key-1"
+        };
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+
+        System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            request, new System.ComponentModel.DataAnnotations.ValidationContext(request), results, validateAllProperties: true);
+
+        var error = Assert.Single(results);
+        Assert.Equal("Ý tưởng câu chuyện từ 2 đến 200 ký tự.", error.ErrorMessage);
+    }
+
     [Fact]
     public async Task Creator_SubmitUsesAudienceWithoutChildConsentOrChildQuota()
     {
@@ -194,6 +215,7 @@ public sealed partial class AIStoryInputServiceTests
         var policy = store.Items<SafetyPolicy>().Single();
         policy.StoryLengthTarget = 1200;
         policy.MaxStoryLength = 1320;
+        store.Items<LearningProfile>().Single().ReadingLevel = 4;
         var service = new AIStoryInputService(store, new RuleBasedInputGuardrail(), CreateTokenQuotaService(store));
 
         var context = await service.GetContextAsync(1, 1);
@@ -202,6 +224,29 @@ public sealed partial class AIStoryInputServiceTests
 
         await service.SubmitAsync(1, ValidRequest(targetLength: 0));
         Assert.Equal(1200, StoredInput(store).TargetLength);
+    }
+
+    [Theory]
+    [InlineData(600, 600, 660)]
+    [InlineData(2100, 900, 990)]
+    public async Task CustomStoryLength_GenerationEnforcesEffectiveCap(int custom, int expectedTarget, int expectedCap)
+    {
+        var store = CreateEligibleUnitOfWork();
+        var policy = store.Items<SafetyPolicy>().Single();
+        policy.StoryLengthTarget = custom;
+        policy.MaxStoryLength = 5000;
+        var service = new AIStoryInputService(store, new RuleBasedInputGuardrail(), CreateTokenQuotaService(store));
+
+        var context = await service.GetContextAsync(1, 1);
+
+        Assert.Equal(expectedTarget, context.RecommendedTargetLength);
+        Assert.Equal(expectedCap, context.MaximumLength);
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            service.SubmitAsync(1, ValidRequest(targetLength: expectedCap + 1)));
+        Assert.Empty(store.Items<StoryGenerationRequest>());
+
+        await service.SubmitAsync(1, ValidRequest(targetLength: 0));
+        Assert.Equal(expectedTarget, StoredInput(store).TargetLength);
     }
 
     [Theory]
@@ -216,7 +261,7 @@ public sealed partial class AIStoryInputServiceTests
 
         var context = await service.GetContextAsync(1, 1);
         Assert.Equal(words, context.RecommendedTargetLength);
-        Assert.Equal(2000, context.MaximumLength);
+        Assert.Equal(StoryLengthRules.UpperBound(words), context.MaximumLength);
 
         await service.SubmitAsync(1, ValidRequest(targetLength: 0));
         Assert.Equal(words, StoredInput(store).TargetLength);
@@ -334,7 +379,6 @@ public sealed partial class AIStoryInputServiceTests
         policy.RequiredApprovalMode = ApprovalMode.AutoPublishOnThreshold;
         policy.ParentalGateEnabled = true;
         policy.SafetyScoreThreshold = 90m;
-        policy.ComprehensionThresholdPercent = 80m;
         unitOfWork.Items<LearningProfile>().Single().ComprehensionGoal = "Kể lại được ý chính";
         var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail(), CreateTokenQuotaService(unitOfWork));
 
@@ -343,7 +387,6 @@ public sealed partial class AIStoryInputServiceTests
         Assert.Equal("always_manual", context.RequiredApprovalMode);
         Assert.True(context.ParentalGateEnabled);
         Assert.Equal(90m, context.SafetyScoreThreshold);
-        Assert.Equal(80m, context.ComprehensionThresholdPercent);
         Assert.Equal("Kể lại được ý chính", context.ComprehensionGoal);
     }
 

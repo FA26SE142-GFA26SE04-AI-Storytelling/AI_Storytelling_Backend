@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+using StoryPlatform.Application.Features.ListeningInteractions.Services;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
 using StoryPlatform.Application.Features.MediaGeneration.Services;
@@ -213,6 +215,98 @@ public sealed partial class MediaGenerationServiceTests
         var result = await new MediaReadinessService(uow).CheckAsync(10, null);
         Assert.True(result.IsReady);
         Assert.Empty(result.MissingListeningMedia);
+    }
+
+    private const string OrderingInstruction = "Em hãy chạm vào các thẻ theo đúng thứ tự chuyện xảy ra trong truyện nhé!";
+
+    // Tương tác có media từ trước khi có câu hướng dẫn: đã có audio thẻ, chưa có audio "instruction".
+    private static void SeedOldOrdering(StoryReviewServiceTests.FakeUnitOfWork uow, int id = 74, int? packageId = null,
+        ListeningInteractionType type = ListeningInteractionType.EventOrdering, bool mediaDone = true)
+    {
+        uow.Seed(new ListeningInteraction { Id = id, StoryVersionId = 10, Type = type, AnchorOffset = StoryEnd,
+            StorySceneId = 500, ParentStoryPackageId = packageId, CharacterName = type == ListeningInteractionType.RolePlay ? "Thỏ" : null });
+        if (mediaDone)
+            uow.Seed(new MediaAsset { Id = 900 + id, StoryVersionId = 10, ParentStoryPackageId = packageId, ListeningInteractionId = id,
+                AudioPartKey = ListeningAudioParts.Match, Type = MediaType.ListeningAudio, Status = MediaStatus.Ready,
+                ValidationStatus = ValidationStatus.Passed, Url = $"old-{id}.mp3" });
+    }
+
+    private static MediaAsset[] InstructionAudio(StoryReviewServiceTests.FakeUnitOfWork uow) =>
+        uow.Items<MediaAsset>().Where(x => x.AudioPartKey == ListeningAudioParts.Instruction).ToArray();
+
+    [Fact]
+    public async Task BackfillInstruction_CreatesMissingAudioForOldInteraction_ThenHasNothingLeft()
+    {
+        var uow = Seed();
+        SeedOldOrdering(uow);
+        var tts = new RecordingTtsProvider();
+        var storage = new RecordingMediaStorage();
+        var service = Create(uow, tts: tts, storage: storage);
+
+        Assert.True(await service.BackfillListeningInstructionAudioAsync());
+
+        var asset = Assert.Single(InstructionAudio(uow));
+        Assert.Equal(74, asset.ListeningInteractionId);
+        Assert.Null(asset.ListeningInteractionOptionId);
+        Assert.Null(asset.ParentStoryPackageId);
+        Assert.Equal(MediaStatus.Ready, asset.Status);
+        Assert.Equal(ValidationStatus.Passed, asset.ValidationStatus);
+        Assert.False(string.IsNullOrWhiteSpace(asset.Url));
+        Assert.Equal([OrderingInstruction], tts.Inputs);
+        Assert.Contains(storage.UploadedPaths, path => path.StartsWith("1/versions/10/listening-74-i-instruction-", StringComparison.Ordinal));
+        Assert.Empty(ListeningMediaRequirements.Missing(
+            uow.Items<ListeningInteraction>().Single(), [], uow.Items<MediaAsset>().ToList()));
+
+        Assert.False(await service.BackfillListeningInstructionAudioAsync());
+        Assert.Single(tts.Inputs);
+    }
+
+    [Fact]
+    public async Task BackfillInstruction_SkipsParentPackagesUnfinishedMediaAndTypesWithPrompt()
+    {
+        var uow = Seed();
+        SeedOldOrdering(uow, 74, packageId: 5);
+        SeedOldOrdering(uow, 75, mediaDone: false);
+        SeedOldOrdering(uow, 76, type: ListeningInteractionType.Checkpoint);
+        var tts = new RecordingTtsProvider();
+
+        Assert.False(await Create(uow, tts: tts).BackfillListeningInstructionAudioAsync());
+
+        Assert.Empty(InstructionAudio(uow));
+        Assert.Empty(tts.Inputs);
+    }
+
+    [Fact]
+    public async Task BackfillInstruction_RetriesFailuresUpToTheAssetLimit()
+    {
+        var uow = Seed();
+        SeedOldOrdering(uow);
+        var service = Create(uow, tts: new FailingTextTtsProvider(OrderingInstruction));
+
+        for (var attempt = 1; attempt <= 3; attempt++)
+        {
+            Assert.True(await service.BackfillListeningInstructionAudioAsync());
+            var asset = Assert.Single(InstructionAudio(uow));
+            Assert.Equal(attempt, asset.AttemptCount);
+            Assert.Equal(MediaStatus.Failed, asset.Status);
+        }
+
+        Assert.False(await service.BackfillListeningInstructionAudioAsync());
+        Assert.Equal(3, Assert.Single(InstructionAudio(uow)).AttemptCount);
+    }
+
+    [Fact]
+    public void BackfillInstruction_QueryTranslatesToPostgresSql()
+    {
+        using var db = new StoryPlatform.Infrastructure.Persistence.ApplicationDbContext(
+            new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<StoryPlatform.Infrastructure.Persistence.ApplicationDbContext>()
+                .UseNpgsql("Host=localhost;Database=metadata_only;Username=unused;Password=unused").Options);
+
+        var sql = Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToQueryString(
+            MediaGenerationService.InstructionBackfillCandidates(db.Set<ListeningInteraction>(), db.Set<MediaAsset>(), 3, DateTime.UtcNow).Take(1));
+
+        Assert.Contains("EXISTS", sql);
+        Assert.Contains("instruction", sql);
     }
 
     private sealed class FailingTextTtsProvider(string failingText) : ITtsProvider

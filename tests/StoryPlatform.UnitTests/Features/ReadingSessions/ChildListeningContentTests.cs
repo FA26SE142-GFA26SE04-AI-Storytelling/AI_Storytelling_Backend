@@ -176,7 +176,30 @@ public sealed class ChildListeningContentTests
         Assert.Equal("seg-2.mp3", item.ModelAudioUrl);
         Assert.Equal("Có ai không?", item.ModelSentence);
         Assert.Equal("Thỏ", item.CharacterName);
-        Assert.Equal(new[] { "match" }, item.AudioUrls.Keys);
+        Assert.Equal("Em hãy đóng vai Thỏ, nghe mẫu rồi nói theo câu này nhé!", item.Instruction);
+        Assert.Equal(new[] { "instruction", "match" }, item.AudioUrls.Keys.Order(StringComparer.Ordinal));
+        Assert.Equal("listen-4-i-instruction.mp3", item.AudioUrls["instruction"]);
+    }
+
+    [Fact]
+    public async Task RolePlay_CreatedBeforeInstructionAudio_IsStillReturnedWithInstructionText()
+    {
+        var interaction = Add(4, ListeningInteractionType.RolePlay, 1, x =>
+        {
+            x.CharacterName = "Thỏ";
+            x.SourceQuote = "Có ai không?";
+            x.SourceStart = 32;
+        });
+        _h.AddListeningMedia(interaction);
+        _h.Assets.RemoveAll(x => x.ListeningInteractionId == 4 && x.AudioPartKey == "instruction");
+        var segment = _h.AddSegment(_scenes[1], 1, "Có ai không?");
+        segment.StartOffset = 10; segment.EndOffset = 20;
+        _h.AddAudio(segment, "seg-1.mp3");
+
+        var item = (await Content()).Scenes[1].Interaction!;
+
+        Assert.Equal("Em hãy đóng vai Thỏ, nghe mẫu rồi nói theo câu này nhé!", item.Instruction);
+        Assert.False(item.AudioUrls.ContainsKey("instruction"));
     }
 
     [Fact]
@@ -231,6 +254,27 @@ public sealed class ChildListeningContentTests
         Assert.Contains("Thỏ lạc", json);
         Assert.DoesNotContain("CorrectOrder", json);
         Assert.DoesNotContain("câu 61", json);
+    }
+
+    [Fact]
+    public async Task EventOrdering_CardsShowTheIllustrationOfTheirScene()
+    {
+        var interaction = Add(6, ListeningInteractionType.EventOrdering, 2);
+        Option(61, 6, 1, "Thỏ lạc", correctOrder: 1, sourceStart: 15, feedback: null);
+        Option(62, 6, 2, "Gấu giúp", correctOrder: 2, sourceStart: 25, feedback: null);
+        Option(63, 6, 3, "Về nhà", correctOrder: 3, sourceStart: 45, feedback: null);
+        _h.AddListeningMedia(interaction);
+        // Scene 0 có 2 beat; câu của thẻ 61 (offset 15) nằm ở beat 2. Scene 1 chỉ có tranh cả scene. Scene 2 chưa có tranh.
+        _h.AddBeatIllustration(_scenes[0], 1, 0, 10, "beat-1.png");
+        _h.AddBeatIllustration(_scenes[0], 2, 10, 20, "beat-2-old.png", current: false);
+        _h.AddBeatIllustration(_scenes[0], 2, 10, 20, "beat-2.png");
+        _h.AddIllustration(_scenes[1], "scene-1.png");
+
+        var cards = (await Content()).Scenes[2].Interaction!.Options.ToDictionary(x => x.Id, x => x.ImageUrl);
+
+        Assert.Equal("beat-2.png", cards[61]);
+        Assert.Equal("scene-1.png", cards[62]);
+        Assert.Null(cards[63]);
     }
 
     [Fact]

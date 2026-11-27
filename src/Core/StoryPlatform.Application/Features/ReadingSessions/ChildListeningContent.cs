@@ -19,8 +19,9 @@ public static class ChildListeningContent
     public static IReadOnlyDictionary<int, SceneInteraction> Build(int sessionId, IReadOnlyList<StoryScene> scenes,
         IReadOnlyList<StorySegment> segments, IReadOnlyList<ListeningInteraction> interactions,
         IReadOnlyList<ListeningInteractionOption> options, IReadOnlyList<MediaAsset> assets,
-        IReadOnlyList<ListeningInteractionAttempt> sessionAttempts)
+        IReadOnlyList<ListeningInteractionAttempt> sessionAttempts, IReadOnlyList<IllustrationBeat>? beats = null)
     {
+        beats ??= [];
         var result = new Dictionary<int, SceneInteraction>();
         foreach (var interaction in interactions.Where(x => !x.IsDeleted && x.StorySceneId.HasValue && x.Type != ListeningInteractionType.ReadAloud).OrderBy(x => x.AnchorOffset))
         {
@@ -36,7 +37,7 @@ public static class ChildListeningContent
             var own = options.Where(x => x.ListeningInteractionId == interaction.Id && !x.IsDeleted)
                 .OrderBy(x => x.SortOrder).ToList();
             result[interaction.StorySceneId!.Value] = new SceneInteraction(
-                ToDto(sessionId, interaction, own, scenes, assets, modelAudio), IsAttempted(interaction, sessionAttempts));
+                ToDto(sessionId, interaction, own, scenes, beats, assets, modelAudio), IsAttempted(interaction, sessionAttempts));
         }
 
         return result;
@@ -78,7 +79,7 @@ public static class ChildListeningContent
 
     private static ReadingInteractionDto ToDto(int sessionId, ListeningInteraction interaction,
         IReadOnlyList<ListeningInteractionOption> own, IReadOnlyList<StoryScene> scenes,
-        IReadOnlyList<MediaAsset> assets, string? modelAudio)
+        IReadOnlyList<IllustrationBeat> beats, IReadOnlyList<MediaAsset> assets, string? modelAudio)
     {
         var dto = new ReadingInteractionDto
         {
@@ -86,6 +87,7 @@ public static class ChildListeningContent
             Type = interaction.Type.ToString(),
             Kind = interaction.Kind?.ToString(),
             Prompt = interaction.Prompt,
+            Instruction = ListeningAudioParts.InstructionFor(interaction),
             CharacterName = interaction.CharacterName,
             ModelSentence = interaction.Type == ListeningInteractionType.RolePlay ? interaction.SourceQuote : null,
             ModelAudioUrl = modelAudio,
@@ -96,8 +98,8 @@ public static class ChildListeningContent
             RevealSceneIndex = interaction.RevealOffset is int reveal
                 ? scenes.FirstOrDefault(scene => scene.TextRangeEnd == reveal)?.SceneIndex : null
         };
-        foreach (var key in new[] { ListeningAudioParts.Prompt, ListeningAudioParts.Wait, ListeningAudioParts.Match,
-                     ListeningAudioParts.NoMatch, ListeningAudioParts.Hint, ListeningAudioParts.Text })
+        foreach (var key in new[] { ListeningAudioParts.Prompt, ListeningAudioParts.Instruction, ListeningAudioParts.Wait,
+                     ListeningAudioParts.Match, ListeningAudioParts.NoMatch, ListeningAudioParts.Hint, ListeningAudioParts.Text })
             if (ListeningMediaRequirements.FindAudio(assets, interaction.Id, null, key)?.Url is { } url)
                 dto.AudioUrls[key] = url;
 
@@ -108,7 +110,9 @@ public static class ChildListeningContent
         {
             Id = option.Id,
             Text = option.Text,
-            ImageUrl = ListeningMediaRequirements.FindImage(assets, option.Id)?.Url,
+            ImageUrl = interaction.Type == ListeningInteractionType.EventOrdering
+                ? EventSceneImageUrl(option, scenes, beats, assets)
+                : ListeningMediaRequirements.FindImage(assets, option.Id)?.Url,
             AudioUrl = ListeningMediaRequirements.FindAudio(assets, interaction.Id, option.Id, ListeningAudioParts.Text)?.Url,
             Feedback = withFeedback ? option.Feedback : null,
             FeedbackAudioUrl = withFeedback
@@ -130,6 +134,26 @@ public static class ChildListeningContent
         if (shuffled.Count > 1 && shuffled.Select(x => x.Id).SequenceEqual(correct))
             shuffled = shuffled.Skip(1).Append(shuffled[0]).ToList();
         return shuffled;
+    }
+
+    /// <summary>
+    /// Tranh minh hoạ đã duyệt của đoạn chứa câu gốc của thẻ sự kiện, để bé chưa biết chữ xếp theo cảnh.
+    /// Lấy tranh của beat chứa câu; scene chưa chia beat thì lấy tranh của scene. Không có tranh thì null (thẻ chỉ có chữ).
+    /// </summary>
+    internal static string? EventSceneImageUrl(ListeningInteractionOption option, IReadOnlyList<StoryScene> scenes,
+        IReadOnlyList<IllustrationBeat> beats, IReadOnlyList<MediaAsset> assets)
+    {
+        if (option.SourceStart is not int start) return null;
+        var scene = scenes.FirstOrDefault(x => x.TextRangeStart <= start && start < x.TextRangeEnd);
+        if (scene is null) return null;
+        var local = start - scene.TextRangeStart;
+        var sceneBeats = beats.Where(x => x.StorySceneId == scene.Id && !x.IsDeleted).OrderBy(x => x.BeatOrder).ToList();
+        var beat = sceneBeats.FirstOrDefault(x => x.StartOffset <= local && local < x.EndOffset) ?? sceneBeats.FirstOrDefault();
+        var illustrations = assets.Where(x => x.Type == MediaType.Illustration && x.Status == MediaStatus.Ready
+            && !x.IsDeleted && !string.IsNullOrWhiteSpace(x.Url)).ToList();
+        var image = beat is null ? null : illustrations.Where(x => x.IllustrationBeatId == beat.Id)
+            .OrderByDescending(x => x.IsCurrent).FirstOrDefault();
+        return (image ?? illustrations.FirstOrDefault(x => x.StorySceneId == scene.Id))?.Url;
     }
 
     // Offset của segment tính trong SceneText; SourceStart tính trong cả truyện.

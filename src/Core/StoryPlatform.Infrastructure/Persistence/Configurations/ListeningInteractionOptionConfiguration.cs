@@ -18,6 +18,7 @@ public class ListeningInteractionOptionConfiguration : IEntityTypeConfiguration<
             .HasColumnType("text");
 
         builder.Property(x => x.Feedback).HasColumnType("text");
+        builder.Property(x => x.Counterpoint).HasColumnType("text");
         builder.Property(x => x.HotspotJson).HasColumnType("text");
         builder.Property(x => x.Role).HasConversion<string>().HasMaxLength(20)
             .HasDefaultValue(ListeningOptionRole.None);

@@ -16,6 +16,8 @@ public static class ListeningAudioParts
     public const string Name = "name", Sound = "sound", RetryLook = "retryLook", RetryArrow = "retryArrow", Unclear = "unclear";
     public const string RetryLookClose = "retryLookClose", RetryHear = "retryHear", RetryTry = "retryTry", Sentence = "sentence",
         TruthYes = "truthYes", TruthNo = "truthNo", Explanation = "explanation", Chain = "chain";
+    public const string Thanks = "thanks", Positive = "positive", Limitation = "limitation";
+    public static string RelationKey(int edgeIndex) => $"relation:{edgeIndex}";
 
     /// <summary>
     /// Phần âm thanh cần mốc thời gian từng chữ: câu bé nhìn chữ đi theo giọng đọc ở mức tương tác, và từng lượt thoại
@@ -68,6 +70,11 @@ public static class ListeningAudioParts
         ListeningInteractionType.CauseEffect => "Em hãy kéo nối chuyện đã xảy ra với lí do của nó nhé!",
         ListeningInteractionType.SceneTitle => "Em hãy chọn tiêu đề hợp nhất với cảnh vừa nghe nhé!",
         ListeningInteractionType.ThoughtBubble => "Em hãy chạm vào suy nghĩ hợp nhất với bạn trong tranh nhé!",
+        ListeningInteractionType.CharacterTrial => "Em hãy nghe tình huống rồi chọn nhận định và lý do của mình nhé!",
+        ListeningInteractionType.FindWrongDetail => "Em hãy tìm câu có chi tiết lạ rồi chọn chi tiết trong truyện nhé!",
+        ListeningInteractionType.RelationshipMap => "Em hãy đặt thẻ quan hệ vào các đường nối giữa nhân vật nhé!",
+        ListeningInteractionType.StoryEditor => "Em hãy chạm để bỏ những câu chưa cần, giữ lại ba câu quan trọng nhất nhé!",
+        ListeningInteractionType.WhatIf => "Em hãy chọn điều có thể xảy ra hoặc chia sẻ ý riêng nhé!",
         _ => null
     };
 
@@ -194,17 +201,51 @@ public static class ListeningAudioParts
                 Add(null, Match, interaction.MatchFeedback);
                 Add(null, RetryLook, FixedLine(RetryLook));
                 break;
+            case ListeningInteractionType.CharacterTrial:
+                Add(null, Text, interaction.Prompt);
+                Add(null, Thanks, "Cảm ơn con đã chia sẻ! Mỗi quyết định đều có mặt tốt và mặt cần cân nhắc.");
+                break;
+            case ListeningInteractionType.FindWrongDetail:
+                Add(null, Text, interaction.Prompt);
+                Add(null, Match, interaction.MatchFeedback);
+                Add(null, Explanation, interaction.Explanation);
+                Add(null, RetryLookClose, FixedLine(RetryLookClose));
+                break;
+            case ListeningInteractionType.RelationshipMap:
+                Add(null, Match, interaction.MatchFeedback);
+                Add(null, RetryTry, FixedLine(RetryTry));
+                var relationMap = RelationMap.TryParse(interaction.RelationsJson);
+                if (relationMap is not null)
+                    for (var i = 0; i < relationMap.Edges.Count; i++)
+                        Add(null, RelationKey(i), relationMap.Edges[i].Explanation);
+                break;
+            case ListeningInteractionType.StoryEditor:
+                Add(null, Text, interaction.SourceQuote);
+                Add(null, Match, interaction.MatchFeedback);
+                Add(null, RetryHear, FixedLine(RetryHear));
+                break;
+            case ListeningInteractionType.WhatIf:
+                Add(null, Text, interaction.Prompt);
+                Add(null, Thanks, "Cảm ơn con đã nghĩ ra điều này! Mình cùng nghe tiếp nhé.");
+                break;
         }
         // RolePlay dùng audio segment; đáp án chấp nhận của FillBlank không đọc riêng; ReadAloud không có option.
         if (interaction.Type is ListeningInteractionType.RolePlay or ListeningInteractionType.FillBlank or ListeningInteractionType.ReadAloud) return parts;
 
-        var readsFeedback = interaction.Type is ListeningInteractionType.Checkpoint or ListeningInteractionType.PicturePrediction or ListeningInteractionType.SceneTitle;
+        var readsFeedback = interaction.Type is ListeningInteractionType.Checkpoint or ListeningInteractionType.PicturePrediction or
+            ListeningInteractionType.SceneTitle or ListeningInteractionType.WhatIf or ListeningInteractionType.StoryEditor;
         foreach (var option in options.Where(x => x.ListeningInteractionId == interaction.Id && !x.IsDeleted)
                      .OrderBy(x => x.SortOrder))
         {
             if (option.Role == ListeningOptionRole.Clue) continue;   // manh mối chỉ để tô sáng đoạn, không đọc riêng
             Add(option.Id, Text, option.Text);
-            if (readsFeedback) Add(option.Id, Feedback, option.Feedback);
+            if (readsFeedback && (interaction.Type != ListeningInteractionType.StoryEditor || option.IsMatch))
+                Add(option.Id, Feedback, option.Feedback);
+            if (interaction.Type == ListeningInteractionType.CharacterTrial)
+            {
+                Add(option.Id, Positive, option.Feedback);
+                Add(option.Id, Limitation, option.Counterpoint);
+            }
         }
         return parts;
     }

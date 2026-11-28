@@ -45,5 +45,10 @@ public enum PromptType
     ListeningInferenceQuestion = 26,
     ListeningCauseEffect = 27,
     ListeningSceneTitle = 28,
-    ListeningThoughtBubble = 29
+    ListeningThoughtBubble = 29,
+    ListeningCharacterTrial = 30,
+    ListeningFindWrongDetail = 31,
+    ListeningRelationshipMap = 32,
+    ListeningStoryEditor = 33,
+    ListeningWhatIf = 34
 }

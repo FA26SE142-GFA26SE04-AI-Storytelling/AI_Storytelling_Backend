@@ -44,7 +44,6 @@ public sealed class ListeningInteractionPlannerTests
         Assert.Equal(6, ListeningInteractionPlanner.Create(6, Story(6)).TargetAge);
 
     [Theory]
-    [InlineData(9)]
     [InlineData(10)]
     public void UnbuiltAge_HasEmptyPlan(int age) =>
         Assert.Empty(ListeningInteractionPlanner.Create(age, Story(6)).Items);
@@ -99,5 +98,21 @@ public sealed class ListeningInteractionPlannerTests
         Assert.All(plan.Items, item => Assert.Single(item.Zones));
         Assert.DoesNotContain(plan.Items.SelectMany(item => item.Zones).SelectMany(zone => zone),
             id => id == Story(blocks)[^1].BlockId);
+    }
+
+    [Theory]
+    [InlineData(1, "")]
+    [InlineData(2, "FindWrongDetail")]
+    [InlineData(3, "FindWrongDetail,RelationshipMap")]
+    [InlineData(4, "FindWrongDetail,RelationshipMap,StoryEditor")]
+    [InlineData(6, "FindWrongDetail,RelationshipMap,StoryEditor,CharacterTrial,WhatIf")]
+    public void Age9_prioritizes_its_own_five_types(int blocks, string expected)
+    {
+        var plan = ListeningInteractionPlanner.Create(9, Story(blocks));
+        Assert.Equal(expected, string.Join(',', plan.Items.Select(item => item.Type)));
+        Assert.Equal(9, plan.TargetAge);
+        Assert.All(plan.Items, item => Assert.Single(item.Zones));
+        Assert.Equal(plan.Items.Count, plan.Items.SelectMany(item => item.Zones).SelectMany(zone => zone).Distinct().Count());
+        Assert.DoesNotContain(plan.Items, item => ListeningInteractionRules.IsEndOfStory(item.Type, 9));
     }
 }

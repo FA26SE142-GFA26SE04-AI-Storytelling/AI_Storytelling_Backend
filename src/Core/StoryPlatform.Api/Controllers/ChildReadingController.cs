@@ -24,16 +24,18 @@ public sealed class ChildReadingController : ControllerBase
     private readonly IChildNotebookService _notebook;
     private readonly IChildReadAloudService _readAloud;
     private readonly IChildListeningService _listening;
+    private readonly IChildFreeAnswerService _freeAnswer;
 
     public ChildReadingController(
         IChildStoryBrowseService browse, IChildReadingService reading, IChildNotebookService notebook,
-        IChildReadAloudService readAloud, IChildListeningService listening)
+        IChildReadAloudService readAloud, IChildListeningService listening, IChildFreeAnswerService freeAnswer)
     {
         _browse = browse;
         _reading = reading;
         _notebook = notebook;
         _readAloud = readAloud;
         _listening = listening;
+        _freeAnswer = freeAnswer;
     }
 
     private int ChildId
@@ -204,6 +206,19 @@ public sealed class ChildReadingController : ControllerBase
     {
         var result = await _readAloud.CheckPracticeAsync(ChildId, sessionId, interactionId, await ReadAudioAsync(form, ct), ct);
         return Ok(ApiResponse<ReadAloudResultDto>.Ok(result));
+    }
+
+    [HttpPost("sessions/{sessionId:int}/free-answer/{interactionId:int}")]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(ReadAloudPolicy.MaxAudioBytes + 100_000)]
+    [RequestFormLimits(MemoryBufferThreshold = ReadAloudPolicy.MaxAudioBytes + 100_000,
+        MultipartBodyLengthLimit = ReadAloudPolicy.MaxAudioBytes + 100_000)]
+    [RequireChildFeature(ChildFeatures.Voice)]
+    public async Task<ActionResult<ApiResponse<object>>> SaveFreeAnswer(
+        int sessionId, int interactionId, [FromForm] ReadAloudForm form, CancellationToken ct)
+    {
+        var saved = await _freeAnswer.SaveAsync(ChildId, sessionId, interactionId, await ReadAudioAsync(form, ct), ct);
+        return Ok(ApiResponse<object>.Ok(new { saved }));
     }
 
     // Chặn file quá lớn trước khi đọc vào bộ nhớ để chấm và lưu bản ghi.

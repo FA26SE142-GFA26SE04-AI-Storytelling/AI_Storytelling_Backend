@@ -28,7 +28,8 @@ VALUES
     (23, 0, NULL, NULL, NULL),
     (24, 0, NULL, NULL, NULL),
     (900, 0, NULL, NULL, NULL),
-    (901, 0, NULL, NULL, NULL)
+    (901, 0, NULL, NULL, NULL),
+    (902, 0, NULL, NULL, NULL)
 ON CONFLICT ("StoryVersionId") DO NOTHING;
 
 INSERT INTO story_version_media_states (

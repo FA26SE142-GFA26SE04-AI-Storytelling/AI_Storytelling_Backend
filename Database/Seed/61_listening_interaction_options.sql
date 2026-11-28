@@ -19,6 +19,36 @@ VALUES
     (910, 904, 3, 'Thỏ biết nhờ người lớn giúp', NULL, false, 3, 'Từ đó Thỏ luôn nhờ người lớn khi bị lạc.', 256, 296, NULL, NOW() - INTERVAL '1 day', false)
 ON CONFLICT ("Id") DO NOTHING;
 
+-- Thẻ của bộ tuổi 9 (truyện 902). Chỉ người duyệt thấy Counterpoint và nhãn IsMatch.
+INSERT INTO listening_interaction_options (
+    "Id", "ListeningInteractionId", "SortOrder", "Text", "Feedback", "Counterpoint", "IsMatch",
+    "Role", "CorrectOrder", "ImageDescription", "CreatedAt", "IsDeleted"
+)
+VALUES
+    (962, 940, 1, 'bình nước', NULL, NULL, true, 'None', NULL, NULL, NOW() - INTERVAL '1 day', false),
+    (963, 940, 2, 'cái xô', NULL, NULL, false, 'None', NULL, NULL, NOW() - INTERVAL '1 day', false),
+    (964, 940, 3, 'chiếc ô', NULL, NULL, false, 'None', NULL, NULL, NOW() - INTERVAL '1 day', false),
+    (965, 941, 1, 'Mai', NULL, NULL, false, 'Node', NULL, 'Mai đứng cạnh luống hoa trong khu vườn', NOW() - INTERVAL '1 day', false),
+    (966, 941, 2, 'Nam', NULL, NULL, false, 'Node', NULL, 'Nam cầm hạt giống trong khu vườn', NOW() - INTERVAL '1 day', false),
+    (967, 941, 3, 'An', NULL, NULL, false, 'Node', NULL, 'An cầm chiếc ô trong khu vườn', NOW() - INTERVAL '1 day', false),
+    (968, 941, 4, 'giúp đỡ', NULL, NULL, false, 'Card', NULL, NULL, NOW() - INTERVAL '1 day', false),
+    (969, 941, 5, 'bảo vệ', NULL, NULL, false, 'Card', NULL, NULL, NOW() - INTERVAL '1 day', false),
+    (970, 941, 6, 'tin tưởng', NULL, NULL, false, 'Card', NULL, NULL, NOW() - INTERVAL '1 day', false),
+    (971, 941, 7, 'cản trở', NULL, NULL, false, 'Card', NULL, NULL, NOW() - INTERVAL '1 day', false),
+    (972, 942, 1, 'Buổi sáng, ba bạn ra vườn.', NULL, NULL, false, 'None', 1, NULL, NOW() - INTERVAL '1 day', false),
+    (973, 942, 2, 'Mai tưới luống hoa.', 'Mai chăm sóc luống hoa.', NULL, true, 'None', 2, NULL, NOW() - INTERVAL '1 day', false),
+    (974, 942, 3, 'Nam nhặt lá khô.', 'Nam cũng chăm sóc vườn.', NULL, true, 'None', 3, NULL, NOW() - INTERVAL '1 day', false),
+    (975, 942, 4, 'An đặt ô dưới gốc cây.', NULL, NULL, false, 'None', 4, NULL, NOW() - INTERVAL '1 day', false),
+    (976, 942, 5, 'Một con bướm bay qua.', NULL, NULL, false, 'None', 5, NULL, NOW() - INTERVAL '1 day', false),
+    (977, 942, 6, 'Cả ba cùng chăm sóc khu vườn.', 'Câu này tóm lại việc ba bạn cùng làm.', NULL, true, 'None', 6, NULL, NOW() - INTERVAL '1 day', false),
+    (978, 943, 1, 'Mai muốn bảo vệ hoa', 'Mai quan tâm đến luống hoa.', 'Mai có thể bị ướt vì trời mưa.', false, 'None', NULL, NULL, NOW() - INTERVAL '1 day', false),
+    (979, 943, 2, 'Mai muốn giúp các bạn', 'Mai muốn cùng bạn giữ khu vườn.', 'Các bạn có thể cần Mai ở chỗ khác.', false, 'None', NULL, NULL, NOW() - INTERVAL '1 day', false),
+    (980, 943, 3, 'Mai muốn giữ lời hứa', 'Mai nhớ việc mình nhận chăm sóc hoa.', 'Mai có thể nhờ bạn thay mình.', false, 'None', NULL, NULL, NOW() - INTERVAL '1 day', false),
+    (981, 944, 1, 'Nam sẽ tự tìm hạt giống', 'Nam có thể quay lại tìm hạt giống của mình.', NULL, false, 'None', NULL, NULL, NOW() - INTERVAL '1 day', false),
+    (982, 944, 2, 'Hạt giống có thể bị ướt', 'Mưa có thể làm ướt hạt giống còn ngoài vườn.', NULL, false, 'None', NULL, NULL, NOW() - INTERVAL '1 day', false),
+    (983, 944, 3, 'An sẽ đi cùng Nam', 'An đang ở vườn nên có thể giúp Nam tìm.', NULL, false, 'None', NULL, NULL, NOW() - INTERVAL '1 day', false)
+ON CONFLICT ("Id") DO NOTHING;
+
 -- Thẻ bộ tuổi 7 của truyện 900: đúng/sai, ghép câu, kéo thả và xếp sự kiện.
 INSERT INTO listening_interaction_options (
     "Id", "ListeningInteractionId", "SortOrder", "Text", "Feedback", "IsMatch", "Role", "CorrectOrder",

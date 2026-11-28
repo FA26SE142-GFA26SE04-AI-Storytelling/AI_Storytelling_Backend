@@ -19,5 +19,10 @@ public enum ListeningInteractionType
     InferenceQuestion = 14,
     CauseEffect = 15,
     SceneTitle = 16,
-    ThoughtBubble = 17
+    ThoughtBubble = 17,
+    CharacterTrial = 18,
+    FindWrongDetail = 19,
+    RelationshipMap = 20,
+    StoryEditor = 21,
+    WhatIf = 22
 }

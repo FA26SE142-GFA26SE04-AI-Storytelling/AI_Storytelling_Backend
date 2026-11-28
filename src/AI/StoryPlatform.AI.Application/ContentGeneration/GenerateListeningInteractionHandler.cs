@@ -30,17 +30,16 @@ public sealed class GenerateListeningInteractionHandler(StoryContentGenerationEx
             request.Blocks.Select(b => b.BlockId).Distinct().Count() != request.Blocks.Count ||
             request.Blocks.Sum(b => b.Text.Length) > 100_000 || request.LastBlockId != request.Blocks[^1].BlockId)
             throw new ArgumentException("Invalid listening request, count or canonical blocks.");
-        if (request.TargetAge is { } age && (!(request.AgeBand is "6-8" or "Age_6_8") ||
-            age == 6 && (request.InteractionType is not ("Checkpoint" or "RolePlay" or "CharacterLetter" or "PicturePrediction" or "WhoSaidIt") ||
-                request.InteractionType == "Checkpoint" && request.CheckpointKind != "Literal") ||
-            age == 7 && request.InteractionType is not ("PictureSearch" or "TrueFalse" or "FollowAction" or "SentenceBuilder" or "EventOrdering") ||
-            age == 8 && request.InteractionType is not ("AlternateReading" or "InferenceQuestion" or "CauseEffect" or "SceneTitle" or "ThoughtBubble") ||
-            age is not (6 or 7 or 8)))
+        if (request.TargetAge is { } age &&
+            (!ListeningGenerationContract.AllowedTypes(request.AgeBand, age).Contains(request.InteractionType) ||
+             age == 6 && request.InteractionType == "Checkpoint" && request.CheckpointKind != "Literal"))
             throw new ArgumentException("Unsupported target age or interaction kind.");
         if (request.InteractionType is "CharacterLetter" or "WhoSaidIt" && request.TargetAge != 6)
             throw new ArgumentException("This interaction requires targetAge 6.");
         if (request.InteractionType is "AlternateReading" or "InferenceQuestion" or "CauseEffect" or "SceneTitle" or "ThoughtBubble" && request.TargetAge != 8)
             throw new ArgumentException("This interaction requires targetAge 8.");
+        if (request.InteractionType is "CharacterTrial" or "FindWrongDetail" or "RelationshipMap" or "StoryEditor" or "WhatIf" && request.TargetAge != 9)
+            throw new ArgumentException("This interaction requires targetAge 9.");
         var blockIds = request.Blocks.Select(b => b.BlockId).ToHashSet(StringComparer.Ordinal);
         if (request.OccupiedBlockIds.Any(id => !blockIds.Contains(id)) ||
             request.AllowedBlockIds.SelectMany(x => x).Any(id => !blockIds.Contains(id) || id == request.LastBlockId) ||
@@ -89,6 +88,11 @@ public sealed class GenerateListeningInteractionHandler(StoryContentGenerationEx
             "CauseEffect" => response with { CauseEffects = items.Deserialize<CauseEffectItemDto[]>(JsonDefaults.Options)! },
             "SceneTitle" => response with { SceneTitles = items.Deserialize<SceneTitleItemDto[]>(JsonDefaults.Options)! },
             "ThoughtBubble" => response with { ThoughtBubbles = items.Deserialize<ThoughtBubbleItemDto[]>(JsonDefaults.Options)! },
+            "CharacterTrial" => response with { CharacterTrials = items.Deserialize<CharacterTrialItemDto[]>(JsonDefaults.Options)! },
+            "FindWrongDetail" => response with { FindWrongDetails = items.Deserialize<FindWrongDetailItemDto[]>(JsonDefaults.Options)! },
+            "RelationshipMap" => response with { RelationshipMaps = items.Deserialize<RelationshipMapItemDto[]>(JsonDefaults.Options)! },
+            "StoryEditor" => response with { StoryEditors = items.Deserialize<StoryEditorItemDto[]>(JsonDefaults.Options)! },
+            "WhatIf" => response with { WhatIfs = items.Deserialize<WhatIfItemDto[]>(JsonDefaults.Options)! },
             "ReadAloud" => response with { ReadAloudPassages = items.Deserialize<ReadAloudItemDto[]>(JsonDefaults.Options)! },
             _ => throw new ArgumentException("Unsupported listening interaction type.")
         };
@@ -100,6 +104,7 @@ public sealed class GenerateListeningInteractionHandler(StoryContentGenerationEx
         var older = ageBand is "9-10" or "Age_9_10";
         if ((!younger && !older) || string.IsNullOrWhiteSpace(language) || language.Length > 16 ||
             (type == "RolePlay" && !younger) || (type == "FillBlank" && !older) ||
+            (type is "CharacterTrial" or "FindWrongDetail" or "RelationshipMap" or "StoryEditor" or "WhatIf" && !older) ||
             (type is "CharacterLetter" or "WhoSaidIt" or "Checkpoint:Age6" or "PicturePrediction:Age6" or
                 "PictureSearch" or "TrueFalse" or "FollowAction" or "SentenceBuilder" or "EventOrdering:Age7" or
                 "AlternateReading" or "InferenceQuestion" or "CauseEffect" or "SceneTitle" or "ThoughtBubble" && !younger))
@@ -109,6 +114,27 @@ public sealed class GenerateListeningInteractionHandler(StoryContentGenerationEx
 
 public static class ListeningGenerationContract
 {
+    private static readonly IReadOnlyDictionary<(string Band, int Age), IReadOnlySet<string>> TypesByAge =
+        new Dictionary<(string, int), IReadOnlySet<string>>
+        {
+            [("6-8", 6)] = new HashSet<string>(StringComparer.Ordinal) { "Checkpoint", "RolePlay", "CharacterLetter", "PicturePrediction", "WhoSaidIt" },
+            [("6-8", 7)] = new HashSet<string>(StringComparer.Ordinal) { "PictureSearch", "TrueFalse", "FollowAction", "SentenceBuilder", "EventOrdering" },
+            [("6-8", 8)] = new HashSet<string>(StringComparer.Ordinal) { "AlternateReading", "InferenceQuestion", "CauseEffect", "SceneTitle", "ThoughtBubble" },
+            [("9-10", 9)] = new HashSet<string>(StringComparer.Ordinal)
+                { "CharacterTrial", "FindWrongDetail", "RelationshipMap", "StoryEditor", "WhatIf" }
+        };
+
+    public static IReadOnlySet<string> AllowedTypes(string ageBand, int age)
+    {
+        var band = ageBand switch
+        {
+            "Age_6_8" => "6-8",
+            "Age_9_10" => "9-10",
+            _ => ageBand
+        };
+        return TypesByAge.TryGetValue((band, age), out var types) ? types : new HashSet<string>(StringComparer.Ordinal);
+    }
+
     public static PromptType PromptTypeFor(string type, int? targetAge = null) => (targetAge == 6 && type is "Checkpoint" or "PicturePrediction" ? type + ":Age6" :
         targetAge == 7 && type == "EventOrdering" ? "EventOrdering:Age7" : type) switch
     {
@@ -123,6 +149,11 @@ public static class ListeningGenerationContract
         "AlternateReading" => PromptType.ListeningAlternateReading, "InferenceQuestion" => PromptType.ListeningInferenceQuestion,
         "CauseEffect" => PromptType.ListeningCauseEffect, "SceneTitle" => PromptType.ListeningSceneTitle,
         "ThoughtBubble" => PromptType.ListeningThoughtBubble,
+        "CharacterTrial" => PromptType.ListeningCharacterTrial,
+        "FindWrongDetail" => PromptType.ListeningFindWrongDetail,
+        "RelationshipMap" => PromptType.ListeningRelationshipMap,
+        "StoryEditor" => PromptType.ListeningStoryEditor,
+        "WhatIf" => PromptType.ListeningWhatIf,
         _ => throw new ArgumentException("Unsupported listening interaction type.")
     };
 
@@ -144,6 +175,11 @@ public static class ListeningGenerationContract
             "CauseEffect" => "Pick exactly three cause-and-effect pairs from the story already heard. Each pair has an effect (what happened) and a cause (why), each text at most 10 whitespace-separated units with a sourceQuote copied verbatim from the story. The cause text must read naturally after 'Vì' and the effect after 'nên'. The three pairs must be about different events; effect and cause of a pair use different quotes. matchFeedback praises the child's connections without grading words.",
             "SceneTitle" => "Write exactly three short titles (at most 8 whitespace-separated units) for the paragraph just heard: one isCorrect title covers the whole paragraph, the other two each mention only one true detail of it. Every title has feedback: for the correct one say why it covers the whole scene, for the others say that title tells only about one detail. explanation is one or two friendly sentences saying why the correct title fits the whole scene. matchFeedback praises the child without grading words.",
             "ThoughtBubble" => "Pick one character named in the story and one moment already heard. characterName exactly as in the story; question is 'X đang nghĩ gì?' naming the character; sourceQuote is a verbatim sentence of that moment. Write exactly three first-person thoughts (at most 12 whitespace-separated units), one isCorrect that truly fits the moment, each with a different emotion chosen only from: vui, buồn, sợ, ngạc nhiên, giận, lo lắng, tự hào, háo hức. matchFeedback praises the child without grading words.",
+            "CharacterTrial" => "Choose a character decision already heard. situation is one or two grounded sentences, decisionQuote verbatim. Provide three or four distinct reasons; each has positive and limitation, both child-safe and neutral. Do not grade a verdict or reason.",
+            "FindWrongDetail" => "Copy originalQuote as two to four consecutive sentences already heard. Retold must differ by exactly ONE detail: replacing wrongDetail once with the correct choice text must reproduce originalQuote exactly. Give three distinct choices, exactly one isCorrect, an explanation and encouraging matchFeedback.",
+            "RelationshipMap" => "Use three or four characters named before afterBlockId and four or five unique cards only from: giúp đỡ, cản trở, bảo vệ, tin tưởng, hiểu lầm. Give exactly three directed relations by zero-based character indices, accepted card indices, verbatim evidence containing both names, and an explanation. Use hiểu lầm only when evidence explicitly says nhầm, hiểu lầm or tưởng.",
+            "StoryEditor" => "Copy a passage of five or six consecutive sentences already heard. Return each sentence verbatim in order; mark two or three isMain. For main sentences give a child-safe whyImportant; for secondary sentences use an empty string. The child may keep any set with all main ideas and no more than three sentences.",
+            "WhatIf" => "Choose a decisionQuote already heard. Ask a neutral question beginning Nếu, containing thì and ending ?. Give exactly three distinct possible outcomes with a grounded because explanation. Do not grade a chosen outcome.",
             "EventOrdering:Age7" => "Choose exactly three principal events from distinct blocks through afterBlockId. Set afterBlockId in the allowed zone. Event text at most 10 words; sourceQuote verbatim. Include matchFeedback and retryFeedback.",
             "Checkpoint" => "Use Prediction, Emotion or Opinion kinds; each kind at most twice and include Emotion or Opinion. Emotion has four options, other kinds two or three. Prediction/Emotion have exactly one isMatch, Opinion none. Explanation is reviewer-only and may refer to later events; feedback must not. Emotion/Opinion options must be understandable alone. Include otherFeedback for future voice answers.",
             "RolePlay" => "Choose verbatim dialogue from a supplied dialogueBlockId in its allowed zone. Name the character as in the story. lineQuote excludes quotation marks/narration and is at most 12 whitespace-separated units. Praise only the attempt, never grade speech.",
@@ -170,7 +206,7 @@ public static class ListeningGenerationContract
     public static JsonElement Schema(string type, int count, int? targetAge = null)
     {
         _ = PromptTypeFor(type);
-        JsonObject S() => new() { ["type"] = "string", ["minLength"] = 1 };
+        JsonObject S(bool required = true) => new() { ["type"] = "string", ["minLength"] = required ? 1 : 0 };
         JsonObject B() => new() { ["type"] = "boolean" };
         JsonObject A(JsonNode item, int min, int max) => new() { ["type"] = "array", ["minItems"] = min, ["maxItems"] = max, ["items"] = item };
         JsonObject O(params (string Key, JsonNode Schema)[] fields)
@@ -217,6 +253,23 @@ public static class ListeningGenerationContract
                 ("bubbles", A(O(("text", S()), ("isCorrect", B()), ("emotion", new JsonObject { ["type"] = "string",
                     ["enum"] = new JsonArray(ListeningAgeCatalog.ThoughtEmotions.Select(e => (JsonNode)JsonValue.Create(e)!).ToArray()) })), 3, 3)),
                 ("matchFeedback", S())),
+            "CharacterTrial" => O(("afterBlockId", S()), ("situation", S()), ("decisionQuote", S()),
+                ("reasons", A(O(("text", S()), ("positive", S()), ("limitation", S())), 3, 4)), ("matchFeedback", S())),
+            "FindWrongDetail" => O(("afterBlockId", S()), ("originalQuote", S()), ("retold", S()),
+                ("wrongDetail", S()), ("choices", A(O(("text", S()), ("isCorrect", B())), 3, 3)),
+                ("explanation", S()), ("matchFeedback", S())),
+            "RelationshipMap" => O(("afterBlockId", S()),
+                ("characters", A(O(("name", S()), ("imageDescription", S())), 3, 4)),
+                ("cards", A(new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("giúp đỡ", "cản trở", "bảo vệ", "tin tưởng", "hiểu lầm") }, 4, 5)),
+                ("relations", A(O(("from", new JsonObject { ["type"] = "integer", ["minimum"] = 0, ["maximum"] = 3 }),
+                    ("to", new JsonObject { ["type"] = "integer", ["minimum"] = 0, ["maximum"] = 3 }),
+                    ("accepted", A(new JsonObject { ["type"] = "integer", ["minimum"] = 0, ["maximum"] = 4 }, 1, 5)),
+                    ("evidence", S()), ("explanation", S())), 3, 3)), ("matchFeedback", S())),
+            "StoryEditor" => O(("afterBlockId", S()), ("passage", S()),
+                ("sentences", A(O(("text", S()), ("isMain", B()), ("whyImportant", S(false))), 5, 6)),
+                ("matchFeedback", S())),
+            "WhatIf" => O(("afterBlockId", S()), ("decisionQuote", S()), ("question", S()),
+                ("outcomes", A(O(("text", S()), ("because", S())), 3, 3)), ("matchFeedback", S())),
             "EventOrdering:Age7" => O(("afterBlockId", S()), ("events", A(O(("order", new JsonObject { ["type"] = "integer", ["minimum"] = 1, ["maximum"] = 3 }),
                 ("blockId", S()), ("text", S()), ("sourceQuote", S())), 3, 3)), ("matchFeedback", S()), ("retryFeedback", S())),
             "Checkpoint" => O(("kind", new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("Prediction", "Emotion", "Opinion") }),
@@ -257,7 +310,9 @@ public static class ListeningGenerationContract
                 foreach (var element in value.EnumerateArray()) Validate(element, schema.GetProperty("items"));
                 break;
             case "string":
-                if (value.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(value.GetString())) { Invalid(); return; }
+                if (value.ValueKind != JsonValueKind.String ||
+                    (schema.TryGetProperty("minLength", out var minLength) && minLength.GetInt32() > 0 &&
+                     string.IsNullOrWhiteSpace(value.GetString()))) { Invalid(); return; }
                 if (schema.TryGetProperty("enum", out var choices) && !choices.EnumerateArray().Any(c => c.GetString() == value.GetString())) Invalid();
                 break;
             case "boolean": if (value.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) Invalid(); break;

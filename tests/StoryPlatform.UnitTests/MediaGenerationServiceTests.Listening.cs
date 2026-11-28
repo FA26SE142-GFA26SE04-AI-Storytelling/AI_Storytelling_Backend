@@ -286,7 +286,7 @@ public sealed partial class MediaGenerationServiceTests
     }
 
     [Fact]
-    public async Task Readiness_BandWithoutBuiltAges_IgnoresLegacyRows()
+    public async Task Readiness_Age9RequiresItsOwnSet_AndIgnoresLegacyRows()
     {
         var uow = Seed();
         Assert.True((await Create(uow).RunPackageAsync()).Success);
@@ -294,8 +294,8 @@ public sealed partial class MediaGenerationServiceTests
         uow.Items<Story>().Single().AgeBand = "9-10";
         uow.Seed(new ListeningInteraction { Id = 99, StoryVersionId = 10, Type = ListeningInteractionType.Checkpoint, Prompt = "Legacy" });
         var result = await new MediaReadinessService(uow).CheckAsync(10, null);
-        Assert.True(result.IsReady);
-        Assert.Empty(result.MissingListeningMedia);
+        Assert.False(result.IsReady);
+        Assert.Equal(["age:9:listening-set"], result.MissingListeningMedia);
     }
 
     [Fact]

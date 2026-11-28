@@ -12,6 +12,7 @@ using StoryPlatform.AI.Api.Middleware;
 using StoryPlatform.AI.Application;
 using StoryPlatform.AI.Application.Abstractions.LLM;
 using StoryPlatform.AI.Application.Abstractions.Prompting;
+using StoryPlatform.AI.Application.ContentGeneration;
 using StoryPlatform.AI.Domain.Generation;
 using StoryPlatform.AI.Infrastructure.PromptCatalog;
 using StoryPlatform.Application.Abstractions.AI;
@@ -24,6 +25,51 @@ namespace StoryPlatform.AI.IntegrationTests;
 
 public sealed class ListeningHttpContractTests
 {
+    [Fact]
+    public void Age9_band_has_a_separate_type_catalog()
+    {
+        Assert.Equal(["CharacterTrial", "FindWrongDetail", "RelationshipMap", "StoryEditor", "WhatIf"],
+            ListeningGenerationContract.AllowedTypes("9-10", 9).Order(StringComparer.Ordinal));
+        Assert.Equal(5, ListeningGenerationContract.AllowedTypes("Age_9_10", 9).Count);
+        Assert.Empty(ListeningGenerationContract.AllowedTypes("9-10", 10));
+        Assert.Empty(ListeningGenerationContract.AllowedTypes("6-8", 9));
+        Assert.Contains("Checkpoint", ListeningGenerationContract.AllowedTypes("Age_6_8", 6));
+        Assert.Contains("PictureSearch", ListeningGenerationContract.AllowedTypes("6-8", 7));
+        Assert.Contains("ThoughtBubble", ListeningGenerationContract.AllowedTypes("6-8", 8));
+    }
+
+    private static string Age9Item(string type) => type switch
+    {
+        "CharacterTrial" => """{"afterBlockId":"P1","situation":"Mai ở lại giúp bạn.","decisionQuote":"Mai ở lại.","reasons":[{"text":"Giúp bạn","positive":"Bạn vui.","limitation":"Mai mệt."},{"text":"Giữ hoa","positive":"Hoa an toàn.","limitation":"Mai ướt."},{"text":"Cùng làm","positive":"Hai bạn đoàn kết.","limitation":"Mất thời gian."}],"matchFeedback":"Cảm ơn con."}""",
+        "FindWrongDetail" => """{"afterBlockId":"P1","originalQuote":"Mai cầm bình nước. Nam gieo hạt.","retold":"Mai cầm chiếc ô. Nam gieo hạt.","wrongDetail":"chiếc ô","choices":[{"text":"bình nước","isCorrect":true},{"text":"cái xô","isCorrect":false},{"text":"chiếc ô","isCorrect":false}],"explanation":"Mai cầm bình nước.","matchFeedback":"Con tìm đúng rồi!"}""",
+        "RelationshipMap" => """{"afterBlockId":"P1","characters":[{"name":"Mai","imageDescription":"Mai trong vườn"},{"name":"Nam","imageDescription":"Nam trong vườn"},{"name":"An","imageDescription":"An trong vườn"}],"cards":["giúp đỡ","bảo vệ","tin tưởng","cản trở"],"relations":[{"from":0,"to":1,"accepted":[0],"evidence":"Mai giúp Nam.","explanation":"Mai giúp Nam."},{"from":1,"to":2,"accepted":[1],"evidence":"Nam bảo vệ An.","explanation":"Nam bảo vệ An."},{"from":2,"to":0,"accepted":[2],"evidence":"An tin Mai.","explanation":"An tin Mai."}],"matchFeedback":"Con nhìn đúng rồi!"}""",
+        "StoryEditor" => """{"afterBlockId":"P1","passage":"Một. Hai. Ba. Bốn. Năm.","sentences":[{"text":"Một.","isMain":false,"whyImportant":""},{"text":"Hai.","isMain":true,"whyImportant":"Ý chính."},{"text":"Ba.","isMain":true,"whyImportant":"Ý chính."},{"text":"Bốn.","isMain":false,"whyImportant":""},{"text":"Năm.","isMain":true,"whyImportant":"Kết luận."}],"matchFeedback":"Con giữ đúng ý!"}""",
+        _ => """{"afterBlockId":"P1","decisionQuote":"Mai ở lại.","question":"Nếu Mai đi thì điều gì có thể xảy ra?","outcomes":[{"text":"Hoa ướt","because":"Mưa xuống."},{"text":"Nam che hoa","because":"Nam có ô."},{"text":"An giúp Mai","because":"An ở gần."}],"matchFeedback":"Cảm ơn con."}"""
+    };
+
+    [Theory]
+    [InlineData("CharacterTrial")]
+    [InlineData("FindWrongDetail")]
+    [InlineData("RelationshipMap")]
+    [InlineData("StoryEditor")]
+    [InlineData("WhatIf")]
+    public async Task Age9_contract_accepts_each_planned_type(string type)
+    {
+        var model = new Model("{\"items\":[" + Age9Item(type) + "]}");
+        using var server = Server(model);
+        var response = await Client(server).GenerateListeningInteractionAsync(
+            Request(type, "9-10") with { TargetAge = 9, AllowedBlockIds = [["P1"]] });
+        Assert.Equal(1, model.Calls);
+        Assert.Equal(1, type switch
+        {
+            "CharacterTrial" => response.CharacterTrials.Count,
+            "FindWrongDetail" => response.FindWrongDetails.Count,
+            "RelationshipMap" => response.RelationshipMaps.Count,
+            "StoryEditor" => response.StoryEditors.Count,
+            _ => response.WhatIfs.Count
+        });
+    }
+
     [Theory]
     [InlineData("PictureSearch")]
     [InlineData("TrueFalse")]

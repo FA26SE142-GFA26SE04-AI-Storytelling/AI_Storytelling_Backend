@@ -376,6 +376,9 @@
   "ChildReadingController.ReadAloudPractice#POST sessions/{sessionId:int}/read-aloud-practice/{interactionId:int}": [
     "child"
   ],
+  "ChildReadingController.SaveFreeAnswer#POST sessions/{sessionId:int}/free-answer/{interactionId:int}": [
+    "child"
+  ],
   "ChildReadingController.SaveListeningSteps#PATCH sessions/{sessionId:int}/listening/{interactionId:int}/steps": [
     "child"
   ],

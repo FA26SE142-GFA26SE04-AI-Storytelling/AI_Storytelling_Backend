@@ -106,3 +106,11 @@ INSERT INTO stories (
 VALUES
     (901, 'Chuyến đi bảo tàng', 'Mẫu tương tác điền từ của bé 6, đã duyệt và có media', E'Cuối tuần, bố đưa Phúc đến bảo tàng thiên nhiên.\n\nPhúc đứng ngắm bộ xương khủng long rất lớn. Bố kể khủng long sống cách đây hàng triệu năm.\n\nỞ phòng bên, Phúc thấy một hóa thạch hình vỏ ốc. Cô hướng dẫn viên nói hóa thạch là dấu vết của sinh vật xưa còn lưu trong đá.\n\nTrên đường về, Phúc hứa sẽ đọc thêm sách về khủng long cùng bố.', NULL, 'Khoa học', 'Ham tìm hiểu thế giới xung quanh', 'vi', '9-10', 4, 'level_4', 'Ready', 'Ai', true, NOW() - INTERVAL '2 days', NULL, 4, 6, NOW() - INTERVAL '3 days', false, 'Parent', 'Learning', 1, 1, md5('seed-parent-story-901'), 'reading')
 ON CONFLICT ("Id") DO NOTHING;
+
+-- Truyện 902: sáu đoạn cho năm tương tác riêng của bé Bình (tuổi 9); chờ duyệt nội dung và media.
+INSERT INTO stories (
+    "Id", "Title", "Description", "Content", "CoverImageUrl", "Genre", "MoralLesson", "Language", "AgeBand", "ReadingLevel", "VocabularyLevel", "Status", "Source", "IsPublished", "ChildVisibleAt", "ArchivedReason", "AuthorUserId", "ChildProfileId", "CreatedAt", "IsDeleted", "Scope", "OutputMode", "AudienceRevision", "AuthoringLastVersionNo", "AuthoringRevisionToken", "ExperienceMode"
+)
+VALUES
+    (902, 'Ba bạn chăm vườn', 'Truyện mẫu cho bộ tương tác nghe tuổi 9, chờ người lớn duyệt', E'Mai, Nam và An cùng chăm sóc khu vườn. Mai đặt bình nước cạnh luống hoa. Nam mang hạt giống tới.\n\nNam giúp Mai gieo hạt. An che nắng cho Nam bằng chiếc ô. Mai tin tưởng An và nhờ bạn trông luống hoa.\n\nBuổi sáng, ba bạn ra vườn. Mai tưới luống hoa. Nam nhặt lá khô. An đặt ô dưới gốc cây. Một con bướm bay qua. Cả ba cùng chăm sóc khu vườn.\n\nTrời đổ mưa, Nam muốn mang bình nước vào nhà. Mai quyết định ở lại che luống hoa. An đưa ô cho Mai.\n\nMai thấy Nam để quên hạt giống. Mai quyết định quay lại lấy giúp bạn. Nam cảm ơn Mai.\n\nSau cơn mưa, những hạt giống vẫn khô ráo. Ba bạn vui vì đã cùng nhau giữ khu vườn.', NULL, 'Tình bạn', 'Cùng nhau chăm sóc và giúp đỡ bạn bè', 'vi', '9-10', 4, 'level_4', 'ContentReview', 'Ai', false, NULL, NULL, 2, 2, NOW() - INTERVAL '1 day', false, 'Parent', 'Learning', 1, 1, md5('seed-parent-story-902'), 'reading')
+ON CONFLICT ("Id") DO NOTHING;

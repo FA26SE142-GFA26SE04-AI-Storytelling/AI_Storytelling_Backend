@@ -28,6 +28,7 @@ public sealed record ListeningOptionDraft
 {
     public string Text { get; init; } = string.Empty;
     public string? Feedback { get; init; }
+    public string? Counterpoint { get; init; }
     public bool IsMatch { get; init; }
     public int? CorrectOrder { get; init; }
     /// <summary>EventOrdering: đoạn chứa sự kiện.</summary>
@@ -58,6 +59,7 @@ public sealed record ListeningInteractionDraft
     public string? SourceQuote { get; init; }
     public string? TargetLabel { get; init; }
     public string? AcceptedOrdersJson { get; init; }
+    public string? RelationsJson { get; init; }
     public int? SourceStart { get; init; }
     public int? SourceEnd { get; init; }
     /// <summary>ReadAloud: block containing the passage, used to resolve its offsets.</summary>

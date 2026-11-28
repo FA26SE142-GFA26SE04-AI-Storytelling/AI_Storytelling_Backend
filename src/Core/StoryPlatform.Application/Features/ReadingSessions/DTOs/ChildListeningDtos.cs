@@ -15,11 +15,31 @@ public class SubmitListeningAttemptRequestDto
     public int? TargetOptionId { get; set; }
     /// <summary>AlternateReading: tên nhân vật bé chọn đóng.</summary>
     public string? Speaker { get; set; }
+    public string? Verdict { get; set; }
+    public int? ReasonOptionId { get; set; }
+    public string? FreeText { get; set; }
+    public bool FreeVoice { get; set; }
+    public int? SentenceIndex { get; set; }
+    public List<int>? KeptOptionIds { get; set; }
+    public List<PlacementDto>? Placements { get; set; }
 }
 
 /// <summary>Phản hồi cho trẻ. Không có chữ "sai", không có EXP.</summary>
 public class ListeningAttemptResultDto
 {
+    public string? Positive { get; set; }
+    public string? Limitation { get; set; }
+    public string? PositiveAudioUrl { get; set; }
+    public string? LimitationAudioUrl { get; set; }
+    public bool? SentenceCorrect { get; set; }
+    public int? CorrectSentenceIndex { get; set; }
+    public ClueSpanDto? SourceSpan { get; set; }
+    public bool? TooLong { get; set; }
+    public List<int>? MissingMainOptionIds { get; set; }
+    public List<int>? ModelKeptOptionIds { get; set; }
+    public List<string>? ModelSentenceAudioUrls { get; set; }
+    public List<EditorExplanationDto>? Explanations { get; set; }
+    public List<EdgeResultDto>? EdgeResults { get; set; }
     public int? OptionId { get; set; }
     public bool Completed { get; set; }
     public HotspotDto? RevealHotspot { get; set; }
@@ -61,6 +81,11 @@ public class ListeningAttemptResultDto
     /// <summary>Khi Revealed: Id các thẻ theo thứ tự đúng.</summary>
     public List<int>? CorrectOrderOptionIds { get; set; }
 }
+
+public sealed record PlacementDto(int EdgeIndex, int CardOptionId);
+public sealed record EdgeResultDto(int EdgeIndex, bool Matched, string? Explanation,
+    string? ExplanationAudioUrl, int? AcceptedCardOptionId);
+public sealed record EditorExplanationDto(int OptionId, string Text, string? AudioUrl);
 
 public class ClueSpanDto
 {

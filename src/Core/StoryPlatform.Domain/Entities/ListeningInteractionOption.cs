@@ -15,6 +15,7 @@ public class ListeningInteractionOption : BaseEntity
     public string? HotspotJson { get; set; }
     public string Text { get; set; } = string.Empty;
     public string? Feedback { get; set; }
+    public string? Counterpoint { get; set; }
     public bool IsMatch { get; set; }
     public int? CorrectOrder { get; set; }
     public string? SourceQuote { get; set; }

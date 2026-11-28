@@ -12,6 +12,48 @@ namespace StoryPlatform.UnitTests.Features.ReadingSessions;
 public class ParentReadingFeedbackServiceTests
 {
     [Fact]
+    public async Task ListAsync_Age9ShowsVerdictFreeAnswerRelationsAndKeptSentences()
+    {
+        var session = Done(DateTime.UtcNow);
+        _h.ListeningInteractions.Add(new ListeningInteraction { Id = 91, StoryVersionId = ReadingHarness.Version,
+            TargetAge = 9, Type = ListeningInteractionType.CharacterTrial });
+        _h.ListeningInteractions.Add(new ListeningInteraction { Id = 92, StoryVersionId = ReadingHarness.Version,
+            TargetAge = 9, Type = ListeningInteractionType.RelationshipMap,
+            RelationsJson = """{"edges":[{"from":0,"to":1,"accepted":[0],"evidence":"A giúp B.","explanation":"A giúp B."},{"from":1,"to":2,"accepted":[1],"evidence":"B giúp C.","explanation":"B giúp C."},{"from":2,"to":0,"accepted":[2],"evidence":"C giúp A.","explanation":"C giúp A."}]}""" });
+        _h.ListeningInteractions.Add(new ListeningInteraction { Id = 93, StoryVersionId = ReadingHarness.Version,
+            TargetAge = 9, Type = ListeningInteractionType.StoryEditor });
+        _h.ListeningOptions.Add(new ListeningInteractionOption { Id = 911, ListeningInteractionId = 91,
+            Text = "Mai muốn giúp bạn" });
+        _h.ListeningOptions.Add(new ListeningInteractionOption { Id = 921, ListeningInteractionId = 92,
+            SortOrder = 1, Role = ListeningOptionRole.Card, Text = "giúp đỡ" });
+        _h.ListeningOptions.Add(new ListeningInteractionOption { Id = 922, ListeningInteractionId = 92,
+            SortOrder = 2, Role = ListeningOptionRole.Card, Text = "bảo vệ" });
+        _h.ListeningOptions.Add(new ListeningInteractionOption { Id = 923, ListeningInteractionId = 92,
+            SortOrder = 3, Role = ListeningOptionRole.Card, Text = "tin tưởng" });
+        _h.ListeningOptions.Add(new ListeningInteractionOption { Id = 931, ListeningInteractionId = 93,
+            Text = "Mai tưới hoa." });
+        _h.ListeningAttempts.Add(new ListeningInteractionAttempt { Id = 1, ReadingSessionId = session.Id,
+            ListeningInteractionId = 91, SelectedOptionId = 911,
+            AnswerText = """{"verdict":"reasonable","freeText":"Con đồng ý."}""" });
+        _h.ListeningAttempts.Add(new ListeningInteractionAttempt { Id = 2, ReadingSessionId = session.Id,
+            ListeningInteractionId = 92,
+            AnswerText = """[{"EdgeIndex":0,"CardOptionId":921}]""" });
+        _h.ListeningAttempts.Add(new ListeningInteractionAttempt { Id = 3, ReadingSessionId = session.Id,
+            ListeningInteractionId = 93, OrderedOptionIdsJson = "[931]" });
+        _h.ReadAloudRecordings.Add(new ReadAloudRecording { Id = 1, ReadingSessionId = session.Id,
+            ListeningInteractionId = 91, TotalCount = 0, AudioStoragePath = "recording.webm" });
+
+        var items = Assert.Single((await List()).Items).ListeningInteractions;
+        var trial = Assert.Single(items, item => item.InteractionId == 91);
+        Assert.Equal("reasonable", trial.Verdict);
+        Assert.Equal("Mai muốn giúp bạn", trial.ReasonText);
+        Assert.Equal("Con đồng ý.", trial.FreeText);
+        Assert.True(trial.HasFreeVoice);
+        Assert.True(Assert.Single(Assert.Single(items, item => item.InteractionId == 92).Placements).Matched);
+        Assert.Equal(["Mai tưới hoa."], Assert.Single(items, item => item.InteractionId == 93).KeptSentences);
+    }
+
+    [Fact]
     public async Task ListAsync_Age6Listening_ShowsChoicesStepsAndWordStatuses()
     {
         var session = Done(DateTime.UtcNow);

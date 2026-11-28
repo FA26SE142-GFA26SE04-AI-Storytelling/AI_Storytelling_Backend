@@ -38,9 +38,10 @@ public class ChildReadingControllerTests
     private readonly Mock<IChildNotebookService> _notebook = new(MockBehavior.Strict);
     private readonly Mock<IChildReadAloudService> _readAloud = new(MockBehavior.Strict);
     private readonly Mock<IChildListeningService> _listening = new(MockBehavior.Strict);
+    private readonly Mock<IChildFreeAnswerService> _freeAnswer = new(MockBehavior.Strict);
 
     private ChildReadingController Controller(params Claim[] claims) =>
-        new(_browse.Object, _reading.Object, _notebook.Object, _readAloud.Object, _listening.Object)
+        new(_browse.Object, _reading.Object, _notebook.Object, _readAloud.Object, _listening.Object, _freeAnswer.Object)
     {
         ControllerContext = new ControllerContext
         {
@@ -65,7 +66,7 @@ public class ChildReadingControllerTests
             .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Select(method => method.Name).OrderBy(name => name).ToArray();
 
-        Assert.Equal(new[] { "Complete", "GetContent", "GetDefinition", "GetSignal", "LogEvent", "ReadAloud", "ReadAloudPractice", "SaveListeningSteps", "SaveProgress", "SearchStories", "SetBookmark", "SetFavorite", "SetFeeling", "SetListenOnly", "Start", "SubmitListeningAttempt" }, methods);
+        Assert.Equal(new[] { "Complete", "GetContent", "GetDefinition", "GetSignal", "LogEvent", "ReadAloud", "ReadAloudPractice", "SaveFreeAnswer", "SaveListeningSteps", "SaveProgress", "SearchStories", "SetBookmark", "SetFavorite", "SetFeeling", "SetListenOnly", "Start", "SubmitListeningAttempt" }, methods);
     }
 
     [Fact]

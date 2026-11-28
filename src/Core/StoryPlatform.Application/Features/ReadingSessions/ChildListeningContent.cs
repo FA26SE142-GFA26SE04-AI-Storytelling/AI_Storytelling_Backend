@@ -48,6 +48,9 @@ public static class ChildListeningContent
             }
             if (interaction.Type == ListeningInteractionType.ThoughtBubble &&
                 StoryPicture(interaction.SourceStart, scenes, beats, assets, true) is null) continue;
+            if (interaction.Type == ListeningInteractionType.StoryEditor &&
+                (interaction.SourceQuote is null || !own.Select(option => option.Text).SequenceEqual(
+                    SentenceSplitter.Split(interaction.SourceQuote)))) continue;
             // Manh mối phải còn nằm trong đoạn (người duyệt có thể đã sửa đoạn); nếu không thì ẩn thay vì tô sai chỗ.
             if (interaction.Type == ListeningInteractionType.InferenceQuestion && (string.IsNullOrWhiteSpace(interaction.SourceQuote) ||
                 ClueSpans.Find(interaction.SourceQuote, own.Where(x => x.Role == ListeningOptionRole.Clue).Select(x => x.Text).ToArray()) is null)) continue;
@@ -105,7 +108,8 @@ public static class ChildListeningContent
             ListeningInteractionType.PictureSearch or ListeningInteractionType.TrueFalse or
             ListeningInteractionType.FollowAction or ListeningInteractionType.SentenceBuilder or
             ListeningInteractionType.InferenceQuestion or ListeningInteractionType.SceneTitle or
-            ListeningInteractionType.ThoughtBubble ||
+            ListeningInteractionType.ThoughtBubble or ListeningInteractionType.FindWrongDetail or
+            ListeningInteractionType.RelationshipMap or ListeningInteractionType.StoryEditor ||
         interaction.Type == ListeningInteractionType.Checkpoint && interaction.Kind == CheckpointKind.Literal;
 
     public static string? Mask(string? sentence, string? hiddenWord)
@@ -125,7 +129,8 @@ public static class ChildListeningContent
             TargetAge = interaction.TargetAge,
             // Nối nguyên nhân: mỗi thẻ kết quả được nối tối đa 2 lần.
             MaxChoices = AllowsRetry(interaction) || interaction.Type == ListeningInteractionType.CauseEffect ? MaxChoiceAttempts : 1,
-            Graded = !(interaction.Type == ListeningInteractionType.PicturePrediction && interaction.TargetAge == 6),
+            Graded = interaction.Type is not (ListeningInteractionType.CharacterTrial or ListeningInteractionType.WhatIf) &&
+                !(interaction.Type == ListeningInteractionType.PicturePrediction && interaction.TargetAge == 6),
             MaxVoiceRetries = interaction.TargetAge == 6 && interaction.Type is ListeningInteractionType.RolePlay or ListeningInteractionType.CharacterLetter
                 || interaction.TargetAge == 7 && interaction.Type == ListeningInteractionType.SentenceBuilder
                 || interaction.TargetAge == 8 && interaction.Type == ListeningInteractionType.AlternateReading
@@ -148,13 +153,65 @@ public static class ChildListeningContent
                      ListeningAudioParts.Match, ListeningAudioParts.NoMatch, ListeningAudioParts.Hint, ListeningAudioParts.Text,
                      ListeningAudioParts.Name, ListeningAudioParts.RetryLook, ListeningAudioParts.RetryArrow,
                      ListeningAudioParts.RetryLookClose, ListeningAudioParts.RetryHear, ListeningAudioParts.RetryTry,
-                     ListeningAudioParts.Unclear, ListeningAudioParts.Explanation })
+                     ListeningAudioParts.Unclear, ListeningAudioParts.Explanation, ListeningAudioParts.Thanks })
         {
             var audio = ListeningMediaRequirements.FindAudio(assets, interaction.Id, null, key);
             if (audio?.Url is { } url) dto.AudioUrls[key] = url;
             if (ListeningAudioParts.HighlightKeys.Contains(key) && !string.IsNullOrWhiteSpace(audio?.WordTimings))
                 dto.AudioWordTimings[key] = audio.WordTimings;
         }
+
+        if (interaction.Type is ListeningInteractionType.CharacterTrial or ListeningInteractionType.WhatIf)
+        {
+            dto.AllowsFreeAnswer = true;
+            dto.FreeAnswerMaxLength = 100;
+        }
+        if (interaction.Type == ListeningInteractionType.CharacterTrial)
+        {
+            dto.Situation = interaction.Prompt;
+            dto.Verdicts = [new("reasonable", "Hợp lý"), new("notYet", "Chưa hợp lý"),
+                new("couldBeBetter", "Có thể làm tốt hơn")];
+            dto.Reasons = ShuffleItems(sessionId, interaction.Id, own).Select(Age9Card).ToArray();
+            return dto;
+        }
+        if (interaction.Type == ListeningInteractionType.FindWrongDetail)
+        {
+            dto.RetoldSentences = SentenceSplitter.Split(interaction.Prompt ?? string.Empty)
+                .Select((sentence, index) => new ReadingRetoldSentenceDto(index, sentence)).ToArray();
+            dto.Options = ShuffleItems(sessionId, interaction.Id, own).Select(Age9Card).ToList();
+            return dto;
+        }
+        if (interaction.Type == ListeningInteractionType.RelationshipMap)
+        {
+            var nodes = own.Where(option => option.Role == ListeningOptionRole.Node).ToArray();
+            var relationCards = own.Where(option => option.Role == ListeningOptionRole.Card).ToArray();
+            dto.Nodes = nodes.Select(option => new ReadingMapNodeDto(option.Id, option.Text,
+                ListeningMediaRequirements.FindImage(assets, option.Id)?.Url,
+                ListeningMediaRequirements.FindAudio(assets, interaction.Id, option.Id, ListeningAudioParts.Text)?.Url)).ToArray();
+            dto.Edges = RelationMap.TryParse(interaction.RelationsJson)!.Edges.Select((edge, index) =>
+                new ReadingMapEdgeDto(index, nodes[edge.From].Id, nodes[edge.To].Id)).ToArray();
+            dto.Cards = ShuffleItems(sessionId, interaction.Id, relationCards).Select(Age9Card).ToArray();
+            return dto;
+        }
+        if (interaction.Type == ListeningInteractionType.StoryEditor)
+        {
+            dto.Passage = interaction.SourceQuote;
+            dto.KeepLimit = 3;
+            dto.EditSentences = own.Select(Age9Card).ToArray();
+            return dto;
+        }
+        if (interaction.Type == ListeningInteractionType.WhatIf)
+        {
+            dto.Question = interaction.Prompt;
+            dto.Outcomes = ShuffleItems(sessionId, interaction.Id, own).Select(Age9Card).ToArray();
+            return dto;
+        }
+
+        ReadingInteractionOptionDto Age9Card(ListeningInteractionOption option) => new()
+        {
+            Id = option.Id, Text = option.Text,
+            AudioUrl = ListeningMediaRequirements.FindAudio(assets, interaction.Id, option.Id, ListeningAudioParts.Text)?.Url
+        };
 
         if (interaction.Type == ListeningInteractionType.PictureSearch)
         {

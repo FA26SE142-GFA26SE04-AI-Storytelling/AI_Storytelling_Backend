@@ -197,6 +197,7 @@ public sealed record ListeningInteractionReviewDto
     public HotspotBox? Hotspot { get; init; }
     public bool HasValidHotspot { get; init; }
     public IReadOnlyList<IReadOnlyList<int>>? AcceptedOrders { get; init; }
+    public IReadOnlyList<RelationEdge>? Relations { get; init; }
     public string? SourceQuote { get; init; }
     public string? CharacterName { get; init; }
     public string? HiddenWord { get; init; }
@@ -218,6 +219,7 @@ public sealed record ListeningOptionReviewDto
     public int SortOrder { get; init; }
     public string Text { get; init; } = string.Empty;
     public string? Feedback { get; init; }
+    public string? Counterpoint { get; init; }
     public bool IsMatch { get; init; }
     public int? CorrectOrder { get; init; }
     public string? BlockId { get; init; }
@@ -248,6 +250,8 @@ public sealed record UpdateListeningInteractionRequestDto
     public string? Prompt { get; init; }
     public string? TargetLabel { get; init; }
     public IReadOnlyList<IReadOnlyList<int>>? AcceptedOrders { get; init; }
+    public IReadOnlyList<RelationEdge>? Relations { get; init; }
+    public string? HiddenWord { get; init; }
     public string? Hint { get; init; }
     public string? Explanation { get; init; }
     public string? MatchFeedback { get; init; }
@@ -265,6 +269,7 @@ public sealed record UpdateListeningOptionDto
     public bool? IsMatch { get; init; }
     public string? Text { get; init; }
     public string? Feedback { get; init; }
+    public string? Counterpoint { get; init; }
     public string? Speaker { get; init; }
     public string? Emotion { get; init; }
     [JsonExtensionData] public Dictionary<string, JsonElement>? ExtensionData { get; set; }

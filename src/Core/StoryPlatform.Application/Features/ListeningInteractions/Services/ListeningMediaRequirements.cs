@@ -23,6 +23,14 @@ public static class ListeningMediaRequirements
                 asset.Type == MediaType.Illustration && IsUsable(asset)))
                 missing.Add($"{interaction.Id}:i:hotspot");
         }
+        if (interaction.Type == ListeningInteractionType.RelationshipMap)
+        {
+            var own = options.Where(option => option.ListeningInteractionId == interaction.Id && !option.IsDeleted).ToArray();
+            var nodes = own.Count(option => option.Role == ListeningOptionRole.Node);
+            var cards = own.Count(option => option.Role == ListeningOptionRole.Card);
+            if (own.Length != nodes + cards || RelationMap.TryParse(interaction.RelationsJson)?.IsValid(nodes, cards) != true)
+                missing.Add($"{interaction.Id}:i:relations");
+        }
         // Bong bóng suy nghĩ: bé nhìn nhân vật trong tranh của đoạn, nên cần tranh minh họa dùng được.
         if (interaction.Type == ListeningInteractionType.ThoughtBubble && !assets.Any(asset =>
                 asset.Type == MediaType.Illustration && asset.StorySceneId == interaction.StorySceneId && IsUsable(asset)))
@@ -34,13 +42,15 @@ public static class ListeningMediaRequirements
     public static bool HasOptionImages(ListeningInteraction interaction) =>
         interaction.Type is ListeningInteractionType.PicturePrediction or ListeningInteractionType.WhoSaidIt
             or ListeningInteractionType.FollowAction
+            or ListeningInteractionType.RelationshipMap
             or ListeningInteractionType.CharacterLetter ||
         interaction is { Type: ListeningInteractionType.Checkpoint, Kind: CheckpointKind.Literal };
 
     public static IEnumerable<ListeningInteractionOption> ImageOptions(ListeningInteraction interaction,
         IReadOnlyList<ListeningInteractionOption> options) => options
         .Where(x => x.ListeningInteractionId == interaction.Id && !x.IsDeleted && HasOptionImages(interaction) &&
-            (interaction.Type != ListeningInteractionType.CharacterLetter || x.IsMatch))
+            (interaction.Type != ListeningInteractionType.CharacterLetter || x.IsMatch) &&
+            (interaction.Type != ListeningInteractionType.RelationshipMap || x.Role == ListeningOptionRole.Node))
         .OrderBy(x => x.SortOrder);
 
     public static MediaAsset? FindAudio(IReadOnlyList<MediaAsset> assets, int interactionId, int? optionId, string partKey) =>

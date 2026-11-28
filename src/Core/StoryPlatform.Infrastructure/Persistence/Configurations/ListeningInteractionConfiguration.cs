@@ -25,6 +25,7 @@ public class ListeningInteractionConfiguration : IEntityTypeConfiguration<Listen
         builder.Property(x => x.TargetLabel).HasColumnType("text");
         builder.Property(x => x.HotspotJson).HasColumnType("text");
         builder.Property(x => x.AcceptedOrdersJson).HasColumnType("text");
+        builder.Property(x => x.RelationsJson).HasColumnType("text");
         builder.Property(x => x.SourceQuote).HasColumnType("text");
         builder.Property(x => x.CharacterName).HasMaxLength(100);
         builder.Property(x => x.HiddenWord).HasMaxLength(100);

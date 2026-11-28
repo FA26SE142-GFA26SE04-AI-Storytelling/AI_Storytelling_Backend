@@ -10,6 +10,12 @@ public sealed record ParentListeningFeedbackDto
     public bool Graded { get; init; }
     public IReadOnlyList<ParentListeningChoiceDto> Choices { get; init; } = [];
     public IReadOnlyList<ParentListeningTapDto> Taps { get; init; } = [];
+    public string? Verdict { get; init; }
+    public string? ReasonText { get; init; }
+    public string? FreeText { get; init; }
+    public bool HasFreeVoice { get; init; }
+    public IReadOnlyList<ParentListeningPlacementDto> Placements { get; init; } = [];
+    public IReadOnlyList<string> KeptSentences { get; init; } = [];
     public IReadOnlyDictionary<string, string> Steps { get; init; } = new Dictionary<string, string>();
     public IReadOnlyList<string> WordStatuses { get; init; } = [];
     public IReadOnlyList<string> UnclearWords { get; init; } = [];
@@ -30,6 +36,7 @@ public sealed record ParentListeningChoiceDto(int? SelectedOptionId, string? Ans
 }
 
 public sealed record ParentListeningTapDto(double X, double Y, bool? IsMatch, DateTime AnsweredAt);
+public sealed record ParentListeningPlacementDto(int EdgeIndex, int CardOptionId, string? CardText, bool? Matched);
 
 public class ParentReadingFeedbackQueryDto
 {

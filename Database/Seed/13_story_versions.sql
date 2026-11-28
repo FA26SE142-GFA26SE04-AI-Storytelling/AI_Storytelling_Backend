@@ -93,3 +93,10 @@ INSERT INTO story_versions (
 VALUES
     (901, 901, 1, 'Chuyến đi bảo tàng', E'Cuối tuần, bố đưa Phúc đến bảo tàng thiên nhiên.\n\nPhúc đứng ngắm bộ xương khủng long rất lớn. Bố kể khủng long sống cách đây hàng triệu năm.\n\nỞ phòng bên, Phúc thấy một hóa thạch hình vỏ ốc. Cô hướng dẫn viên nói hóa thạch là dấu vết của sinh vật xưa còn lưu trong đá.\n\nTrên đường về, Phúc hứa sẽ đọc thêm sách về khủng long cùng bố.', 'Phúc đến bảo tàng', 'Phúc xem khủng long và hóa thạch', 'Phúc muốn đọc thêm sách', 'Ham tìm hiểu thế giới xung quanh', 4.100, 74.000, 96.000, 'Initial', NULL, 4, NOW() - INTERVAL '3 days' + INTERVAL '1 hour', true, NOW() - INTERVAL '3 days', false, 1, NULL)
 ON CONFLICT ("Id") DO NOTHING;
+
+INSERT INTO story_versions (
+    "Id", "StoryId", "VersionNo", "Title", "Content", "OutlineOpening", "OutlineDevelopment", "OutlineEnding", "Lesson", "ReadabilityFkgl", "ReadabilityFre", "SafetyScore", "EditType", "EditorUserId", "OutlineApprovedByUserId", "OutlineApprovedAt", "IsCurrent", "CreatedAt", "IsDeleted", "AudienceRevision", "BaseVersionId"
+)
+VALUES
+    (902, 902, 1, 'Ba bạn chăm vườn', E'Mai, Nam và An cùng chăm sóc khu vườn. Mai đặt bình nước cạnh luống hoa. Nam mang hạt giống tới.\n\nNam giúp Mai gieo hạt. An che nắng cho Nam bằng chiếc ô. Mai tin tưởng An và nhờ bạn trông luống hoa.\n\nBuổi sáng, ba bạn ra vườn. Mai tưới luống hoa. Nam nhặt lá khô. An đặt ô dưới gốc cây. Một con bướm bay qua. Cả ba cùng chăm sóc khu vườn.\n\nTrời đổ mưa, Nam muốn mang bình nước vào nhà. Mai quyết định ở lại che luống hoa. An đưa ô cho Mai.\n\nMai thấy Nam để quên hạt giống. Mai quyết định quay lại lấy giúp bạn. Nam cảm ơn Mai.\n\nSau cơn mưa, những hạt giống vẫn khô ráo. Ba bạn vui vì đã cùng nhau giữ khu vườn.', 'Ba bạn ra vườn', 'Ba bạn cùng chăm sóc và giúp nhau', 'Khu vườn sau mưa', 'Cùng nhau chăm sóc và giúp đỡ bạn bè', 4.000, 75.000, 96.000, 'Initial', NULL, 2, NOW() - INTERVAL '1 day', true, NOW() - INTERVAL '1 day', false, 1, NULL)
+ON CONFLICT ("Id") DO NOTHING;

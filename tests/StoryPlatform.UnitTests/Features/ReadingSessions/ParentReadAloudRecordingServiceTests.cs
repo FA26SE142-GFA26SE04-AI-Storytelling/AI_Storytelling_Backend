@@ -112,6 +112,25 @@ public class ParentReadAloudRecordingServiceTests
     }
 
     [Fact]
+    public async Task ListAsync_FreeVoiceAnswer_IsLabelledFreeAnswer_WithoutPercentOrQuote()
+    {
+        var session = _h.AddSession(SessionStatus.Completed);
+        _h.ListeningInteractions.Add(new ListeningInteraction
+        {
+            Id = 71, StoryVersionId = ReadingHarness.Version, Type = ListeningInteractionType.WhatIf, SourceQuote = "Mai quyết định quay lại."
+        });
+        Recording(session, null, 71, "free.webm", 0, 0);
+
+        var result = await _sut.ListAsync(Parent, ReadingHarness.Child, session.Id);
+
+        var item = Assert.Single(result.Recordings);
+        Assert.Equal("FreeAnswer", item.Kind);
+        Assert.Equal(string.Empty, item.Text);
+        Assert.Equal(0m, item.GoodPercent);
+        Assert.Equal("https://signed.test/free.webm", item.AudioUrl);
+    }
+
+    [Fact]
     public async Task ListAsync_SessionOfAnotherChild_IsNotFound()
     {
         var session = _h.AddSession(childId: ReadingHarness.OtherChild);

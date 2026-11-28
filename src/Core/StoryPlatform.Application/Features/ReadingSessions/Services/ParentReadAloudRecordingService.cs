@@ -48,15 +48,17 @@ public class ParentReadAloudRecordingService : IParentReadAloudRecordingService
             var segment = row.StorySegmentId is int segmentId ? segments.GetValueOrDefault(segmentId) : null;
             var scene = segment != null ? scenes.GetValueOrDefault(segment.StorySceneId) : null;
             var interaction = row.ListeningInteractionId is int interactionId ? interactions.GetValueOrDefault(interactionId) : null;
+            // Câu trả lời nói tự do (tuổi 9) không có văn bản để chấm: TotalCount = 0, không hiện phần trăm.
+            var isFreeAnswer = !row.StorySegmentId.HasValue && row.TotalCount == 0;
             items.Add(new ParentReadAloudRecordingDto
             {
                 RecordingId = row.Id,
-                Kind = row.StorySegmentId.HasValue ? "Segment" : "Practice",
+                Kind = row.StorySegmentId.HasValue ? "Segment" : isFreeAnswer ? "FreeAnswer" : "Practice",
                 SegmentId = row.StorySegmentId,
                 InteractionId = row.ListeningInteractionId,
                 SceneIndex = scene?.SceneIndex,
                 SegmentOrder = segment?.SegmentOrder,
-                Text = segment?.TextContent ?? interaction?.SourceQuote ?? string.Empty,
+                Text = segment?.TextContent ?? (isFreeAnswer ? string.Empty : interaction?.SourceQuote) ?? string.Empty,
                 GoodCount = row.GoodCount,
                 RetryCount = row.RetryCount,
                 SkippedCount = row.SkippedCount,

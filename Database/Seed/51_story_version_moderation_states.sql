@@ -29,7 +29,8 @@ VALUES
     (23, NULL, NULL, false, NULL, NULL, 'Pending', NOW() - INTERVAL '30 minutes', NULL, NULL, NULL),
     (24, NULL, NULL, false, NULL, NULL, 'None', NULL, NULL, NULL, NULL),
     (900, NULL, NULL, false, NULL, NULL, 'None', NULL, NULL, NULL, NULL),
-    (901, NULL, NULL, false, NULL, NULL, 'None', NULL, NULL, NULL, NULL)
+    (901, NULL, NULL, false, NULL, NULL, 'None', NULL, NULL, NULL, NULL),
+    (902, NULL, NULL, false, NULL, NULL, 'None', NULL, NULL, NULL, NULL)
 ON CONFLICT ("StoryVersionId") DO NOTHING;
 
 UPDATE story_version_moderation_states

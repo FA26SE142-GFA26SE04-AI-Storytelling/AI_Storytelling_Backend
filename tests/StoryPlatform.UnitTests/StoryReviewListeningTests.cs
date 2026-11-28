@@ -37,7 +37,7 @@ public sealed class StoryReviewListeningTests
     }
 
     [Fact]
-    public async Task Review_BandWithoutBuiltAges_DoesNotRequireListeningOrGenerationContext()
+    public async Task Review_Age9RequiresListeningGenerationContext()
     {
         var uow = ListeningTestStory.SeedReviewStory(withContext: false);
         uow.Items<Story>().Single().AgeBand = "9-10";
@@ -45,10 +45,9 @@ public sealed class StoryReviewListeningTests
 
         var dto = await service.GetListeningForReviewAsync(1, 1);
 
-        Assert.False(dto.Required);
+        Assert.True(dto.Required);
         Assert.Empty(dto.Plan);
-        Assert.Empty(dto.Issues);
-        Assert.True(await service.CompleteListeningReviewAsync(1, 1));
+        Assert.Contains(dto.Issues, x => x.Code == "LISTENING_CONTEXT_MISSING");
     }
 
     [Fact]
@@ -274,10 +273,10 @@ public sealed class StoryReviewListeningTests
     public void Unknown_fields_land_in_extension_data()
     {
         var input = JsonSerializer.Deserialize<UpdateListeningInteractionRequestDto>(
-            "{\"versionId\":1,\"hiddenWord\":\"x\",\"options\":[{\"id\":1,\"correctOrder\":1}]}",
+            "{\"versionId\":1,\"madeUpField\":\"x\",\"options\":[{\"id\":1,\"correctOrder\":1}]}",
             new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
 
-        Assert.True(input.ExtensionData!.ContainsKey("hiddenWord"));
+        Assert.True(input.ExtensionData!.ContainsKey("madeUpField"));
         Assert.True(input.Options![0].ExtensionData!.ContainsKey("correctOrder"));
     }
 

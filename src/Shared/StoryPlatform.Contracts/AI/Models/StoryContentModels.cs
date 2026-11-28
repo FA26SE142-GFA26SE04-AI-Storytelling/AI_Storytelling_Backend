@@ -279,3 +279,20 @@ public sealed record ThoughtBubbleItemDto
     public IReadOnlyList<ThoughtBubbleOptionDto> Bubbles { get; init; } = [];
     public string? MatchFeedback { get; init; }
 }
+
+public sealed record TrialReasonDto(string Text, string Positive, string Limitation);
+public sealed record CharacterTrialItemDto(string AfterBlockId, string Situation, string DecisionQuote,
+    IReadOnlyList<TrialReasonDto> Reasons, string MatchFeedback);
+public sealed record WrongDetailChoiceDto(string Text, bool IsCorrect);
+public sealed record FindWrongDetailItemDto(string AfterBlockId, string OriginalQuote, string Retold,
+    string WrongDetail, IReadOnlyList<WrongDetailChoiceDto> Choices, string Explanation, string MatchFeedback);
+public sealed record RelationCharacterDto(string Name, string ImageDescription);
+public sealed record RelationEdgeDto(int From, int To, IReadOnlyList<int> Accepted, string Evidence, string Explanation);
+public sealed record RelationshipMapItemDto(string AfterBlockId, IReadOnlyList<RelationCharacterDto> Characters,
+    IReadOnlyList<string> Cards, IReadOnlyList<RelationEdgeDto> Relations, string MatchFeedback);
+public sealed record EditorSentenceDto(string Text, bool IsMain, string WhyImportant);
+public sealed record StoryEditorItemDto(string AfterBlockId, string Passage,
+    IReadOnlyList<EditorSentenceDto> Sentences, string MatchFeedback);
+public sealed record WhatIfOutcomeDto(string Text, string Because);
+public sealed record WhatIfItemDto(string AfterBlockId, string DecisionQuote, string Question,
+    IReadOnlyList<WhatIfOutcomeDto> Outcomes, string MatchFeedback);

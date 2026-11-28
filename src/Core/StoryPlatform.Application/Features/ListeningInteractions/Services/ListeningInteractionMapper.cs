@@ -40,7 +40,22 @@ public static class ListeningInteractionMapper
                 case ListeningInteractionType.SentenceBuilder:
                 case ListeningInteractionType.InferenceQuestion:
                 case ListeningInteractionType.ThoughtBubble:
+                case ListeningInteractionType.CharacterTrial:
+                case ListeningInteractionType.FindWrongDetail:
+                case ListeningInteractionType.StoryEditor:
+                case ListeningInteractionType.WhatIf:
                     item = LocateBeforeAnchor(item, i, content, anchor.EndOffset, errors);
+                    if (item.Type == ListeningInteractionType.StoryEditor && item.SourceStart is { } passageStart)
+                    {
+                        var cursor = 0;
+                        item = item with { Options = item.Options.Select(option =>
+                        {
+                            var at = item.SourceQuote!.IndexOf(option.Text, cursor, StringComparison.Ordinal);
+                            if (at < 0) return option;
+                            cursor = at + option.Text.Length;
+                            return option with { SourceStart = passageStart + at, SourceEnd = passageStart + cursor };
+                        }).ToArray() };
+                    }
                     if (item.Type == ListeningInteractionType.PicturePrediction && item.RevealBlockId is not null)
                     {
                         if (item.RevealBlockId is not null && byId.TryGetValue(item.RevealBlockId, out var reveal))
@@ -88,6 +103,7 @@ public static class ListeningInteractionMapper
             Prompt = draft.Prompt,
             TargetLabel = draft.TargetLabel,
             AcceptedOrdersJson = draft.AcceptedOrdersJson,
+            RelationsJson = draft.RelationsJson,
             SourceQuote = draft.SourceQuote,
             SourceStart = draft.SourceStart,
             SourceEnd = draft.SourceEnd,
@@ -105,6 +121,7 @@ public static class ListeningInteractionMapper
             SortOrder = index + 1,
             Text = o.Text,
             Feedback = o.Feedback,
+            Counterpoint = o.Counterpoint,
             IsMatch = o.IsMatch,
             Role = o.Role,
             CorrectOrder = o.CorrectOrder,
@@ -130,6 +147,7 @@ public static class ListeningInteractionMapper
         Prompt = interaction.Prompt,
         TargetLabel = interaction.TargetLabel,
         AcceptedOrdersJson = interaction.AcceptedOrdersJson,
+        RelationsJson = interaction.RelationsJson,
         SourceQuote = interaction.SourceQuote,
         SourceStart = interaction.SourceStart,
         SourceEnd = interaction.SourceEnd,
@@ -146,6 +164,7 @@ public static class ListeningInteractionMapper
         {
             Text = o.Text,
             Feedback = o.Feedback,
+            Counterpoint = o.Counterpoint,
             IsMatch = o.IsMatch,
             Role = o.Role,
             CorrectOrder = o.CorrectOrder,

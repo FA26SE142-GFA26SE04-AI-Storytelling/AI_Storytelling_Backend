@@ -2790,6 +2790,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<string>("Prompt")
                         .HasColumnType("text");
 
+                    b.Property<string>("RelationsJson")
+                        .HasColumnType("text");
+
                     b.Property<int?>("RevealOffset")
                         .HasColumnType("integer");
 
@@ -2913,6 +2916,9 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.Property<int?>("CorrectOrder")
                         .HasColumnType("integer");
+
+                    b.Property<string>("Counterpoint")
+                        .HasColumnType("text");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");

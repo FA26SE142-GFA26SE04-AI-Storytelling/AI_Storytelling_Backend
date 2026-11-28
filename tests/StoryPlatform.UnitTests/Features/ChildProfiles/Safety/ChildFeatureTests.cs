@@ -114,6 +114,7 @@ public class ChildFeatureTests
     {
         ["ChildReadingController.ReadAloud"] = ChildFeatures.Voice,
         ["ChildReadingController.ReadAloudPractice"] = ChildFeatures.Voice,
+        ["ChildReadingController.SaveFreeAnswer"] = ChildFeatures.Voice,
         ["ChildStorySummaryController.SendRecording"] = ChildFeatures.Voice,
     };
 

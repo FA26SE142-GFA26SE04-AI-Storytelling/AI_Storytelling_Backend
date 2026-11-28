@@ -12,6 +12,7 @@ public static class ListeningInteractionPlanner
         6 => CreateAge6(blocks) with { TargetAge = 6 },
         7 => CreateAge7(blocks) with { TargetAge = 7 },
         8 => CreateAge8(blocks) with { TargetAge = 8 },
+        9 => CreateAge9(blocks) with { TargetAge = 9 },
         _ => ListeningInteractionPlan.Empty with { TargetAge = targetAge }
     };
 
@@ -68,6 +69,18 @@ public static class ListeningInteractionPlanner
         return new(slots, AssignZones(items, blocks, dialogue, 8), dialogue);
     }
 
+    private static ListeningInteractionPlan CreateAge9(IReadOnlyList<StoryTextBlock> blocks)
+    {
+        var slots = Math.Max(0, blocks.Count - 1);
+        if (slots == 0) return ListeningInteractionPlan.Empty;
+        ListeningInteractionType[] priority = [ListeningInteractionType.FindWrongDetail,
+            ListeningInteractionType.RelationshipMap, ListeningInteractionType.StoryEditor,
+            ListeningInteractionType.CharacterTrial, ListeningInteractionType.WhatIf];
+        var items = priority.Take(slots).Select(type => new ListeningPlanItem(type, 1)).ToArray();
+        var dialogue = FindDialogueBlockIds(blocks);
+        return new(slots, AssignZones(items, blocks, dialogue, 9), dialogue);
+    }
+
     /// <summary>
     /// Chia P1..P(S) (S = số chỗ trống) thành M vùng liền nhau gần bằng nhau, M = số tương tác giữa truyện:
     /// vùng k = đoạn thứ ⌊k·S/M⌋+1 tới ⌊(k+1)·S/M⌋. Loại kén chỗ chọn trước, ưu tiên vùng gần giữa truyện:
@@ -120,6 +133,20 @@ public static class ListeningInteractionPlanner
         foreach (var item in items.Where(x => x.Type is ListeningInteractionType.InferenceQuestion or ListeningInteractionType.CauseEffect
             or ListeningInteractionType.SceneTitle))
             assigned[item.Type] = Enumerable.Range(0, item.Count).Select(_ => TakeEarliest()).ToArray();
+
+        // Reserve the late decision scenes, then fit the long editing passage and character map.
+        foreach (var item in items.Where(x => x.Type == ListeningInteractionType.WhatIf))
+            assigned[item.Type] = [TakeLatest()];
+        foreach (var item in items.Where(x => x.Type == ListeningInteractionType.CharacterTrial))
+            assigned[item.Type] = [TakeLatest()];
+        foreach (var item in items.Where(x => x.Type == ListeningInteractionType.StoryEditor))
+            assigned[item.Type] = [Claim(free.OrderByDescending(z => zones[z].Max(b => SentenceSplitter.Split(b.Text).Count)).First())];
+        foreach (var item in items.Where(x => x.Type == ListeningInteractionType.RelationshipMap))
+            assigned[item.Type] = [Claim(free.OrderByDescending(z => zones[z].Max(b =>
+                b.Text.Split([' ', '\n', '\r', '.', ',', ':', '!', '?'], StringSplitOptions.RemoveEmptyEntries)
+                    .Count(word => char.IsUpper(word[0])))).First())];
+        foreach (var item in items.Where(x => x.Type == ListeningInteractionType.FindWrongDetail))
+            assigned[item.Type] = [TakeEarliest()];
 
         return items.Select(x => assigned.TryGetValue(x.Type, out var z) ? x with { Zones = z } : x).ToArray();
     }

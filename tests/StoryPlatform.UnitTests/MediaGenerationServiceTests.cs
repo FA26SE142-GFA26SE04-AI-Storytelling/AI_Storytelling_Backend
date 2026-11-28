@@ -1145,11 +1145,11 @@ public sealed partial class MediaGenerationServiceTests
     {
         var uow = new StoryReviewServiceTests.FakeUnitOfWork();
         uow.Seed(new UserAccount { Id = 1, Role = UserRole.User, Status = AccountStatus.Active });
-        uow.Seed(new ChildProfile { Id = 1, OwnerUserId = 1, AgeBand = AgeBand.Age_9_10, Status = ChildProfileStatus.Active });
+        uow.Seed(new ChildProfile { Id = 1, OwnerUserId = 1, Age = 10, AgeBand = AgeBand.Age_9_10, Status = ChildProfileStatus.Active });
         uow.Seed(new SafetyPolicy { Id = 1, ChildProfileId = 1, ConsentRecorded = true, ConsentRecordedAt = DateTime.UtcNow, ConsentPolicyVersion = 1 });
-        // General media fixtures use a band whose listening set is not built yet.
+        // General media fixtures use age 10, whose listening set is not built yet.
         // Listening-specific tests explicitly configure the age-6 story and interactions.
-        uow.Seed(new Story { Id = 1, AuthorUserId = 1, ChildProfileId = 1, AgeBand = "9-10", Status = StoryStatus.Approved });
+        uow.Seed(new Story { Id = 1, AuthorUserId = 1, ChildProfileId = 1, AgeBand = "9-10", OutputMode = StoryOutputMode.ReadingMediaOnly, Status = StoryStatus.Approved });
         uow.Seed(new StoryVersion
         {
             Id = 10,

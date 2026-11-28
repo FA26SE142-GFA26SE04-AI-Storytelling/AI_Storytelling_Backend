@@ -21,6 +21,7 @@ public class ListeningInteraction : BaseEntity
     public string? TargetLabel { get; set; }
     public string? HotspotJson { get; set; }
     public string? AcceptedOrdersJson { get; set; }
+    public string? RelationsJson { get; set; }
     /// <summary>Vị trí ký tự kết thúc của đoạn neo trong StoryVersion.Content.</summary>
     public int AnchorOffset { get; set; }
     /// <summary>Null tới khi Phase 5 gắn scene.</summary>

@@ -22,7 +22,7 @@ public sealed class ListeningInteractionGeneratorTests
     public void Unbuilt_band_does_not_require_listening_generation()
     {
         Assert.True(ListeningInteractionGenerator.HasPlan(ListeningTestStory.Content, AgeBand.Age_6_8));
-        Assert.False(ListeningInteractionGenerator.HasPlan(ListeningTestStory.Content, AgeBand.Age_9_10));
+        Assert.True(ListeningInteractionGenerator.HasPlan(ListeningTestStory.Content, AgeBand.Age_9_10));
         Assert.False(ListeningInteractionGenerator.HasPlan("Single paragraph", AgeBand.Age_6_8));
     }
 

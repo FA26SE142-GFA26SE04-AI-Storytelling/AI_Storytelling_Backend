@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using StoryPlatform.Infrastructure.Persistence;
 using StoryPlatform.Application.Features.ListeningInteractions.Models;
 using StoryPlatform.Application.Features.ListeningInteractions.Services;
+using StoryPlatform.Application.Features.MediaGeneration.Services;
 using StoryPlatform.Domain.Enums;
 using StoryPlatform.UnitTests.Features.ListeningInteractions;
 using Xunit;
@@ -23,10 +24,20 @@ public sealed class SeedDataAlignmentTests
     [InlineData(6)]
     [InlineData(7)]
     [InlineData(8)]
+    [InlineData(9)]
     public void ListeningSeed_PassesTheRulesOfItsAge(int age)
     {
-        Assert.Equal([44, 148, 197, 231, 256, 296], ListeningTestStory.Blocks.Select(b => b.EndOffset));   // neo trong seed tính theo văn bản này
         var inserts = ReadInserts();
+        var content = ListeningTestStory.Content;
+        if (age == 9)
+        {
+            var raw = Rows(inserts, "story_versions").Single(row => row["Id"] == "902")["Content"];
+            Assert.StartsWith("E'", raw);
+            content = raw[2..^1].Replace("\\n", "\n", StringComparison.Ordinal).Replace("''", "'", StringComparison.Ordinal);
+        }
+        var blocks = new StoryBlockParser().Parse(content);
+        Assert.Equal(age == 9 ? [98, 201, 341, 442, 529, 611] : [44, 148, 197, 231, 256, 296],
+            blocks.Select(b => b.EndOffset));
         var optionRows = Rows(inserts, "listening_interaction_options");
         string? Text(Dictionary<string, string> row, string column) => row.TryGetValue(column, out var raw) ? StringLiteral(raw) : null;
         int? Number(Dictionary<string, string> row, string column) =>
@@ -42,27 +53,29 @@ public sealed class SeedDataAlignmentTests
             var options = optionRows.Where(option => int.Parse(option["ListeningInteractionId"]) == id)
                 .OrderBy(option => int.Parse(option["SortOrder"])).Select(option => new ListeningOptionDraft
                 {
-                    Text = Text(option, "Text")!, Feedback = Text(option, "Feedback"), IsMatch = option["IsMatch"] == "true",
+                    Text = Text(option, "Text")!, Feedback = Text(option, "Feedback"), Counterpoint = Text(option, "Counterpoint"), IsMatch = option["IsMatch"] == "true",
                     CorrectOrder = Number(option, "CorrectOrder"), SourceQuote = Text(option, "SourceQuote"),
                     SourceStart = Number(option, "SourceStart"), SourceEnd = Number(option, "SourceEnd"),
                     ImageDescription = Text(option, "ImageDescription"),
                     Speaker = Text(option, "Speaker"), Emotion = Text(option, "Emotion"),
                     Role = option.TryGetValue("Role", out var role) ? Enum.Parse<ListeningOptionRole>(StringLiteral(role)!) : ListeningOptionRole.None,
                     BlockId = Number(option, "SourceStart") is { } start
-                        ? ListeningTestStory.Blocks.Last(block => block.EndOffset - block.Text.Length <= start).BlockId : null
+                        ? blocks.Last(block => block.EndOffset - block.Text.Length <= start).BlockId : null
                 }).ToArray();
             var draft = new ListeningInteractionDraft
             {
-                Type = type, TargetAge = age, AnchorBlockId = ListeningTestStory.Blocks.Single(b => b.EndOffset == anchor).BlockId,
+                Type = type, TargetAge = age, AnchorBlockId = blocks.Single(b => b.EndOffset == anchor).BlockId,
                 Kind = Text(row, "Kind") is { } kind ? Enum.Parse<CheckpointKind>(kind) : null,
                 Prompt = Text(row, "Prompt"), SourceQuote = Text(row, "SourceQuote"), CharacterName = Text(row, "CharacterName"),
-                Explanation = Text(row, "Explanation"),
+                Explanation = Text(row, "Explanation"), HiddenWord = Text(row, "HiddenWord"),
+                RelationsJson = Text(row, "RelationsJson"),
                 BlankIndex = Number(row, "BlankIndex"), TargetLabel = Text(row, "TargetLabel"),
                 AcceptedOrdersJson = Text(row, "AcceptedOrdersJson"), MatchFeedback = Text(row, "MatchFeedback"),
                 NoMatchFeedback = Text(row, "NoMatchFeedback"), WaitFeedback = Text(row, "WaitFeedback"), Options = options
             };
-            var mapped = ListeningInteractionMapper.Resolve([draft], ListeningTestStory.Content, ListeningTestStory.Blocks);
-            var context = ListeningTestStory.Context(type, 1) with { TargetAge = age, Zones = [] };
+            var mapped = ListeningInteractionMapper.Resolve([draft], content, blocks);
+            var context = ListeningTestStory.Context(type, 1, age == 9 ? AgeBand.Age_9_10 : AgeBand.Age_6_8)
+                with { TargetAge = age, Content = content, Blocks = blocks, GroundingSource = content, Zones = [] };
             var errors = mapped.Errors.Concat(ListeningInteractionRules.Validate(mapped.Items, context)).Select(e => $"{e.Code}@{e.Field}").ToArray();
             Assert.True(errors.Length == 0, $"seed interaction {id} ({type}, age {age}) violates: {string.Join(", ", errors)}");
         }

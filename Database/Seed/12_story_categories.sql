@@ -16,5 +16,6 @@ VALUES
     (13, 13, 1, 'Moderator', NOW() - INTERVAL '6 days', false),
     (14, 14, 1, 'Moderator', NOW() - INTERVAL '7 days', false),
     (15, 19, 1, 'Ai', NOW() - INTERVAL '12 days', false),
-    (16, 901, 6, 'Ai', NOW() - INTERVAL '3 days', false)
+    (16, 901, 6, 'Ai', NOW() - INTERVAL '3 days', false),
+    (17, 902, 1, 'Ai', NOW() - INTERVAL '1 day', false)
 ON CONFLICT ("Id") DO NOTHING;

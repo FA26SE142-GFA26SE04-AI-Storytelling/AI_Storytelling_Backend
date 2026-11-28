@@ -27,6 +27,14 @@ VALUES
     (902, 900, 'ShortAnswer', 'Khi bị lạc, Thỏ học được điều gì?', NULL, 'Nhờ người lớn', NOW() - INTERVAL '1 day', false)
 ON CONFLICT ("Id") DO NOTHING;
 
+-- Truyện mẫu 902: quiz đi kèm gói duyệt nội dung.
+INSERT INTO quiz_items ("Id", "StoryVersionId", "Type", "Question", "Choices", "CorrectAnswer", "CreatedAt", "IsDeleted")
+VALUES
+    (910, 902, 'MultipleChoice', 'Ai mang hạt giống tới vườn?', '["Mai","Nam","An"]', 'Nam', NOW() - INTERVAL '1 day', false),
+    (911, 902, 'TrueFalse', 'An che nắng cho Nam bằng chiếc ô.', '["Đúng","Sai"]', 'Đúng', NOW() - INTERVAL '1 day', false),
+    (912, 902, 'ShortAnswer', 'Vì sao Mai quay lại?', NULL, 'Lấy hạt giống giúp Nam', NOW() - INTERVAL '1 day', false)
+ON CONFLICT ("Id") DO NOTHING;
+
 -- Câu thứ hai của phiên bản 1 (truyện 1) để kết quả đọc phía phụ huynh có nhiều lần làm quiz
 -- (xem 24_reading_sessions.sql, phiên 101–104 của bé 1).
 INSERT INTO quiz_items ("Id", "StoryVersionId", "Type", "Question", "Choices", "CorrectAnswer", "CreatedAt", "IsDeleted")

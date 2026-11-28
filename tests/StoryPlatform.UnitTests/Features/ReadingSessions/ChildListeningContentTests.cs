@@ -574,11 +574,11 @@ public sealed class ChildListeningContentTests
     [Fact]
     public async Task RolePlay_CreatedBeforeInstructionAudio_IsStillReturnedWithInstructionText()
     {
-        // Tuổi chưa có bộ riêng (9): dòng cũ tạo trước khi có câu hướng dẫn vẫn hiện, không đòi audio câu hướng dẫn.
-        _h.Children.Single(x => x.Id == ReadingHarness.Child).Age = 9;
+        // Tuổi chưa có bộ riêng (10): dòng cũ tạo trước khi có câu hướng dẫn vẫn hiện, không đòi audio câu hướng dẫn.
+        _h.Children.Single(x => x.Id == ReadingHarness.Child).Age = 10;
         var interaction = Add(4, ListeningInteractionType.RolePlay, 1, x =>
         {
-            x.TargetAge = 9;
+            x.TargetAge = 10;
             x.CharacterName = "Thỏ";
             x.SourceQuote = "Có ai không?";
             x.SourceStart = 32;

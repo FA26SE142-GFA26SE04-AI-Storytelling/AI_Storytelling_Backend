@@ -81,6 +81,19 @@ public class ReadingSceneDto
 /// <summary>Tương tác lúc nghe cho trẻ. Không có đáp án: không IsMatch, CorrectOrder, HiddenWord, Explanation.</summary>
 public class ReadingInteractionDto
 {
+    public string? Situation { get; set; }
+    public IReadOnlyList<ReadingVerdictDto>? Verdicts { get; set; }
+    public IReadOnlyList<ReadingInteractionOptionDto>? Reasons { get; set; }
+    public IReadOnlyList<ReadingRetoldSentenceDto>? RetoldSentences { get; set; }
+    public IReadOnlyList<ReadingMapNodeDto>? Nodes { get; set; }
+    public IReadOnlyList<ReadingMapEdgeDto>? Edges { get; set; }
+    public IReadOnlyList<ReadingInteractionOptionDto>? Cards { get; set; }
+    public IReadOnlyList<ReadingInteractionOptionDto>? EditSentences { get; set; }
+    public int? KeepLimit { get; set; }
+    public string? Question { get; set; }
+    public IReadOnlyList<ReadingInteractionOptionDto>? Outcomes { get; set; }
+    public bool AllowsFreeAnswer { get; set; }
+    public int? FreeAnswerMaxLength { get; set; }
     public string? SearchImageUrl { get; set; }
     public string? SearchTarget { get; set; }
     public List<ReadingStatementDto>? Statements { get; set; }
@@ -149,6 +162,11 @@ public class ReadingInteractionDto
     /// <summary>Thẻ của Checkpoint, PicturePrediction, EventOrdering (đã xáo). Rỗng với RolePlay, FillBlank.</summary>
     public List<ReadingInteractionOptionDto> Options { get; set; } = new();
 }
+
+public sealed record ReadingVerdictDto(string Code, string Label);
+public sealed record ReadingRetoldSentenceDto(int Index, string Text);
+public sealed record ReadingMapNodeDto(int Id, string Name, string? ImageUrl, string? AudioUrl);
+public sealed record ReadingMapEdgeDto(int Index, int FromNodeId, int ToNodeId);
 
 public class ReadingLineDto
 {

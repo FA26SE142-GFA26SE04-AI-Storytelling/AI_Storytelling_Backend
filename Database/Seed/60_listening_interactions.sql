@@ -16,6 +16,32 @@ VALUES
     (904, 900, 'EventOrdering', 296, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Con nhớ giỏi quá, đúng thứ tự rồi!', 'Mình cùng nghe lại mấy đoạn này rồi xếp lại nhé.', NULL, NOW() - INTERVAL '1 day', false)
 ON CONFLICT ("Id") DO NOTHING;
 
+-- Bộ tuổi 9 của truyện 902: năm tương tác neo P1..P5, chờ người duyệt và media.
+INSERT INTO listening_interactions (
+    "Id", "StoryVersionId", "Type", "TargetAge", "AnchorOffset", "Prompt", "SourceQuote",
+    "SourceStart", "SourceEnd", "HiddenWord", "RelationsJson", "Explanation", "MatchFeedback", "CreatedAt", "IsDeleted"
+)
+VALUES
+    (940, 902, 'FindWrongDetail', 9, 98,
+     'Mai, Nam và An cùng chăm sóc khu vườn. Mai đặt chiếc ô cạnh luống hoa. Nam mang hạt giống tới.',
+     'Mai, Nam và An cùng chăm sóc khu vườn. Mai đặt bình nước cạnh luống hoa. Nam mang hạt giống tới.',
+     0, 96, 'chiếc ô', NULL, 'Trong truyện, Mai đặt bình nước cạnh luống hoa.', 'Con đã tìm ra chi tiết trong truyện!', NOW() - INTERVAL '1 day', false),
+    (941, 902, 'RelationshipMap', 9, 201, NULL, NULL, NULL, NULL, NULL,
+     '{"edges":[{"from":1,"to":0,"accepted":[0],"evidence":"Nam giúp Mai gieo hạt.","explanation":"Nam giúp Mai gieo hạt trong vườn."},{"from":2,"to":1,"accepted":[1],"evidence":"An che nắng cho Nam bằng chiếc ô.","explanation":"An dùng ô để bảo vệ Nam khỏi nắng."},{"from":0,"to":2,"accepted":[2],"evidence":"Mai tin tưởng An và nhờ bạn trông luống hoa.","explanation":"Mai tin tưởng An trông luống hoa."}]}',
+     NULL, 'Con nhìn ra các mối quan hệ rồi!', NOW() - INTERVAL '1 day', false),
+    (942, 902, 'StoryEditor', 9, 341, NULL,
+     'Buổi sáng, ba bạn ra vườn. Mai tưới luống hoa. Nam nhặt lá khô. An đặt ô dưới gốc cây. Một con bướm bay qua. Cả ba cùng chăm sóc khu vườn.',
+     201, 339, NULL, NULL, NULL, 'Con đã giữ được ý chính!', NOW() - INTERVAL '1 day', false),
+    (943, 902, 'CharacterTrial', 9, 442,
+     'Trời đổ mưa, Mai muốn bảo vệ luống hoa. Mai quyết định ở lại che luống hoa.',
+     'Mai quyết định ở lại che luống hoa.', 387, 422, NULL, NULL, NULL,
+     'Cảm ơn con đã suy nghĩ về quyết định của Mai.', NOW() - INTERVAL '1 day', false),
+    (944, 902, 'WhatIf', 9, 529,
+     'Nếu Mai không quay lại lấy hạt giống thì điều gì có thể xảy ra?',
+     'Mai quyết định quay lại lấy giúp bạn.', 474, 511, NULL, NULL, NULL,
+     'Cảm ơn con đã nghĩ về một khả năng khác.', NOW() - INTERVAL '1 day', false)
+ON CONFLICT ("Id") DO NOTHING;
+
 -- Bộ tuổi 7 của truyện 900. HotspotJson được định vị từ tranh thật sau khi media sẵn sàng.
 INSERT INTO listening_interactions (
     "Id", "StoryVersionId", "Type", "TargetAge", "AnchorOffset", "Prompt", "TargetLabel",

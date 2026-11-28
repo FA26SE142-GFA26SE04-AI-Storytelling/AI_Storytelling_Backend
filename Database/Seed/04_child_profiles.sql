@@ -16,3 +16,6 @@ VALUES
     (11, 3, 'Bé Lâm', 'Age_6_8', 'vi', 'Active', NOW() - INTERVAL '16 days', false, 'avatar-panda'),
     (12, 8, 'Bé Minh', 'Age_9_10', 'vi', 'Active', NOW() - INTERVAL '15 days', false, 'avatar-koala')
 ON CONFLICT ("Id") DO NOTHING;
+
+-- Bé Bình là hồ sơ tuổi 9 dùng thử bộ nghe của truyện 902; giữ tuổi đã nhập nếu khác.
+UPDATE child_profiles SET "Age" = 9 WHERE "Id" = 2 AND "Age" IS NULL;

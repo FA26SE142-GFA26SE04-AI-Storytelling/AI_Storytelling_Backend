@@ -10,7 +10,7 @@ public sealed class ListeningAgeSetsTests
     public void Band6To8_GeneratesOnlyBuiltAges() => Assert.Equal([6, 7, 8], ListeningAgeSets.TargetAgesFor(AgeBand.Age_6_8));
 
     [Fact]
-    public void Band9To10_GeneratesNothingUntilBuilt() => Assert.Empty(ListeningAgeSets.TargetAgesFor(AgeBand.Age_9_10));
+    public void Band9To10_GeneratesAge9Only() => Assert.Equal([9], ListeningAgeSets.TargetAgesFor(AgeBand.Age_9_10));
 
     [Theory]
     [InlineData(6, AgeBand.Age_6_8, 6)]

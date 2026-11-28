@@ -62,6 +62,13 @@ public sealed partial class StoryReviewService
         var changes = input.Options ?? [];
         if (changes.Select(x => x.Id).Distinct().Count() != changes.Count || changes.Any(c => options.All(o => o.Id != c.Id)))
             throw new BadRequestException("LISTENING_OPTION_NOT_FOUND");
+        if (interaction.Type == ListeningInteractionType.RelationshipMap &&
+            (changes.Any(change => change.Role.HasValue && change.Role != options.First(option => option.Id == change.Id).Role) ||
+             input.Relations is not null && (RelationMap.TryParse(interaction.RelationsJson) is not { } existingMap ||
+                 input.Relations.Count != existingMap.Edges.Count ||
+                 input.Relations.Where((edge, index) => edge.From != existingMap.Edges[index].From ||
+                     edge.To != existingMap.Edges[index].To).Any())))
+            throw new BadRequestException("FIELD_NOT_EDITABLE");
 
         var scope = await _listening.LoadScopeAsync(story, version, cancellationToken, interaction.TargetAge!.Value);
         var planItem = scope.Plan.Items.FirstOrDefault(p => p.Type == interaction.Type)
@@ -77,6 +84,8 @@ public sealed partial class StoryReviewService
             Prompt = Edited(input.Prompt) ?? current.Prompt,
             TargetLabel = Edited(input.TargetLabel) ?? current.TargetLabel,
             AcceptedOrdersJson = input.AcceptedOrders is null ? current.AcceptedOrdersJson : JsonSerializer.Serialize(input.AcceptedOrders),
+            RelationsJson = input.Relations is null ? current.RelationsJson : JsonSerializer.Serialize(new { edges = input.Relations }),
+            HiddenWord = Edited(input.HiddenWord) ?? current.HiddenWord,
             Hint = Edited(input.Hint) ?? current.Hint,
             Explanation = Edited(input.Explanation) ?? current.Explanation,
             MatchFeedback = Edited(input.MatchFeedback) ?? current.MatchFeedback,
@@ -84,6 +93,7 @@ public sealed partial class StoryReviewService
             WaitFeedback = Edited(input.WaitFeedback) ?? current.WaitFeedback,
             Options = current.Options.Select((o, i) => byId.TryGetValue(options[i].Id, out var c)
                 ? o with { Text = Edited(c.Text) ?? o.Text, Feedback = Edited(c.Feedback) ?? o.Feedback,
+                    Counterpoint = Edited(c.Counterpoint) ?? o.Counterpoint,
                     ImageDescription = Edited(c.ImageDescription) ?? o.ImageDescription, IsMatch = c.IsMatch ?? o.IsMatch,
                     Role = c.Role ?? o.Role, Speaker = Edited(c.Speaker) ?? o.Speaker, Emotion = Edited(c.Emotion) ?? o.Emotion }
                 : o).ToArray()
@@ -106,6 +116,7 @@ public sealed partial class StoryReviewService
         var sourceChanged = interaction.SourceStart != draft.SourceStart;
         interaction.TargetLabel = draft.TargetLabel;
         interaction.AcceptedOrdersJson = draft.AcceptedOrdersJson;
+        interaction.RelationsJson = draft.RelationsJson;
         if (targetLabelChanged || imageDescriptionChanged || sourceChanged) interaction.HotspotJson = null;
         interaction.BlankIndex = draft.BlankIndex;
         interaction.CharacterName = draft.CharacterName;
@@ -113,6 +124,7 @@ public sealed partial class StoryReviewService
         interaction.SourceStart = draft.SourceStart;
         interaction.SourceEnd = draft.SourceEnd;
         interaction.Hint = draft.Hint;
+        interaction.HiddenWord = draft.HiddenWord;
         interaction.Explanation = draft.Explanation;
         interaction.MatchFeedback = draft.MatchFeedback;
         interaction.NoMatchFeedback = draft.NoMatchFeedback;
@@ -122,6 +134,7 @@ public sealed partial class StoryReviewService
         {
             options[i].Text = draft.Options[i].Text;
             options[i].Feedback = draft.Options[i].Feedback;
+            options[i].Counterpoint = draft.Options[i].Counterpoint;
             // Đúng/sai: ImageDescription là tên chi tiết làm bằng chứng trong tranh; đổi tên thì định vị lại.
             if (!string.Equals(options[i].ImageDescription, draft.Options[i].ImageDescription, StringComparison.Ordinal))
                 options[i].HotspotJson = null;
@@ -146,7 +159,7 @@ public sealed partial class StoryReviewService
         (string Field, string? Value)[] fields =
         [
             ("question", input.Prompt), ("targetLabel", input.TargetLabel), ("hint", input.Hint), ("explanation", input.Explanation),
-            ("characterName", input.CharacterName), ("sourceQuote", input.SourceQuote),
+            ("characterName", input.CharacterName), ("sourceQuote", input.SourceQuote), ("hiddenWord", input.HiddenWord),
             ("matchFeedback", input.MatchFeedback), ("noMatchFeedback", input.NoMatchFeedback), ("waitFeedback", input.WaitFeedback)
         ];
         foreach (var (field, value) in fields)
@@ -156,6 +169,7 @@ public sealed partial class StoryReviewService
             if (option.ImageDescription is not null && string.IsNullOrWhiteSpace(option.ImageDescription)) yield return new("FIELD_EMPTY", null, $"options[{option.Id}].imageDescription");
             if (option.Text is not null && string.IsNullOrWhiteSpace(option.Text)) yield return new("FIELD_EMPTY", null, $"options[{option.Id}].text");
             if (option.Feedback is not null && string.IsNullOrWhiteSpace(option.Feedback)) yield return new("FIELD_EMPTY", null, $"options[{option.Id}].feedback");
+            if (option.Counterpoint is not null && string.IsNullOrWhiteSpace(option.Counterpoint)) yield return new("FIELD_EMPTY", null, $"options[{option.Id}].counterpoint");
             if (option.Speaker is not null && string.IsNullOrWhiteSpace(option.Speaker)) yield return new("FIELD_EMPTY", null, $"options[{option.Id}].speaker");
             if (option.Emotion is not null && string.IsNullOrWhiteSpace(option.Emotion)) yield return new("FIELD_EMPTY", null, $"options[{option.Id}].emotion");
         }
@@ -243,6 +257,7 @@ public sealed partial class StoryReviewService
         Hotspot = HotspotBox.TryParse(item.Interaction.HotspotJson),
         HasValidHotspot = HotspotBox.TryParse(item.Interaction.HotspotJson) is not null,
         AcceptedOrders = SentenceOrders.Parse(item.Interaction.AcceptedOrdersJson),
+        Relations = RelationMap.TryParse(item.Interaction.RelationsJson)?.Edges,
         SourceQuote = item.Interaction.SourceQuote,
         CharacterName = item.Interaction.CharacterName,
         HiddenWord = item.Interaction.HiddenWord,
@@ -259,6 +274,7 @@ public sealed partial class StoryReviewService
             SortOrder = o.SortOrder,
             Text = o.Text,
             Feedback = o.Feedback,
+            Counterpoint = o.Counterpoint,
             IsMatch = o.IsMatch,
             CorrectOrder = o.CorrectOrder,
             BlockId = item.Draft.Options[i].BlockId,

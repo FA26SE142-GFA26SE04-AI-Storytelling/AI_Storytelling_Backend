@@ -28,3 +28,13 @@ VALUES
     (903, 900, 'cửa hang', 'Chỗ mở ra để đi vào bên trong hang', NOW() - INTERVAL '1 day', false),
     (904, 900, 'người lớn', 'Những người đã trưởng thành như bố mẹ, ông bà, thầy cô', NOW() - INTERVAL '1 day', false)
 ON CONFLICT ("Id") DO NOTHING;
+
+-- Truyện mẫu 902: các từ đều có trong nội dung sáu đoạn.
+INSERT INTO story_vocabulary ("Id", "StoryVersionId", "Term", "Definition", "CreatedAt", "IsDeleted")
+VALUES
+    (910, 902, 'luống hoa', 'Dải đất trồng nhiều cây hoa', NOW() - INTERVAL '1 day', false),
+    (911, 902, 'hạt giống', 'Hạt có thể nảy mầm thành cây mới', NOW() - INTERVAL '1 day', false),
+    (912, 902, 'tin tưởng', 'Tin rằng người khác sẽ làm tốt việc được nhờ', NOW() - INTERVAL '1 day', false),
+    (913, 902, 'che nắng', 'Giúp tránh ánh nắng chiếu trực tiếp', NOW() - INTERVAL '1 day', false),
+    (914, 902, 'khô ráo', 'Không bị ướt', NOW() - INTERVAL '1 day', false)
+ON CONFLICT ("Id") DO NOTHING;

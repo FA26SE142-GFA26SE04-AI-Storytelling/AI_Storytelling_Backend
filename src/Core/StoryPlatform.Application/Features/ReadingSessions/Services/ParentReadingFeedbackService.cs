@@ -4,6 +4,7 @@ using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
+using StoryPlatform.Application.Features.ListeningInteractions.Services;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -155,7 +156,7 @@ public partial class ParentReadingFeedbackService : IParentReadingFeedbackServic
         var optionIds = attempts.Where(x => x.SelectedOptionId.HasValue).Select(x => x.SelectedOptionId!.Value)
             .Concat(recordings.Where(x => x.ListeningInteractionOptionId.HasValue).Select(x => x.ListeningInteractionOptionId!.Value)).Distinct().ToList();
         var options = (await _unitOfWork.Repository<ListeningInteractionOption>().FindAsync(
-            x => optionIds.Contains(x.Id), cancellationToken: ct)).ToDictionary(x => x.Id);
+            x => optionIds.Contains(x.Id) || ids.Contains(x.ListeningInteractionId), cancellationToken: ct)).ToDictionary(x => x.Id);
         var result = new Dictionary<int, IReadOnlyList<ParentListeningFeedbackDto>>();
         foreach (var sessionId in sessionIds)
         {
@@ -179,6 +180,17 @@ public partial class ParentReadingFeedbackService : IParentReadingFeedbackServic
                 {
                     InteractionId = interactionId, TargetAge = interaction.TargetAge, Type = interaction.Type.ToString(), Prompt = interaction.Prompt,
                     ChoiceCount = choices.Length, Graded = choices.Any(x => x.IsMatch.HasValue),
+                    Verdict = ReadFreeField(choices.LastOrDefault()?.AnswerText, "verdict"),
+                    ReasonText = choices.LastOrDefault()?.SelectedOptionId is int reasonId && options.TryGetValue(reasonId, out var reason)
+                        ? reason.Text : null,
+                    FreeText = ReadFreeField(choices.LastOrDefault()?.AnswerText, "freeText"),
+                    HasFreeVoice = recording is { TotalCount: 0 } && interaction.Type is
+                        ListeningInteractionType.CharacterTrial or ListeningInteractionType.WhatIf,
+                    Placements = interaction.Type == ListeningInteractionType.RelationshipMap
+                        ? ParentPlacements(interaction, choices.LastOrDefault(), options) : [],
+                    KeptSentences = interaction.Type == ListeningInteractionType.StoryEditor
+                        ? (ReadJson<int[]>(choices.LastOrDefault()?.OrderedOptionIdsJson) ?? [])
+                            .Where(options.ContainsKey).Select(id => options[id].Text).ToArray() : [],
                     Choices = choices.Select(x => new ParentListeningChoiceDto(x.SelectedOptionId,
                         x.SelectedOptionId is int optionId && options.TryGetValue(optionId, out var option) ? option.Text : x.AnswerText,
                         x.IsMatch, x.AttemptedAt)
@@ -211,6 +223,37 @@ public partial class ParentReadingFeedbackService : IParentReadingFeedbackServic
             result[sessionId] = feedback;
         }
         return result;
+    }
+
+    private static string? ReadFreeField(string? json, string field)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return document.RootElement.ValueKind == JsonValueKind.Object &&
+                document.RootElement.TryGetProperty(field, out var value) && value.ValueKind == JsonValueKind.String
+                ? value.GetString() : null;
+        }
+        catch (JsonException) { return null; }
+    }
+
+    private static IReadOnlyList<ParentListeningPlacementDto> ParentPlacements(ListeningInteraction interaction,
+        ListeningInteractionAttempt? attempt, IReadOnlyDictionary<int, ListeningInteractionOption> options)
+    {
+        var map = RelationMap.TryParse(interaction.RelationsJson);
+        var placements = ReadJson<List<PlacementDto>>(attempt?.AnswerText);
+        if (map is null || placements is null) return [];
+        var cards = options.Values.Where(option => option.ListeningInteractionId == interaction.Id &&
+            option.Role == ListeningOptionRole.Card).OrderBy(option => option.SortOrder).ToArray();
+        return placements.Where(value => value.EdgeIndex >= 0 && value.EdgeIndex < map.Edges.Count)
+            .Select(value =>
+            {
+                var cardIndex = Array.FindIndex(cards, card => card.Id == value.CardOptionId);
+                return new ParentListeningPlacementDto(value.EdgeIndex, value.CardOptionId,
+                    options.TryGetValue(value.CardOptionId, out var card) ? card.Text : null,
+                    cardIndex >= 0 && map.Edges[value.EdgeIndex].Accepted.Contains(cardIndex));
+            }).ToArray();
     }
 
     private static T? ReadJson<T>(string? json) where T : class

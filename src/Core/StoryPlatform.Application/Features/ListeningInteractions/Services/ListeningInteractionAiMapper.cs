@@ -178,6 +178,42 @@ public static class ListeningInteractionAiMapper
             SourceQuote = x.SourceQuote, MatchFeedback = x.MatchFeedback,
             Options = (x.Bubbles ?? []).Select(b => new ListeningOptionDraft { Text = b.Text ?? string.Empty, IsMatch = b.IsCorrect, Emotion = b.Emotion }).ToArray()
         }).ToArray(),
+        ListeningInteractionType.CharacterTrial => (response.CharacterTrials ?? []).Select(x => new ListeningInteractionDraft
+        {
+            Type = type, AnchorBlockId = x.AfterBlockId, Prompt = x.Situation, SourceQuote = x.DecisionQuote,
+            MatchFeedback = x.MatchFeedback,
+            Options = x.Reasons.Select(reason => new ListeningOptionDraft
+                { Text = reason.Text, Feedback = reason.Positive, Counterpoint = reason.Limitation }).ToArray()
+        }).ToArray(),
+        ListeningInteractionType.FindWrongDetail => (response.FindWrongDetails ?? []).Select(x => new ListeningInteractionDraft
+        {
+            Type = type, AnchorBlockId = x.AfterBlockId, SourceQuote = x.OriginalQuote, Prompt = x.Retold,
+            HiddenWord = x.WrongDetail, Explanation = x.Explanation, MatchFeedback = x.MatchFeedback,
+            Options = x.Choices.Select(choice => new ListeningOptionDraft
+                { Text = choice.Text, IsMatch = choice.IsCorrect }).ToArray()
+        }).ToArray(),
+        ListeningInteractionType.RelationshipMap => (response.RelationshipMaps ?? []).Select(x => new ListeningInteractionDraft
+        {
+            Type = type, AnchorBlockId = x.AfterBlockId, MatchFeedback = x.MatchFeedback,
+            RelationsJson = System.Text.Json.JsonSerializer.Serialize(new { edges = x.Relations }),
+            Options = x.Characters.Select(character => new ListeningOptionDraft
+                { Text = character.Name, ImageDescription = character.ImageDescription, Role = ListeningOptionRole.Node })
+                .Concat(x.Cards.Select(card => new ListeningOptionDraft { Text = card, Role = ListeningOptionRole.Card })).ToArray()
+        }).ToArray(),
+        ListeningInteractionType.StoryEditor => (response.StoryEditors ?? []).Select(x => new ListeningInteractionDraft
+        {
+            Type = type, AnchorBlockId = x.AfterBlockId, SourceQuote = x.Passage, MatchFeedback = x.MatchFeedback,
+            Options = x.Sentences.Select((sentence, index) => new ListeningOptionDraft
+                { Text = sentence.Text, IsMatch = sentence.IsMain, Feedback = sentence.IsMain ? sentence.WhyImportant : null,
+                    CorrectOrder = index + 1 }).ToArray()
+        }).ToArray(),
+        ListeningInteractionType.WhatIf => (response.WhatIfs ?? []).Select(x => new ListeningInteractionDraft
+        {
+            Type = type, AnchorBlockId = x.AfterBlockId, SourceQuote = x.DecisionQuote,
+            Prompt = x.Question, MatchFeedback = x.MatchFeedback,
+            Options = x.Outcomes.Select(outcome => new ListeningOptionDraft
+                { Text = outcome.Text, Feedback = outcome.Because }).ToArray()
+        }).ToArray(),
         _ => []
     };
 

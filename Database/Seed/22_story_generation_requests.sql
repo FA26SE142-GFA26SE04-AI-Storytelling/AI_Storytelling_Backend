@@ -39,3 +39,15 @@ VALUES
      '{"topic":"Thỏ con đi lạc","genre":"Ngụ ngôn","characterMode":"specified","characters":["Thỏ con","Bác Gấu"],"settingMode":"specified","setting":"Khu rừng","lesson":"Nhờ người lớn giúp khi bị lạc","vocabularyLevel":"level_2","language":"vi","targetLength":600}'::jsonb,
      'InputAccepted', 1, 3, md5('seed-request-900'), 'Allow', false, 'seed-v1', NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day', false)
 ON CONFLICT ("Id") DO NOTHING;
+
+-- Ngữ cảnh sinh truyện 902 cho bé Bình (tuổi 9), luôn cần người lớn duyệt nội dung.
+INSERT INTO story_generation_requests (
+    "Id", "StoryId", "SubmittedByUserId", "IdempotencyKey", "InputFingerprint", "ContextFingerprint",
+    "ContextSnapshotJson", "AcceptedInputJson", "Status", "AttemptCount", "MaxAttempts", "ConcurrencyToken",
+    "GuardrailDecision", "CanRetry", "GuardrailCheckVersion", "GuardrailCheckedAt", "CreatedAt", "IsDeleted")
+VALUES
+    (902, 902, 2, 'seed-ai-story-902', encode(sha256('seed-input-902'::bytea), 'hex'), encode(sha256('seed-context-902'::bytea), 'hex'),
+     '{"childProfileId":2,"ageBand":"9-10","readingLevel":4,"vocabularyLevel":"level_4","language":"vi","maximumLength":1500,"requiredApprovalMode":"always_manual","interests":[],"allowedCategoryCodes":[],"restrictedCategoryCodes":[],"blockedCategoryCodes":[],"parentalGateEnabled":true,"consentPolicyVersion":1,"consentRecordedAt":"2026-11-01T00:00:00Z"}'::jsonb,
+     '{"topic":"Ba bạn chăm vườn","genre":"Tình bạn","characterMode":"specified","characters":["Mai","Nam","An"],"settingMode":"specified","setting":"Khu vườn","lesson":"Cùng nhau chăm sóc và giúp đỡ bạn bè","vocabularyLevel":"level_4","language":"vi","targetLength":700}'::jsonb,
+     'InputAccepted', 1, 3, md5('seed-request-902'), 'Allow', false, 'seed-v1', NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day', false)
+ON CONFLICT ("Id") DO NOTHING;

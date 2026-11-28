@@ -1,6 +1,6 @@
 namespace StoryPlatform.Application.Features.PlanBenefits.Interfaces;
 
-/// <summary>Đếm mức đã dùng của các quyền lợi có giới hạn theo tuần / ngày (giờ Việt Nam).</summary>
+/// <summary>Đếm mức đã dùng của các quyền lợi có giới hạn theo tuần, ngày hoặc chu kỳ.</summary>
 public interface IPlanUsageService
 {
     /// <summary>
@@ -8,6 +8,9 @@ public interface IPlanUsageService
     /// Đọc lại truyện đã mở trước đó không tính; phiên mở qua gói truyện gia đình không tính.
     /// </summary>
     Task<int> CountNewLibraryStoriesThisWeekAsync(int ownerUserId, DateTime utcNow, CancellationToken cancellationToken = default);
+
+    /// <summary>Đếm truyện thư viện mở lần đầu từ đầu kỳ đến trước mốc kết thúc kỳ.</summary>
+    Task<int> CountNewLibraryStoriesInPeriodAsync(int ownerUserId, DateTime periodStart, DateTime periodEnd, CancellationToken cancellationToken = default);
 
     /// <summary>Danh sách StoryId thư viện công khai mà các hồ sơ trẻ của tài khoản mở lần đầu trong tuần hiện tại.</summary>
     Task<IReadOnlyList<int>> ListNewLibraryStoryIdsThisWeekAsync(int ownerUserId, DateTime utcNow, CancellationToken cancellationToken = default);

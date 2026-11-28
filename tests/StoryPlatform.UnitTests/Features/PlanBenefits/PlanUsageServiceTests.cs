@@ -36,6 +36,39 @@ public sealed class PlanUsageServiceTests
         });
 
     [Fact]
+    public async Task CountInPeriod_IgnoresFirstOpensBeforePeriodStart()
+    {
+        Session(1, 10, Now.AddMinutes(-1));
+        Session(2, 10, Now);
+        Session(1, 11, Now.AddMonths(1));
+
+        Assert.Equal(0, await _sut.CountNewLibraryStoriesInPeriodAsync(OwnerId, Now, Now.AddMonths(1)));
+    }
+
+    [Fact]
+    public async Task CountInPeriod_TwoChildrenSameStory_CountsOnce()
+    {
+        Session(1, 10, Now);
+        Session(2, 10, Now.AddHours(1));
+
+        Assert.Equal(1, await _sut.CountNewLibraryStoriesInPeriodAsync(OwnerId, Now, Now.AddMonths(1)));
+    }
+
+    [Fact]
+    public async Task CountInPeriod_ExcludesEventWaiverAndFamilyPackageSessions()
+    {
+        Session(1, 10, Now);
+        Session(2, 11, Now, familyConfirmationId: 5);
+        _uow.Seed(new TelemetryLog
+        {
+            Id = 1, ReadingSessionId = 1, EventType = TelemetryEventType.SessionStarted,
+            EventPayload = "{\"eventWeeklyLimitWaived\":true}"
+        });
+
+        Assert.Equal(0, await _sut.CountNewLibraryStoriesInPeriodAsync(OwnerId, Now, Now.AddMonths(1)));
+    }
+
+    [Fact]
     public async Task CountNewLibraryStories_CountsDistinctStoriesFirstOpenedThisWeek_AcrossChildren()
     {
         Session(1, 10, WeekStart.AddHours(1));

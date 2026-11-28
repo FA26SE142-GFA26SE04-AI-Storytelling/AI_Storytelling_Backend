@@ -13,6 +13,8 @@ using StoryPlatform.Application.Features.Events.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.ReadingTime;
 using StoryPlatform.Application.Features.ChildProfiles.ReadingTime.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.ReadingTime.Interfaces;
+using StoryPlatform.Application.Common.Time;
+using StoryPlatform.Application.Features.PlanBenefits.DTOs;
 using StoryPlatform.Application.Features.PlanBenefits.Interfaces;
 
 namespace StoryPlatform.Application.Features.ReadingSessions.Services;
@@ -174,6 +176,9 @@ public class ChildReadingService : IChildReadingService
     public const string WeeklyLibraryLimitMessageFormat =
         "Đã mở đủ {0} truyện thư viện mới trong tuần. Truyện mới mở lại vào thứ Hai.";
 
+    public const string CycleLibraryLimitMessageFormat =
+        "Đã mở đủ {0} truyện thư viện mới trong chu kỳ. Truyện mới mở lại từ ngày {1:dd/MM/yyyy} nếu gia hạn gói.";
+
     private async Task<bool> EnsureWeeklyLibraryAllowanceAsync(int ownerUserId, int storyId, CancellationToken ct)
     {
         if (_planBenefits == null || _planUsage == null)
@@ -181,7 +186,8 @@ public class ChildReadingService : IChildReadingService
             return false;
         }
 
-        var limit = (await _planBenefits.GetForUserAsync(ownerUserId, ct)).WeeklyNewLibraryStories;
+        var benefits = await _planBenefits.GetForUserAsync(ownerUserId, ct);
+        var limit = benefits.WeeklyNewLibraryStories;
         if (limit == null)
         {
             return false;
@@ -198,9 +204,15 @@ public class ChildReadingService : IChildReadingService
             return true;
         }
 
-        var counted = await _planUsage.CountNewLibraryStoriesThisWeekAsync(ownerUserId, DateTime.UtcNow, ct);
+        var counted = await _planUsage.CountNewLibraryStoriesInPeriodAsync(
+            ownerUserId, benefits.NewLibraryStoriesPeriodStart, benefits.NewLibraryStoriesResetsAt, ct);
         if (counted >= limit)
-            throw new ForbiddenException(string.Format(WeeklyLibraryLimitMessageFormat, limit));
+        {
+            var message = benefits.NewLibraryStoriesPeriod == PlanBenefitsDto.CyclePeriod
+                ? string.Format(CycleLibraryLimitMessageFormat, limit, VietnamTime.LocalDate(benefits.NewLibraryStoriesResetsAt))
+                : string.Format(WeeklyLibraryLimitMessageFormat, limit);
+            throw new ForbiddenException(message);
+        }
         return false;
     }
 

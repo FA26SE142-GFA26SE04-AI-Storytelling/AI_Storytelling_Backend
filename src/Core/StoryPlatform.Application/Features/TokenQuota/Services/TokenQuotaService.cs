@@ -558,6 +558,11 @@ public partial class TokenQuotaService : ITokenQuotaService
             var now = DateTime.UtcNow;
             quota.NewLibraryStoriesThisWeek = await _planUsage.CountNewLibraryStoriesThisWeekAsync(userId, now, cancellationToken);
             quota.WritingAssistsToday = await _planUsage.CountWritingAssistsTodayAsync(userId, now, cancellationToken);
+            if (quota.Benefits is { } benefits)
+            {
+                quota.NewLibraryStoriesUsed = await _planUsage.CountNewLibraryStoriesInPeriodAsync(
+                    userId, benefits.NewLibraryStoriesPeriodStart, benefits.NewLibraryStoriesResetsAt, cancellationToken);
+            }
         }
 
         return quota;

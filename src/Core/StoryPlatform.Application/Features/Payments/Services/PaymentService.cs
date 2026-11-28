@@ -159,6 +159,9 @@ public class PaymentService : IPaymentService
             Amount = plan.PriceVnd,
             AiCredits = plan.AiCredits,
             SubmitCredits = plan.PlanType == PlanType.CreatorPack ? plan.SubmitCredits : null,
+            NewLibraryStoriesLimit = plan.PlanType is PlanType.Reading or PlanType.Creative
+                ? plan.WeeklyNewLibraryStories
+                : null,
             Status = PaymentStatus.Pending,
             QrCodeUrl = qrCodeUrl,
             ExpiresAt = now.Add(TransactionTtl)

@@ -154,6 +154,37 @@ public class PaymentServiceTests
     // ---------- CreateTransactionAsync ----------
 
     [Fact]
+    public async Task CreatePayment_ReadingPlan_SnapshotsNewLibraryStoriesLimit()
+    {
+        Plan(ReadingPlanId).WeeklyNewLibraryStories = 24;
+
+        await _sut.CreateTransactionAsync(ParentId, new CreatePaymentTransactionRequestDto { PlanId = ReadingPlanId });
+
+        Assert.Equal(24, Assert.Single(_store.Items<PaymentTransaction>()).NewLibraryStoriesLimit);
+    }
+
+    [Fact]
+    public async Task CreatePayment_CreativePlanUnlimited_SnapshotsNull()
+    {
+        await _sut.CreateTransactionAsync(ParentId, new CreatePaymentTransactionRequestDto { PlanId = CreativePlanId });
+
+        Assert.Null(Assert.Single(_store.Items<PaymentTransaction>()).NewLibraryStoriesLimit);
+    }
+
+    [Theory]
+    [InlineData(AddOnPlanId, ParentId)]
+    [InlineData(CreatorPackPlanId, CreatorId)]
+    public async Task CreatePayment_AddOnAndCreatorPack_SnapshotNull(int planId, int payerId)
+    {
+        Plan(planId).WeeklyNewLibraryStories = 5;
+        HasActivePlan();
+
+        await _sut.CreateTransactionAsync(payerId, new CreatePaymentTransactionRequestDto { PlanId = planId });
+
+        Assert.Null(Assert.Single(_store.Items<PaymentTransaction>()).NewLibraryStoriesLimit);
+    }
+
+    [Fact]
     public async Task CreateTransactionAsync_PlanNotFound_ThrowsNotFound()
     {
         await Assert.ThrowsAsync<NotFoundException>(

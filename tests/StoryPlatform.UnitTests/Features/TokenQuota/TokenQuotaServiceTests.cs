@@ -1,11 +1,13 @@
 using StoryPlatform.Application.Features.PlanBenefits.Services;
 using Moq;
 using StoryPlatform.Application.Common.Exceptions;
+using StoryPlatform.Application.Common.Time;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.TokenQuota.DTOs;
 using StoryPlatform.Application.Features.TokenQuota.Services;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.UnitTests.Features.ReadingSessions;
 using Xunit;
 
 namespace StoryPlatform.UnitTests.Features.TokenQuota;
@@ -230,6 +232,47 @@ public class TokenQuotaServiceTests
     }
 
     // ---------- GetMyQuotaAsync ----------
+
+    [Fact]
+    public async Task GetMyQuota_ReadingCycle_ReturnsUsedInCycleAndBenefitsWindow()
+    {
+        SeedChild();
+        var now = DateTime.UtcNow;
+        var weekStart = VietnamTime.StartOfWeekUtc(now);
+        var cycleStart = weekStart.AddDays(-14);
+        var cycle = SeedSubscription(PlanType.Reading, "Gói Đọc", SubscriptionStatus.Active,
+            cycleStart, cycleStart.AddMonths(1));
+        _store.Seed(new PaymentTransaction
+        {
+            Id = cycle.PaymentId, PlanId = cycle.PlanId, PayerUserId = OwnerId, NewLibraryStoriesLimit = 24
+        });
+        DateTime[] firstOpens =
+        [
+            cycleStart.AddDays(-2), cycleStart.AddDays(-1), cycleStart, cycleStart.AddDays(1),
+            weekStart.AddDays(-1), weekStart, weekStart
+        ];
+        for (var index = 0; index < firstOpens.Length; index++)
+        {
+            var storyId = index + 70;
+            _store.Seed(new Story { Id = storyId, Scope = StoryScope.Creator, IsPublished = true, Status = StoryStatus.Ready });
+            _store.Seed(new ReadingSession { Id = index + 1, ChildProfileId = ChildId, StoryId = storyId, StartedAt = firstOpens[index] });
+        }
+
+        var settings = new PlanSettingsProvider(_store);
+        var sut = new TokenQuotaService(_store, planSettings: settings,
+            planBenefits: new PlanBenefitService(_store, settings, new ManualTimeProvider(now)),
+            planUsage: new PlanUsageService(_store));
+
+        var quota = await sut.GetMyQuotaAsync(OwnerId);
+
+        Assert.Equal(5, quota.NewLibraryStoriesUsed);
+        Assert.Equal(2, quota.NewLibraryStoriesThisWeek);
+        Assert.NotNull(quota.Benefits);
+        Assert.Equal(24, quota.Benefits.WeeklyNewLibraryStories);
+        Assert.Equal("Cycle", quota.Benefits.NewLibraryStoriesPeriod);
+        Assert.Equal(cycle.StartAt, quota.Benefits.NewLibraryStoriesPeriodStart);
+        Assert.Equal(cycle.EndAt, quota.Benefits.NewLibraryStoriesResetsAt);
+    }
 
     [Fact]
     public async Task GetMyQuotaAsync_SplitsCreditsBySource()

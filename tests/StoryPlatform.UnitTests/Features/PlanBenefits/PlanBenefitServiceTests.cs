@@ -1,3 +1,4 @@
+using StoryPlatform.Application.Common.Time;
 using StoryPlatform.Application.Features.PlanBenefits.DTOs;
 using StoryPlatform.Application.Features.PlanBenefits.Services;
 using StoryPlatform.Domain.Entities;
@@ -32,6 +33,86 @@ public sealed class PlanBenefitServiceTests
         var plan = _uow.Items<SubscriptionPlan>().FirstOrDefault() ?? _uow.Seed(CreativePlan());
         _uow.Seed(new UserSubscription { Id = _uow.Items<UserSubscription>().Count + 1, UserId = 10, PlanId = plan.Id, Plan = plan, Status = status, StartAt = startAt, EndAt = endAt });
         return plan;
+    }
+
+    private UserSubscription GivenReadingCycle(DateTime startAt, DateTime endAt, int? snapshotLimit,
+        int currentPlanLimit = 24, SubscriptionStatus status = SubscriptionStatus.Active)
+    {
+        var plan = _uow.Items<SubscriptionPlan>().SingleOrDefault() ?? _uow.Seed(new SubscriptionPlan
+        {
+            Id = 2, Name = "Gói Đọc", PlanType = PlanType.Reading, WeeklyNewLibraryStories = currentPlanLimit
+        });
+        var id = _uow.Items<UserSubscription>().Count + 1;
+        _uow.Seed(new PaymentTransaction { Id = id, PlanId = plan.Id, PayerUserId = 10, NewLibraryStoriesLimit = snapshotLimit });
+        return _uow.Seed(new UserSubscription
+        {
+            Id = id, UserId = 10, PlanId = plan.Id, Plan = plan, PaymentId = id,
+            Status = status, StartAt = startAt, EndAt = endAt
+        });
+    }
+
+    [Fact]
+    public async Task GetForUser_ActiveReadingCycle_UsesTransactionLimitAndCycleWindow()
+    {
+        var cycle = GivenReadingCycle(Now.AddDays(-3), Now.AddDays(27), 24, currentPlanLimit: 30);
+
+        var benefits = await _service.GetForUserAsync(10);
+
+        Assert.Equal(24, benefits.WeeklyNewLibraryStories);
+        Assert.Equal("Cycle", benefits.NewLibraryStoriesPeriod);
+        Assert.Equal(cycle.StartAt, benefits.NewLibraryStoriesPeriodStart);
+        Assert.Equal(cycle.EndAt, benefits.NewLibraryStoriesResetsAt);
+    }
+
+    [Fact]
+    public async Task GetForUser_CycleFromLegacyTransaction_IsUnlimitedEvenIfPlanNowLimited()
+    {
+        GivenReadingCycle(Now.AddDays(-3), Now.AddDays(27), null);
+
+        var benefits = await _service.GetForUserAsync(10);
+
+        Assert.Null(benefits.WeeklyNewLibraryStories);
+        Assert.Equal("Cycle", benefits.NewLibraryStoriesPeriod);
+    }
+
+    [Fact]
+    public async Task GetForUser_ScheduledCycleStarted_UsesItsOwnTransactionLimit()
+    {
+        GivenReadingCycle(Now.AddMonths(-1), Now, 24, status: SubscriptionStatus.Expired);
+        GivenReadingCycle(Now, Now.AddMonths(1), null);
+
+        Assert.Null((await _service.GetForUserAsync(10)).WeeklyNewLibraryStories);
+    }
+
+    [Fact]
+    public async Task GetForUser_Free_ReturnsWeekWindow()
+    {
+        var benefits = await _service.GetForUserAsync(10);
+
+        AssertWeekWindow(benefits);
+        Assert.Equal(new PlanSettings().FreeWeeklyNewLibraryStories, benefits.WeeklyNewLibraryStories);
+    }
+
+    [Fact]
+    public async Task GetForUser_Creator_ReturnsWeekWindow()
+    {
+        AssertWeekWindow(await _service.GetForUserAsync(20));
+    }
+
+    [Fact]
+    public async Task GetForUser_OverrideRaisesCycleLimit()
+    {
+        GivenReadingCycle(Now.AddDays(-3), Now.AddDays(27), 24);
+        _uow.Items<UserAccount>().Single(user => user.Id == 10).WeeklyNewLibraryStoriesOverride = 40;
+
+        Assert.Equal(40, (await _service.GetForUserAsync(10)).WeeklyNewLibraryStories);
+    }
+
+    private static void AssertWeekWindow(PlanBenefitsDto benefits)
+    {
+        Assert.Equal("Week", benefits.NewLibraryStoriesPeriod);
+        Assert.Equal(VietnamTime.StartOfWeekUtc(Now), benefits.NewLibraryStoriesPeriodStart);
+        Assert.Equal(VietnamTime.StartOfNextWeekUtc(Now), benefits.NewLibraryStoriesResetsAt);
     }
 
     [Fact]
@@ -110,7 +191,7 @@ public sealed class PlanBenefitServiceTests
     public async Task GetForUser_ReadingOverride_PreservesMoreGenerousPaidLimits(int? planLimit)
     {
         _uow.Items<UserAccount>().Single(user => user.Id == 10).WeeklyNewLibraryStoriesOverride = 99;
-        GivenCycle(SubscriptionStatus.Active, Now.AddDays(-3), Now.AddDays(27)).WeeklyNewLibraryStories = planLimit;
+        GivenReadingCycle(Now.AddDays(-3), Now.AddDays(27), planLimit);
 
         Assert.Equal(planLimit, (await _service.GetForUserAsync(10)).WeeklyNewLibraryStories);
     }

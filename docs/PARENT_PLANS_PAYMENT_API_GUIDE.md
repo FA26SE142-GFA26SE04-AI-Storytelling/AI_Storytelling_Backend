@@ -76,13 +76,29 @@ Lịch sử giao dịch của chính người gọi, mới nhất trước. `pag
   "cycleCredits": 4,
   "addOnCredits": 2,
   "otherCredits": 0,
-  "totalRemaining": 6
+  "totalRemaining": 6,
+  "benefits": {
+    "tier": "Gói Sáng tạo",
+    "planId": 3,
+    "maxChildProfiles": 4,
+    "weeklyNewLibraryStories": null,
+    "newLibraryStoriesPeriod": "Cycle",
+    "newLibraryStoriesPeriodStart": "2026-11-10T03:00:00Z",
+    "newLibraryStoriesResetsAt": "2026-12-10T03:00:00Z",
+    "canCopyRoadmapTemplates": true,
+    "readAloudPerMonth": 60,
+    "writingAssistPerDay": 20
+  },
+  "newLibraryStoriesThisWeek": 2,
+  "newLibraryStoriesUsed": 5,
+  "writingAssistsToday": 0
 }
 ```
 
 - `plan` là `null` khi ở mức Miễn phí. `nextPlan` là chu kỳ đã thanh toán trước (gia hạn sớm hoặc hạ gói), bắt đầu khi
   chu kỳ hiện tại kết thúc.
 - `otherCredits`: lượt còn dư chuyển từ gói Personal cũ, không hết hạn.
+- `newLibraryStoriesUsed` đếm số truyện thư viện mới trong kỳ của `benefits`. `newLibraryStoriesThisWeek` vẫn đếm theo tuần Việt Nam.
 
 ### GET /api/v1/TokenQuota/child/{childProfileId} — đăng nhập (giữ tạm)
 
@@ -195,7 +211,7 @@ Worker (mỗi 15 phút) tìm giao dịch `Paid` đã quá 5 phút mà chưa có 
 
 - 400 khi: tên rỗng hoặc quá 150 ký tự; `priceVnd <= 0`; `aiCredits < 0`; bật bán gói `Legacy`.
 - Không đổi được loại gói. Tạo gói mới và quyền lợi của gói: xem mục 10.
-- Thay đổi chỉ áp dụng cho giao dịch tạo sau đó: mỗi giao dịch chốt số tiền và số lượt lúc tạo.
+- Số tiền, số lượt và hạn mức truyện thư viện mới chỉ thay đổi với giao dịch tạo sau khi lưu.
 - Gói tắt bán biến mất khỏi `GET Payment/plans` và không mua được nữa. Ghi audit `SubscriptionPlanUpdated`.
 
 ## 6. Thống kê doanh thu và tài khoản cho Admin (F-15, F-16, bổ sung 10/11/2026)
@@ -330,7 +346,7 @@ Cần thêm migration `AddCreatorPackAndSubmissionCredits`.
   - Tài khoản chưa Active → 403: phụ huynh chưa xác thực email, hoặc Creator chưa được Admin duyệt. Thực tế tài khoản
     chưa Active thường bị chặn ngay ở bước xác thực (401).
   - Mỗi Creator chỉ có một giao dịch Gói Creator đang chờ thanh toán.
-  - Giao dịch chốt số lượt AI và số lượt gửi duyệt lúc tạo.
+  - Giao dịch chốt số lượt AI, số lượt gửi duyệt và hạn mức truyện thư viện mới áp dụng cho loại gói lúc tạo.
 - Khi giao dịch Gói Creator `Paid` (webhook hoặc Admin xác nhận tay): cộng 6 lượt AI và 20 lượt gửi duyệt, không hết hạn,
   không cộng hai lần.
 - `PUT /Payment/admin/plans/{id}` nhận thêm `submitCredits` (tuỳ chọn; bỏ trống thì giữ nguyên).
@@ -419,17 +435,20 @@ cột `child_profiles.ReadingSlotSelectedAt`). Seed: `37_subscription_plans.sql`
 
 - Cặp hợp lệ: `audience = User` với `Reading` / `Creative` / `AddOn`; `audience = Creator` với `CreatorPack`. Không tạo
   được `Legacy`. Sai cặp, giá `<= 0`, số lượt âm, tên rỗng hoặc dài hơn 150 ký tự → 400.
-- `Reading` / `Creative` bắt buộc có `benefits` với `maxChildProfiles >= 1`; các số lần không âm. `weeklyNewLibraryStories
-  = null` nghĩa là không giới hạn. Add-on và Gói Creator bỏ qua `benefits`.
+- `Reading` / `Creative` bắt buộc có `benefits` với `maxChildProfiles >= 1`; các số lần không âm.
+  `weeklyNewLibraryStories` là số truyện thư viện mới mỗi chu kỳ thanh toán, `null` là không giới hạn.
+  Add-on và Gói Creator bỏ qua `benefits`.
 - `submitCredits` chỉ dùng cho `CreatorPack`. Ghi audit `SubscriptionPlanCreated`.
 
-`PUT /api/v1/Payment/admin/plans/{id}` nhận thêm `benefits` (tuỳ chọn; bỏ trống thì giữ nguyên). Giá và số lượt vẫn chốt
-theo từng giao dịch, nhưng **quyền lợi đọc thẳng từ gói**: người đang dùng gói nhận quyền lợi mới ngay.
+`PUT /api/v1/Payment/admin/plans/{id}` nhận thêm `benefits` (tuỳ chọn, bỏ trống thì giữ nguyên). Giá, số lượt và hạn mức
+truyện thư viện mới được chốt trên giao dịch. Thay đổi hạn mức chỉ áp dụng cho giao dịch tạo sau khi lưu.
+Chu kỳ đang dùng và chu kỳ đã trả trước giữ giá trị đã chốt. Giao dịch cũ chưa chốt hạn mức được dùng không giới hạn.
+Các quyền lợi khác lấy trực tiếp từ cấu hình gói.
 
 `GET /Payment/plans` và `GET /Payment/admin/plans` trả thêm `benefits` cho gói `Reading` / `Creative` (null với gói khác).
 
-Seed: Gói Đọc 4 hồ sơ, thư viện không giới hạn, sao chép bộ truyện mẫu, đọc to 60 lần/tháng, trợ lý viết 5 lần/ngày;
-Gói Sáng tạo như Gói Đọc nhưng trợ lý viết 20 lần/ngày.
+Seed mới cấp cho Gói Đọc 4 hồ sơ, 24 truyện thư viện mới mỗi chu kỳ, quyền sao chép bộ truyện mẫu, đọc to 60 lần/tháng
+và trợ lý viết 5 lần/ngày. Gói Sáng tạo có thư viện không giới hạn và trợ lý viết 20 lần/ngày.
 
 ### 10.2 Cấu hình chung (Admin)
 
@@ -459,16 +478,22 @@ Quyền lợi hiệu lực = gói `Reading` / `Creative` có chu kỳ `Active` c
 | Việc | Điều kiện chặn | Lỗi |
 |---|---|---|
 | Tạo hồ sơ trẻ, khôi phục hồ sơ đã lưu trữ | Số hồ sơ Draft / Active / Suspended đã bằng `maxChildProfiles` | 409 |
-| Trẻ mở truyện thư viện công khai (truyện Creator) | Mức có giới hạn tuần, truyện chưa từng được hồ sơ nào trong tài khoản mở, và đã mở đủ số truyện mới của tuần | 403 "…mở lại vào thứ Hai" |
+| Trẻ mở truyện thư viện công khai (truyện Creator) | Truyện chưa từng được hồ sơ nào trong tài khoản mở và đã dùng hết hạn mức của kỳ hiện tại | 403 với thông báo theo kỳ bên dưới |
 | `POST /RoadmapLibrary/{id}/copy` | `canCopyRoadmapTemplates = false` (xem trước vẫn được) | 403 |
 | Tạo yêu cầu trợ lý viết (`.../assistance-tasks`, phụ huynh và Creator) | Đã tạo đủ `writingAssistPerDay` task trong ngày; gửi lại cùng `operationId` không tính | 429, mã `ASSISTANCE_DAILY_LIMIT` |
 | Trẻ vào đọc bằng QR, phiên giám sát, "Cho bé đọc truyện này", mở phiên đọc | Hồ sơ đang chỉ xem (mục 10.4) | 403 |
 
-Đọc lại truyện đã mở, truyện phụ huynh tạo và gói truyện đã xác nhận cho gia đình không bị giới hạn tuần. Với trẻ (quét QR,
-mở phiên đọc) thông điệp là thông điệp chung, không nêu lý do gói.
+Hạn mức dùng chung cho các hồ sơ trẻ trong gia đình. Đọc lại truyện đã mở, truyện phụ huynh tạo, truyện sự kiện được miễn
+và phiên đọc qua gói truyện gia đình đều được mở mà không trừ lượt.
 
-`GET /api/v1/TokenQuota/me` trả thêm `benefits` (`tier` = `Free` hoặc tên gói), `newLibraryStoriesThisWeek` và
-`writingAssistsToday`.
+- Tuần: "Đã mở đủ {0} truyện thư viện mới trong tuần. Truyện mới mở lại vào thứ Hai."
+- Chu kỳ: "Đã mở đủ {0} truyện thư viện mới trong chu kỳ. Truyện mới mở lại từ ngày {1:dd/MM/yyyy} nếu gia hạn gói."
+  Ngày trong thông báo tính theo giờ Việt Nam.
+
+Trong `GET /api/v1/TokenQuota/me`, `benefits.weeklyNewLibraryStories` là hạn mức của kỳ hiện tại.
+`benefits.newLibraryStoriesPeriod` là `Week` cho Miễn phí/Creator và `Cycle` cho gói Đọc/Sáng tạo.
+`benefits.newLibraryStoriesPeriodStart` và `benefits.newLibraryStoriesResetsAt` là hai mốc UTC.
+Lần mở đầu tiên được tính từ mốc bắt đầu đến trước mốc kết thúc.
 
 ### 10.4 Hồ sơ được đọc khi về Miễn phí (Luồng 1, 1e)
 

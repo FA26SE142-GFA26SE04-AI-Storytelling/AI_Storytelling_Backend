@@ -14,26 +14,35 @@ public class PlanUsageService(IUnitOfWork unitOfWork) : IPlanUsageService
 {
     internal const string EventWeeklyLimitWaiver = "{\"eventWeeklyLimitWaived\":true}";
 
-    public async Task<int> CountNewLibraryStoriesThisWeekAsync(
+    public Task<int> CountNewLibraryStoriesThisWeekAsync(
         int ownerUserId, DateTime utcNow, CancellationToken cancellationToken = default) =>
-        (await ListNewLibraryStoryIdsThisWeekAsync(ownerUserId, utcNow, cancellationToken)).Count;
+        CountNewLibraryStoriesInPeriodAsync(
+            ownerUserId, VietnamTime.StartOfWeekUtc(utcNow), VietnamTime.StartOfNextWeekUtc(utcNow), cancellationToken);
 
-    public async Task<IReadOnlyList<int>> ListNewLibraryStoryIdsThisWeekAsync(
-        int ownerUserId, DateTime utcNow, CancellationToken cancellationToken = default)
+    public async Task<int> CountNewLibraryStoriesInPeriodAsync(
+        int ownerUserId, DateTime periodStart, DateTime periodEnd, CancellationToken cancellationToken = default) =>
+        (await ListNewLibraryStoryIdsInPeriodAsync(ownerUserId, periodStart, periodEnd, cancellationToken)).Count;
+
+    public Task<IReadOnlyList<int>> ListNewLibraryStoryIdsThisWeekAsync(
+        int ownerUserId, DateTime utcNow, CancellationToken cancellationToken = default) =>
+        ListNewLibraryStoryIdsInPeriodAsync(
+            ownerUserId, VietnamTime.StartOfWeekUtc(utcNow), VietnamTime.StartOfNextWeekUtc(utcNow), cancellationToken);
+
+    private async Task<IReadOnlyList<int>> ListNewLibraryStoryIdsInPeriodAsync(
+        int ownerUserId, DateTime periodStart, DateTime periodEnd, CancellationToken cancellationToken)
     {
-        var weekStart = VietnamTime.StartOfWeekUtc(utcNow);
-        var openedThisWeek = (await FirstOpenedLibraryStoriesAsync(ownerUserId, storyId: null, cancellationToken))
-            .Where(session => session.StartedAt >= weekStart).ToList();
-        if (openedThisWeek.Count == 0)
+        var openedInPeriod = (await FirstOpenedLibraryStoriesAsync(ownerUserId, storyId: null, cancellationToken))
+            .Where(session => session.StartedAt >= periodStart && session.StartedAt < periodEnd).ToList();
+        if (openedInPeriod.Count == 0)
             return [];
 
-        var sessionIds = openedThisWeek.Select(session => session.Id).ToList();
+        var sessionIds = openedInPeriod.Select(session => session.Id).ToList();
         var waivers = await unitOfWork.Repository<TelemetryLog>().FindAsync(
             log => sessionIds.Contains(log.ReadingSessionId) && log.EventType == TelemetryEventType.SessionStarted
                 && log.EventPayload == EventWeeklyLimitWaiver && !log.IsDeleted,
             cancellationToken: cancellationToken);
         var waivedSessionIds = waivers.Select(log => log.ReadingSessionId).ToHashSet();
-        return openedThisWeek.Where(session => !waivedSessionIds.Contains(session.Id)).Select(session => session.StoryId).ToList();
+        return openedInPeriod.Where(session => !waivedSessionIds.Contains(session.Id)).Select(session => session.StoryId).ToList();
     }
 
     public async Task<bool> HasOpenedLibraryStoryAsync(int ownerUserId, int storyId, CancellationToken cancellationToken = default) =>

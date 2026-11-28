@@ -37,6 +37,8 @@ public class MyQuotaDto
     public PlanBenefitsDto? Benefits { get; set; }
     /// <summary>Số truyện thư viện mới đã mở trong tuần (tính từ 00:00 thứ Hai giờ Việt Nam).</summary>
     public int NewLibraryStoriesThisWeek { get; set; }
+    /// <summary>Số truyện thư viện mới đã mở trong kỳ đang áp dụng theo Benefits.</summary>
+    public int NewLibraryStoriesUsed { get; set; }
     /// <summary>Số lần dùng trợ lý viết hôm nay (giờ Việt Nam).</summary>
     public int WritingAssistsToday { get; set; }
 }

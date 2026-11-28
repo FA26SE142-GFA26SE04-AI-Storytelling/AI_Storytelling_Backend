@@ -21,6 +21,7 @@ public class CreatorStatisticsService : ICreatorStatisticsService
 {
     // Thời gian đọc tối thiểu của một lượt đọc hợp lệ; Admin cấu hình được ở F-17 (chưa làm).
     private const int MaxValidReadsPerChildPerDay = 10;
+    public const int MaxValidReadsPerFamilyPerMonth = 60;
     // "Mỗi ngày" của trẻ tính theo giờ Việt Nam.
 
     private readonly IUnitOfWork _unitOfWork;
@@ -403,16 +404,19 @@ public class CreatorStatisticsService : ICreatorStatisticsService
 
     /// <summary>
     /// Lượt đọc hợp lệ của mọi Creator trong kỳ: phiên Completed của truyện Creator đang Published tại lúc đọc, trẻ
-    /// thuộc tài khoản đang có gói trả phí, đủ thời gian đọc tối thiểu, không phải con của chính Creator; mỗi trẻ
-    /// tối đa 1 lượt mỗi truyện mỗi ngày và 10 lượt mỗi ngày; truyện bị gỡ vì vi phạm trong kỳ mất hết lượt của kỳ.
+    /// thuộc tài khoản đang có gói trả phí và không phải con của chính Creator. Thời gian đọc tính theo số giây nhỏ
+    /// hơn giữa thời gian ứng dụng gửi và thời gian từ lúc bắt đầu đến lúc hoàn thành, làm tròn xuống và tối thiểu 0.
+    /// Truyện bị gỡ vì vi phạm trong kỳ mất hết lượt của kỳ. Mỗi trẻ tối đa 1 lượt mỗi truyện mỗi ngày và 10 lượt
+    /// mỗi ngày. Sau đó giữ tối đa 60 lượt sớm nhất mỗi gia đình mỗi tháng theo giờ Việt Nam, kể cả khi chốt giữa tháng.
     /// </summary>
     private async Task<List<ValidRead>> GetValidReadsAsync(
         IReadOnlyList<Story> creatorStories, DateTime from, DateTime toExclusive, CancellationToken cancellationToken)
     {
+        var budgetStart = VietnamTime.StartOfMonthUtc(from);
         var storyById = creatorStories.ToDictionary(story => story.Id);
         var completed = await _unitOfWork.Repository<ReadingSession>().FindAsync(
             session => session.Status == SessionStatus.Completed
-                       && session.CompletedAt >= from && session.CompletedAt < toExclusive,
+                       && session.CompletedAt >= budgetStart && session.CompletedAt < toExclusive,
             cancellationToken: cancellationToken);
         var ownerByChild = (await _unitOfWork.Repository<ChildProfile>().GetAllAsync(cancellationToken))
             .ToDictionary(child => child.Id, child => child.OwnerUserId);
@@ -424,9 +428,11 @@ public class CreatorStatisticsService : ICreatorStatisticsService
         foreach (var session in completed)
         {
             var completedAt = session.CompletedAt!.Value;
-            if (session.TimeSpentSeconds < minimumReadSeconds
+            var elapsedSeconds = Math.Max(0, Math.Floor((completedAt - session.StartedAt).TotalSeconds));
+            var readSeconds = Math.Min(session.TimeSpentSeconds, elapsedSeconds);
+            if (readSeconds < minimumReadSeconds
                 || !storyById.TryGetValue(session.StoryId, out var story)
-                || !WasPublishedAt(story, completedAt, from, toExclusive)
+                || !WasPublishedAt(story, completedAt, budgetStart, toExclusive)
                 || !ownerByChild.TryGetValue(session.ChildProfileId, out var ownerUserId)
                 || ownerUserId == story.AuthorUserId
                 || !plansByUser[ownerUserId].Any(plan => plan.StartAt <= completedAt && completedAt < plan.EndAt))
@@ -435,7 +441,7 @@ public class CreatorStatisticsService : ICreatorStatisticsService
             }
 
             eligible.Add(new ValidRead(
-                session.StoryId, session.ChildProfileId, completedAt, VietnamTime.LocalDate(completedAt)));
+                session.StoryId, session.ChildProfileId, ownerUserId, completedAt, VietnamTime.LocalDate(completedAt)));
         }
 
         return eligible
@@ -446,6 +452,11 @@ public class CreatorStatisticsService : ICreatorStatisticsService
             .GroupBy(read => (read.ChildProfileId, read.Day))
             .SelectMany(group => group.OrderBy(read => read.CompletedAt).ThenBy(read => read.StoryId)
                 .Take(MaxValidReadsPerChildPerDay))
+            .GroupBy(read => (read.OwnerUserId, Month: new DateTime(read.Day.Year, read.Day.Month, 1)))
+            .SelectMany(group => group.OrderBy(read => read.CompletedAt).ThenBy(read => read.StoryId)
+                .ThenBy(read => read.ChildProfileId).Take(MaxValidReadsPerFamilyPerMonth))
+            // Lượt trước kỳ chỉ dùng để trừ hạn mức của tháng.
+            .Where(read => read.CompletedAt >= from)
             .ToList();
     }
 
@@ -485,5 +496,5 @@ public class CreatorStatisticsService : ICreatorStatisticsService
     private static long Share(int reads, long fund, int allReads) =>
         allReads == 0 ? 0 : reads * fund / allReads;
 
-    private sealed record ValidRead(int StoryId, int ChildProfileId, DateTime CompletedAt, DateTime Day);
+    private sealed record ValidRead(int StoryId, int ChildProfileId, int OwnerUserId, DateTime CompletedAt, DateTime Day);
 }

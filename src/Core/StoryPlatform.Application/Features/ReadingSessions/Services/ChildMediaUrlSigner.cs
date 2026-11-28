@@ -69,7 +69,10 @@ public static class ChildMediaUrlSigning
             .Concat(content.Scenes.SelectMany(scene => scene.Segments).Select(segment => segment.AudioUrl))
             .Concat(content.Vocabulary.Select(word => word.AudioUrl))
             .Concat(interactions.Select(interaction => interaction.ModelAudioUrl))
+            .Concat(interactions.Select(interaction => interaction.CharacterImageUrl))
             .Concat(interactions.SelectMany(interaction => interaction.AudioUrls.Values))
+            .Concat(interactions.SelectMany(interaction => interaction.LetterOptions ?? []).Select(option => option.SoundAudioUrl))
+            .Concat(interactions.SelectMany(interaction => interaction.Speakers ?? []).SelectMany(speaker => new[] { speaker.ImageUrl, speaker.NameAudioUrl }))
             .Concat(interactions.SelectMany(interaction => interaction.Options)
                 .SelectMany(option => new[] { option.ImageUrl, option.AudioUrl, option.FeedbackAudioUrl }))
             .Concat(new[] { content.ReadAloudPractice?.AudioUrl, content.ReadAloudPractice?.PraiseAudioUrl });
@@ -85,6 +88,13 @@ public static class ChildMediaUrlSigning
         foreach (var interaction in interactions)
         {
             interaction.ModelAudioUrl = url(interaction.ModelAudioUrl);
+            interaction.CharacterImageUrl = url(interaction.CharacterImageUrl);
+            foreach (var letter in interaction.LetterOptions ?? []) letter.SoundAudioUrl = url(letter.SoundAudioUrl);
+            foreach (var speaker in interaction.Speakers ?? [])
+            {
+                speaker.ImageUrl = url(speaker.ImageUrl);
+                speaker.NameAudioUrl = url(speaker.NameAudioUrl);
+            }
             interaction.AudioUrls = interaction.AudioUrls
                 .Select(pair => (pair.Key, Url: url(pair.Value)))
                 .Where(pair => pair.Url is not null)

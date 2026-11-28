@@ -196,9 +196,9 @@ public sealed class ReviewController : ControllerBase
     [HttpPost("listening/{type}/ai/regenerate")]
     [EnableRateLimiting(RateLimitPolicies.Ai)]
     public async Task<ActionResult<ApiResponse<CreateProposalResponseDto>>> RegenerateListening(
-        int storyId, ListeningInteractionType type, CancellationToken cancellationToken)
+        int storyId, ListeningInteractionType type, CancellationToken cancellationToken, [FromQuery] int? targetAge = null)
     {
-        var result = await _reviewService.CreateListeningProposalAsync(CurrentUserId(), storyId, type, cancellationToken);
+        var result = await _reviewService.CreateListeningProposalAsync(CurrentUserId(), storyId, type, cancellationToken, targetAge);
         return Accepted(ApiResponse<CreateProposalResponseDto>.Ok(result, "Đã tạo đề xuất tương tác lúc nghe để xem trước."));
     }
 

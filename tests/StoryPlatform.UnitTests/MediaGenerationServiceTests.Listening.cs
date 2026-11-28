@@ -15,6 +15,25 @@ public sealed partial class MediaGenerationServiceTests
     private const int FirstBlockEnd = 3;
     private const int StoryEnd = 4;
 
+    [Theory]
+    [InlineData(ListeningInteractionType.WhoSaidIt, 2)]
+    [InlineData(ListeningInteractionType.CharacterLetter, 1)]
+    public async Task ProcessNext_NewTypes_GenerateOnlyRequiredCharacterImages(ListeningInteractionType type, int imageCount)
+    {
+        var uow = Seed();
+        uow.Seed(new ListeningInteraction { Id = 71, StoryVersionId = 10, TargetAge = 6, Type = type,
+            AnchorOffset = FirstBlockEnd, CharacterName = "Thỏ", BlankIndex = 0,
+            SourceQuote = type == ListeningInteractionType.WhoSaidIt ? "Ai đó?" : null, MatchFeedback = "Giỏi quá!" });
+        uow.Seed(new ListeningInteractionOption { Id = 90, ListeningInteractionId = 71, SortOrder = 0,
+            Text = type == ListeningInteractionType.CharacterLetter ? "th" : "Thỏ", IsMatch = true, ImageDescription = "Thỏ con" });
+        uow.Seed(new ListeningInteractionOption { Id = 91, ListeningInteractionId = 71, SortOrder = 1,
+            Text = type == ListeningInteractionType.CharacterLetter ? "b" : "Gấu", ImageDescription = "Bác Gấu" });
+        Assert.True((await Create(uow).RunPackageAsync()).Success);
+        var images = uow.Items<MediaAsset>().Where(x => x.Type == MediaType.ListeningImage).ToArray();
+        Assert.Equal(imageCount, images.Length);
+        Assert.All(images, x => Assert.Equal(ValidationStatus.Passed, x.ValidationStatus));
+    }
+
     private static void SeedCheckpoint(StoryReviewServiceTests.FakeUnitOfWork uow)
     {
         uow.Seed(new ListeningInteraction
@@ -82,6 +101,44 @@ public sealed partial class MediaGenerationServiceTests
                 .Order(StringComparer.Ordinal));
         Assert.Contains("Thỏ thấy thế nào?", tts.Inputs);
         Assert.Contains(storage.UploadedPaths, x => x.Contains("/listening-70-i-prompt-asset-", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ProcessNext_LiteralCheckpoint_GeneratesPictureForEveryOption()
+    {
+        var uow = Seed();
+        uow.Seed(new ListeningInteraction { Id = 73, StoryVersionId = 10, TargetAge = 6, Type = ListeningInteractionType.Checkpoint,
+            Kind = CheckpointKind.Literal, AnchorOffset = FirstBlockEnd, Prompt = "Ai đi lạc vào rừng?", NoMatchFeedback = "Bé nhìn lại tranh nhé." });
+        uow.Seed(new ListeningInteractionOption { Id = 92, ListeningInteractionId = 73, SortOrder = 1, Text = "Thỏ con",
+            Feedback = "Đúng là Thỏ con!", IsMatch = true, ImageDescription = "Thỏ con đứng trước rừng" });
+        uow.Seed(new ListeningInteractionOption { Id = 93, ListeningInteractionId = 73, SortOrder = 2, Text = "bác Gấu",
+            Feedback = "Mình xem lại nhé.", ImageDescription = "Bác Gấu nâu to" });
+        Assert.True((await Create(uow).RunPackageAsync()).Success);
+        var images = uow.Items<MediaAsset>().Where(x => x.Type == MediaType.ListeningImage).ToArray();
+        Assert.Equal([92, 93], images.Select(x => x.ListeningInteractionOptionId!.Value).Order());
+        Assert.All(images, x => Assert.Equal(ValidationStatus.Passed, x.ValidationStatus));
+    }
+
+    private const string WordTimings = "[{\"word\":\"Thỏ\",\"start\":0.0,\"end\":0.4},{\"word\":\"thấy\",\"start\":0.4,\"end\":0.8}]";
+
+    [Fact]
+    public async Task ProcessNext_ListeningAudio_StoresWordTimingsOnlyForHighlightedParts()
+    {
+        var uow = Seed();
+        SeedCheckpoint(uow);
+        Assert.True((await Create(uow, tts: new TimedTtsProvider(WordTimings)).RunPackageAsync()).Success);
+        var audio = uow.Items<MediaAsset>().Where(x => x.Type == MediaType.ListeningAudio).ToArray();
+        Assert.Equal(WordTimings, audio.Single(x => x.AudioPartKey == ListeningAudioParts.Prompt).WordTimings);
+        Assert.All(audio.Where(x => x.AudioPartKey != ListeningAudioParts.Prompt), x => Assert.Null(x.WordTimings));
+    }
+
+    [Fact]
+    public async Task ProcessNext_ListeningAudio_ProviderWithoutTimings_LeavesThemEmpty()
+    {
+        var uow = Seed();
+        SeedCheckpoint(uow);
+        Assert.True((await Create(uow, tts: new TimedTtsProvider(null)).RunPackageAsync()).Success);
+        Assert.All(uow.Items<MediaAsset>().Where(x => x.Type == MediaType.ListeningAudio), x => Assert.Null(x.WordTimings));
     }
 
     [Fact]
@@ -175,6 +232,8 @@ public sealed partial class MediaGenerationServiceTests
         var uow = Seed();
         SeedCheckpoint(uow);
         Assert.True((await Create(uow).RunPackageAsync()).Success);
+        ConfigureAge6Readiness(uow);
+        uow.Items<ListeningInteraction>().Single(x => x.Id == 70).TargetAge = 6;
         var readiness = new MediaReadinessService(uow);
         Assert.True((await readiness.CheckAsync(10, null)).IsReady);
 
@@ -193,6 +252,8 @@ public sealed partial class MediaGenerationServiceTests
         var uow = Seed();
         SeedPicturePrediction(uow);
         Assert.True((await Create(uow).RunPackageAsync()).Success);
+        ConfigureAge6Readiness(uow);
+        uow.Items<ListeningInteraction>().Single(x => x.Id == 71).TargetAge = 6;
         var readiness = new MediaReadinessService(uow);
         Assert.True((await readiness.CheckAsync(10, null)).IsReady);
         uow.Items<ListeningInteraction>().Single(x => x.Id == 71).StorySceneId = null;
@@ -202,6 +263,39 @@ public sealed partial class MediaGenerationServiceTests
         var result = await readiness.CheckAsync(10, null);
         Assert.False(result.IsReady);
         Assert.Equal(new[] { "71:scene", "71:o90:image" }, result.MissingListeningMedia);
+    }
+
+    private static void ConfigureAge6Readiness(StoryReviewServiceTests.FakeUnitOfWork uow)
+    {
+        var story = uow.Items<Story>().Single();
+        story.Source = StorySource.Ai;
+        story.OutputMode = StoryOutputMode.Learning;
+        story.AgeBand = "6-8";
+    }
+
+    [Fact]
+    public async Task Readiness_LegacyRowsDoNotSatisfyBuiltAgeSet()
+    {
+        var uow = Seed();
+        SeedCheckpoint(uow);
+        Assert.True((await Create(uow).RunPackageAsync()).Success);
+        ConfigureAge6Readiness(uow);
+        var result = await new MediaReadinessService(uow).CheckAsync(10, null);
+        Assert.Equal(["age:6:listening-set"], result.MissingListeningMedia);
+        Assert.False(result.IsReady);
+    }
+
+    [Fact]
+    public async Task Readiness_BandWithoutBuiltAges_IgnoresLegacyRows()
+    {
+        var uow = Seed();
+        Assert.True((await Create(uow).RunPackageAsync()).Success);
+        ConfigureAge6Readiness(uow);
+        uow.Items<Story>().Single().AgeBand = "9-10";
+        uow.Seed(new ListeningInteraction { Id = 99, StoryVersionId = 10, Type = ListeningInteractionType.Checkpoint, Prompt = "Legacy" });
+        var result = await new MediaReadinessService(uow).CheckAsync(10, null);
+        Assert.True(result.IsReady);
+        Assert.Empty(result.MissingListeningMedia);
     }
 
     [Fact]
@@ -315,6 +409,13 @@ public sealed partial class MediaGenerationServiceTests
             exactSceneText == failingText
                 ? throw new InvalidOperationException("TTS_PROVIDER_TEST_FAILURE")
                 : Task.FromResult(new GeneratedMedia([4, 5, 6], "audio/mpeg"));
+    }
+
+    private sealed class TimedTtsProvider(string? wordTimingsJson) : ITtsProvider
+    {
+        public Task<GeneratedMedia> GenerateAsync(string exactSceneText, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new GeneratedMedia([4, 5, 6], "audio/mpeg", wordTimingsJson is null ? null
+                : new Dictionary<string, string> { ["wordTimingsJson"] = wordTimingsJson }));
     }
 
     private sealed class RecordingImageProvider : IImageGenerationProvider

@@ -12,6 +12,64 @@ namespace StoryPlatform.UnitTests.Features.ReadingSessions;
 public class ParentReadingFeedbackServiceTests
 {
     [Fact]
+    public async Task ListAsync_Age6Listening_ShowsChoicesStepsAndWordStatuses()
+    {
+        var session = Done(DateTime.UtcNow);
+        _h.ListeningInteractions.Add(new ListeningInteraction
+        {
+            Id = 71, StoryVersionId = ReadingHarness.Version, TargetAge = 6,
+            Type = ListeningInteractionType.CharacterLetter, Prompt = "Tên Thỏ có chữ gì?", SourceQuote = "thờ"
+        });
+        _h.ListeningInteractions.Add(new ListeningInteraction
+        {
+            Id = 72, StoryVersionId = ReadingHarness.Version, TargetAge = 6,
+            Type = ListeningInteractionType.RolePlay, SourceQuote = "Bạn có đi cùng không"
+        });
+        _h.ListeningOptions.Add(new ListeningInteractionOption { Id = 80, ListeningInteractionId = 71, Text = "th" });
+        _h.ListeningAttempts.Add(new ListeningInteractionAttempt
+        {
+            Id = 1, ReadingSessionId = session.Id, ListeningInteractionId = 71, SelectedOptionId = 80,
+            IsMatch = false, AttemptedAt = DateTime.UtcNow.AddSeconds(-1)
+        });
+        _h.ListeningAttempts.Add(new ListeningInteractionAttempt
+        {
+            Id = 2, ReadingSessionId = session.Id, ListeningInteractionId = 71, SelectedOptionId = 80,
+            IsMatch = true, AttemptedAt = DateTime.UtcNow, StepResultsJson = "{\"sound\":\"tried\",\"trace\":\"skipped\"}"
+        });
+        _h.ReadAloudRecordings.Add(new ReadAloudRecording
+        {
+            Id = 1, ReadingSessionId = session.Id, ListeningInteractionId = 72,
+            WordStatusesJson = "[\"Good\",\"Good\",\"Good\",\"Good\",\"Retry\"]", RecordedAt = DateTime.UtcNow
+        });
+
+        var item = Assert.Single((await List()).Items);
+        var letter = Assert.Single(item.ListeningInteractions, x => x.InteractionId == 71);
+        Assert.Equal(6, letter.TargetAge);
+        Assert.Equal(2, letter.ChoiceCount);
+        Assert.True(letter.Graded);
+        Assert.Equal("th", letter.Choices[1].AnswerText);
+        Assert.Equal("tried", letter.Steps["sound"]);
+        Assert.Equal("skipped", letter.Steps["trace"]);
+        var voice = Assert.Single(item.ListeningInteractions, x => x.InteractionId == 72);
+        Assert.Equal(5, voice.WordStatuses.Count);
+        Assert.Equal("không", Assert.Single(voice.UnclearWords));
+    }
+
+    [Fact]
+    public async Task ListAsync_PicturePrediction_RemainsUngradedAndExcludesLegacyListening()
+    {
+        var session = Done(DateTime.UtcNow);
+        _h.ListeningInteractions.Add(new ListeningInteraction { Id = 71, TargetAge = 6, Type = ListeningInteractionType.PicturePrediction });
+        _h.ListeningInteractions.Add(new ListeningInteraction { Id = 72, Type = ListeningInteractionType.PicturePrediction });
+        _h.ListeningAttempts.Add(new ListeningInteractionAttempt { Id = 1, ReadingSessionId = session.Id, ListeningInteractionId = 71 });
+        _h.ListeningAttempts.Add(new ListeningInteractionAttempt { Id = 2, ReadingSessionId = session.Id, ListeningInteractionId = 72 });
+
+        var feedback = Assert.Single(Assert.Single((await List()).Items).ListeningInteractions);
+        Assert.Equal(71, feedback.InteractionId);
+        Assert.False(feedback.Graded);
+    }
+
+    [Fact]
     public async Task ListAsync_ShowsEmotionsAndReflectionBrief()
     {
         var session = _h.AddSession(SessionStatus.Completed);

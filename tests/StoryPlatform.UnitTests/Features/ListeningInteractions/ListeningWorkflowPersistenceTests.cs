@@ -86,7 +86,8 @@ public sealed class ListeningWorkflowPersistenceTests
             Assert.NotNull(receipt.PinnedRequest?.Snapshot);
             Assert.Equal(1, receipt.ProviderCalls);
         });
-        Assert.Equal(6, await result.Set<ListeningInteraction>().CountAsync());
+        Assert.Equal(5, await result.Set<ListeningInteraction>().CountAsync());
+        Assert.All(await result.Set<ListeningInteraction>().ToListAsync(), x => Assert.Equal(6, x.TargetAge));
         Assert.Equal(StoryStatus.ContentReview, (await result.Stories.SingleAsync()).Status);
         var progress = await new ContentGenerationService(new UnitOfWork(result), ai.Object, null!, finalizer.Object, null!, new()).GetProgressAsync(1, 1);
         Assert.True(progress.IsComplete);

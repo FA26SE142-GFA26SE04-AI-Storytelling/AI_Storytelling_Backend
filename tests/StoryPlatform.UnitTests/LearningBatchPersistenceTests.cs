@@ -80,7 +80,7 @@ public sealed class LearningBatchPersistenceTests
         var service=new ContentGenerationService(new UnitOfWork(db),null!,null!,null!,null!,new(),learningBatches:new Mock<ILearningBatchService>().Object);
         var handoff=typeof(ContentGenerationService).GetMethod("EnsureNextJobAsync",BindingFlags.NonPublic|BindingFlags.Instance)!;
         var nextType = handoff.GetParameters()[2].ParameterType;
-        var next = Activator.CreateInstance(nextType, [GenerationJobOperation.GenerateQuiz, null])!;
+        var next = Activator.CreateInstance(nextType, [GenerationJobOperation.GenerateQuiz, null, null])!;
         await (Task)handoff.Invoke(service, [source, 10, next, CancellationToken.None])!;
         await db.SaveChangesAsync();db.ChangeTracker.Clear();
         var quiz=await db.StoryGenerationJobs.AsNoTracking().SingleAsync(x=>x.Id==2);

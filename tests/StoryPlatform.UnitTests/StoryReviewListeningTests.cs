@@ -17,6 +17,106 @@ namespace StoryPlatform.UnitTests;
 
 public sealed class StoryReviewListeningTests
 {
+    [Fact]
+    public async Task Review_HidesLegacyRows_AndRequiresBuiltAgeSet()
+    {
+        var uow = ListeningTestStory.SeedReviewStory();
+        uow.Seed(new ListeningInteraction
+        {
+            Id = 900, StoryVersionId = 1, Type = ListeningInteractionType.Checkpoint, Prompt = "Cũ"
+        });
+        var (service, _, _) = Build(uow);
+
+        var dto = await service.GetListeningForReviewAsync(1, 1);
+
+        Assert.True(dto.Required);
+        Assert.Empty(dto.Items);
+        Assert.Empty(dto.AgeSets);
+        Assert.All(dto.Plan, x => Assert.Equal(6, x.TargetAge));
+        Assert.Contains(dto.Issues, x => x.Code == "LISTENING_MISSING");
+    }
+
+    [Fact]
+    public async Task Review_BandWithoutBuiltAges_DoesNotRequireListeningOrGenerationContext()
+    {
+        var uow = ListeningTestStory.SeedReviewStory(withContext: false);
+        uow.Items<Story>().Single().AgeBand = "9-10";
+        var (service, _, _) = Build(uow);
+
+        var dto = await service.GetListeningForReviewAsync(1, 1);
+
+        Assert.False(dto.Required);
+        Assert.Empty(dto.Plan);
+        Assert.Empty(dto.Issues);
+        Assert.True(await service.CompleteListeningReviewAsync(1, 1));
+    }
+
+    [Fact]
+    public async Task Review_EditCharacterLetter_RejectsAccentedBlank()
+    {
+        var uow = ListeningTestStory.SeedReviewStory();
+        var interaction = new ListeningInteraction
+        {
+            Id = 900, StoryVersionId = 1, TargetAge = 6, Type = ListeningInteractionType.CharacterLetter,
+            CharacterName = "Thỏ", BlankIndex = 0, AnchorOffset = ListeningTestStory.Block("P3").EndOffset,
+            Prompt = "Tên Thỏ có chữ gì?", MatchFeedback = "Con tìm thấy rồi!"
+        };
+        uow.Seed(interaction);
+        foreach (var option in new[]
+        {
+            new ListeningInteractionOption { Id = 901, ListeningInteractionId = interaction.Id, SortOrder = 1, Text = "th", IsMatch = true },
+            new ListeningInteractionOption { Id = 902, ListeningInteractionId = interaction.Id, SortOrder = 2, Text = "b" },
+            new ListeningInteractionOption { Id = 903, ListeningInteractionId = interaction.Id, SortOrder = 3, Text = "m" }
+        }) uow.Seed(option);
+        var (service, _, _) = Build(uow);
+
+        var error = await Assert.ThrowsAsync<BadRequestException>(() => service.UpdateListeningInteractionAsync(1, 1, interaction.Id,
+            new UpdateListeningInteractionRequestDto { VersionId = 1, BlankIndex = 1 }));
+
+        Assert.Contains("LETTER_BLANK_INVALID", error.Message);
+        Assert.Equal(0, interaction.BlankIndex);
+    }
+
+    [Fact]
+    public async Task Review_EditAge6Picture_RejectsGradedOption()
+    {
+        var uow = ListeningTestStory.SeedReviewStory();
+        uow.Seed(new ListeningInteraction
+        {
+            Id = 900, StoryVersionId = 1, TargetAge = 6, Type = ListeningInteractionType.PicturePrediction,
+            AnchorOffset = ListeningTestStory.Block("P4").EndOffset, Prompt = "Thỏ sẽ về đâu?", WaitFeedback = "Cùng nghe tiếp nhé."
+        });
+        foreach (var option in new[]
+        {
+            new ListeningInteractionOption { Id = 901, ListeningInteractionId = 900, SortOrder = 1, Text = "Về hang", ImageDescription = "Thỏ về hang." },
+            new ListeningInteractionOption { Id = 902, ListeningInteractionId = 900, SortOrder = 2, Text = "Về rừng", ImageDescription = "Thỏ tới rừng." }
+        }) uow.Seed(option);
+        var (service, _, _) = Build(uow);
+
+        var error = await Assert.ThrowsAsync<BadRequestException>(() => service.UpdateListeningInteractionAsync(1, 1, 900,
+            new UpdateListeningInteractionRequestDto { VersionId = 1, Options = [new() { Id = 901, IsMatch = true }] }));
+
+        Assert.Contains("MATCH_RULE_INVALID", error.Message);
+        Assert.False(uow.Items<ListeningInteractionOption>().Single(x => x.Id == 901).IsMatch);
+    }
+
+    [Fact]
+    public async Task Review_GroupsTaggedAgeSets_AndOmitsUntaggedRows()
+    {
+        var uow = ListeningTestStory.SeedReviewStory();
+        await ListeningTestStory.SeedPackageAsync(uow);
+        uow.Seed(new ListeningInteraction { Id = 900, StoryVersionId = 1, TargetAge = 7,
+            Type = ListeningInteractionType.Checkpoint, AnchorOffset = ListeningTestStory.Block("P1").EndOffset });
+        uow.Seed(new ListeningInteraction { Id = 901, StoryVersionId = 1,
+            Type = ListeningInteractionType.Checkpoint, AnchorOffset = ListeningTestStory.Block("P1").EndOffset });
+
+        var dto = await Build(uow).Service.GetListeningForReviewAsync(1, 1);
+
+        Assert.Equal(new[] { 6, 7 }, dto.AgeSets.Select(x => x.TargetAge));
+        Assert.DoesNotContain(dto.Items, x => x.Id == 901);
+        Assert.Empty(dto.Issues);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -155,8 +255,9 @@ public sealed class StoryReviewListeningTests
         Assert.False(dto.Reviewed);
         Assert.Empty(dto.Issues);
         Assert.Equal(dto.Plan.Sum(p => p.Count), dto.Items.Count);
-        Assert.Contains(dto.Plan, p => p.Type == "EventOrdering");
-        Assert.Contains(dto.Plan, p => p.Type == "ReadAloud" && p.Count == 1);
+        Assert.Contains(dto.Plan, p => p.Type == "CharacterLetter");
+        Assert.Contains(dto.Plan, p => p.Type == "WhoSaidIt" && p.Count == 1);
+        Assert.Equal(6, Assert.Single(dto.AgeSets).TargetAge);
     }
 
     [Fact]
@@ -175,11 +276,11 @@ public sealed class StoryReviewListeningTests
     public void Unknown_fields_land_in_extension_data()
     {
         var input = JsonSerializer.Deserialize<UpdateListeningInteractionRequestDto>(
-            "{\"versionId\":1,\"hiddenWord\":\"x\",\"options\":[{\"id\":1,\"isMatch\":true}]}",
+            "{\"versionId\":1,\"hiddenWord\":\"x\",\"options\":[{\"id\":1,\"correctOrder\":1}]}",
             new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
 
         Assert.True(input.ExtensionData!.ContainsKey("hiddenWord"));
-        Assert.True(input.Options![0].ExtensionData!.ContainsKey("isMatch"));
+        Assert.True(input.Options![0].ExtensionData!.ContainsKey("correctOrder"));
     }
 
     [Fact]

@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
+using StoryPlatform.Application.Features.ListeningInteractions.Services;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
 using StoryPlatform.Application.Features.MediaStorage.Models;
@@ -177,12 +178,12 @@ public sealed partial class MediaGenerationService
         await EnsureListeningAudioAsync(root.Id, token, root.StoryId, version, context, ct);
         var interactions = await LoadListeningInteractionsAsync(version, ct);
         var options = await LoadListeningOptionsAsync(interactions, ct);
-        foreach (var interaction in interactions.Where(x => x.Type == ListeningInteractionType.PicturePrediction))
+        foreach (var interaction in interactions.Where(ListeningMediaRequirements.HasOptionImages))
         {
             var scene = await FreshAsync<StoryScene>(interaction.StorySceneId!.Value, ct)
                 ?? throw new InvalidOperationException("STALE_MEDIA_RESULT");
             var spec = _specificationBuilder.Build(version, scene.Id, scene.SceneIndex, scene.SceneText, scene.VisualDescription, _contextProjector.Project(context.ContextJson));
-            foreach (var option in options.Where(x => x.ListeningInteractionId == interaction.Id))
+            foreach (var option in ListeningMediaRequirements.ImageOptions(interaction, options))
             {
                 var asset = await GetOrCreateClaimedListeningAssetAsync(root.Id, token, version, context.Id,
                     () => GetOrCreateListeningImageAssetAsync(version, interaction.Id, option.Id, ct), ct);

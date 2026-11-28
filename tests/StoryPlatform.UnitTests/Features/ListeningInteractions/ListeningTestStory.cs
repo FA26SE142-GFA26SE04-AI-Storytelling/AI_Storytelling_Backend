@@ -209,6 +209,35 @@ internal static class ListeningTestStory
     }
 
     /// <summary>Client AI giả: trả AiResponse hợp lệ theo loại được hỏi.</summary>
+    public static GenerateListeningInteractionResponse Age6AiResponse(ListeningInteractionType type) => type switch
+    {
+        ListeningInteractionType.Checkpoint => new()
+        {
+            Checkpoints = [AiResponse(type).Checkpoints[0] with
+            {
+                Kind = "Literal", Options = AiResponse(type).Checkpoints[0].Options.Take(2)
+                    .Select((o, i) => o with { ImageDescription = i == 0 ? "Thỏ con sợ hãi giữa rừng tối" : "Thỏ con vui vẻ giữa rừng" }).ToArray()
+            }]
+        },
+        ListeningInteractionType.CharacterLetter => new()
+        {
+            CharacterLetters = [new() { AfterBlockId = "P4", CharacterName = "Th\u1ecf", BlankIndex = 0, ImageDescription = "White rabbit",
+                PraiseFeedback = "Con thu rat gioi!", Options = [new() { Text = "th", IsMatch = true }, new() { Text = "b" }, new() { Text = "m" }] }]
+        },
+        ListeningInteractionType.WhoSaidIt => new()
+        {
+            WhoSaidIts = [new() { AfterBlockId = "P3", SourceQuote = AiResponse(ListeningInteractionType.RolePlay).RolePlays[0].LineQuote,
+                MatchFeedback = "Con thu rat gioi!", RetryFeedback = "Minh nghe lai nhe!",
+                Speakers = [new("Th\u1ecf", true, "White rabbit"), new("b\u00e1c G\u1ea5u", false, "Brown bear")] }]
+        },
+        ListeningInteractionType.PicturePrediction => new()
+        {
+            PicturePredictions = [AiResponse(type).PicturePredictions[0] with { AfterBlockId = "P5", RevealBlockId = null,
+                Options = AiResponse(type).PicturePredictions[0].Options.Select(o => o with { IsMatch = false }).ToArray() }]
+        },
+        _ => AiResponse(type)
+    };
+
     public static Mock<IAIStoryGenerationClient> AiClient()
     {
         var ai = new Mock<IAIStoryGenerationClient>();
@@ -217,7 +246,7 @@ internal static class ListeningTestStory
                 new ListeningPromptSnapshotDto("Listening" + type, "fixture-v1", "Generate {{context}}"));
         ai.Setup(x => x.GenerateListeningInteractionAsync(It.IsAny<GenerateListeningInteractionRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((GenerateListeningInteractionRequest request, CancellationToken _) =>
-                AiResponse(Enum.Parse<ListeningInteractionType>(request.InteractionType)));
+                request.TargetAge == 6 ? Age6AiResponse(Enum.Parse<ListeningInteractionType>(request.InteractionType)) : AiResponse(Enum.Parse<ListeningInteractionType>(request.InteractionType)));
         return ai;
     }
 
@@ -225,7 +254,7 @@ internal static class ListeningTestStory
     public static async Task SeedPackageAsync(StoryReviewServiceTests.FakeUnitOfWork uow, params ListeningInteractionType[] only)
     {
         var generator = new ListeningInteractionGenerator(uow, AiClient().Object);
-        var scope = await generator.LoadScopeAsync(uow.Items<Story>().Single(), uow.Items<StoryVersion>().Single(x => x.IsCurrent), default);
+        var scope = await generator.LoadScopeAsync(uow.Items<Story>().Single(), uow.Items<StoryVersion>().Single(x => x.IsCurrent), default, 6);
         foreach (var item in scope.Plan.Items.Where(x => only.Length == 0 || only.Contains(x.Type)))
             await generator.InsertAsync(scope.Version.Id, (await generator.GenerateAsync(scope, item.Type, "seed", default)).Drafts, default);
     }

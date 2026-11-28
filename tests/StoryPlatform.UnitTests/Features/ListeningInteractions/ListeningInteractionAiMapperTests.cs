@@ -11,6 +11,46 @@ namespace StoryPlatform.UnitTests.Features.ListeningInteractions;
 
 public sealed class ListeningInteractionAiMapperTests
 {
+    [Fact]
+    public void Age6_requests_carry_target_kind_and_allowed_letters()
+    {
+        var request = ListeningInteractionAiMapper.BuildRequest("age6", T.Checkpoint, 1, AgeBand.Age_6_8, "vi",
+            "Story", "Lesson", S.Blocks, [], [], [["P1"]], [], [], targetAge: 6, kind: CheckpointKind.Literal);
+        Assert.Equal(6, request.TargetAge);
+        Assert.Equal("Literal", request.CheckpointKind);
+        var letter = ListeningInteractionAiMapper.BuildRequest("age6", T.CharacterLetter, 1, AgeBand.Age_6_8, "vi",
+            "Story", "Lesson", S.Blocks, [], [], [["P1"]], [], [], targetAge: 6);
+        Assert.Contains("th", letter.AllowedLetters);
+    }
+
+    [Fact]
+    public void Literal_response_maps_a_picture_for_every_option()
+    {
+        var literal = Assert.Single(ListeningInteractionAiMapper.ToDrafts(S.Age6AiResponse(T.Checkpoint), T.Checkpoint));
+        Assert.Equal(CheckpointKind.Literal, literal.Kind);
+        Assert.All(literal.Options, o => Assert.False(string.IsNullOrWhiteSpace(o.ImageDescription)));
+    }
+
+    [Fact]
+    public void NonLiteral_checkpoint_never_carries_pictures()
+    {
+        var drafts = ListeningInteractionAiMapper.ToDrafts(S.AiResponse(T.Checkpoint), T.Checkpoint);
+        Assert.NotEmpty(drafts);
+        Assert.All(drafts.SelectMany(d => d.Options), o => Assert.Null(o.ImageDescription));
+    }
+
+    [Fact]
+    public void Age6_response_maps_blank_portrait_and_speakers()
+    {
+        var letter = Assert.Single(ListeningInteractionAiMapper.ToDrafts(S.Age6AiResponse(T.CharacterLetter), T.CharacterLetter));
+        Assert.Equal(0, letter.BlankIndex);
+        Assert.NotNull(Assert.Single(letter.Options.Where(o => o.IsMatch)).ImageDescription);
+        var who = Assert.Single(ListeningInteractionAiMapper.ToDrafts(S.Age6AiResponse(T.WhoSaidIt), T.WhoSaidIt));
+        Assert.Equal(2, who.Options.Count);
+        Assert.True(who.Options[0].IsMatch);
+        Assert.NotNull(who.SourceQuote);
+    }
+
     [Theory]
     [InlineData(T.Checkpoint, 2, AgeBand.Age_6_8)]
     [InlineData(T.RolePlay, 1, AgeBand.Age_6_8)]

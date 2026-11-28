@@ -42,16 +42,16 @@ public sealed class ListeningInteractionGenerator
     }
 
     /// <summary>Kế hoạch chỉ rỗng khi truyện có dưới 2 đoạn; kiểm tra được mà không cần ngữ cảnh sinh.</summary>
-    public static bool HasPlan(string? content) => !string.IsNullOrEmpty(content) && BlockParser.Parse(content).Count >= 2;
+    public static bool HasPlan(string? content, AgeBand band) => !string.IsNullOrEmpty(content) && BlockParser.Parse(content).Count >= 2 && ListeningAgeSets.TargetAgesFor(band).Count > 0;
 
-    public static ListeningScope CreateScope(StoryVersion version, AIStoryInputContextSnapshot context)
+    public static ListeningScope CreateScope(StoryVersion version, AIStoryInputContextSnapshot context, int targetAge)
     {
         var blocks = BlockParser.Parse(version.Content!);
-        return new(version, context, blocks, ListeningInteractionPlanner.Create(ToAgeBand(context.AgeBand), blocks));
+        return new(version, context, blocks, ListeningInteractionPlanner.Create(targetAge, blocks)) { TargetAge = targetAge };
     }
 
     /// <summary>Ngữ cảnh lấy từ yêu cầu sinh đã chấp nhận gần nhất, giống job Phase 4. Thiếu thì đóng chặn.</summary>
-    public async Task<ListeningScope> LoadScopeAsync(Story story, StoryVersion version, CancellationToken ct)
+    public async Task<ListeningScope> LoadScopeAsync(Story story, StoryVersion version, CancellationToken ct, int targetAge)
     {
         var request = (await _unitOfWork.Repository<StoryGenerationRequest>().FindAsync(
                 x => x.StoryId == story.Id && x.Status == GenerationInputStatus.InputAccepted && !x.IsDeleted, cancellationToken: ct))
@@ -62,7 +62,7 @@ public sealed class ListeningInteractionGenerator
         if (context is null) throw new ConflictException("LISTENING_CONTEXT_MISSING");
         try { GenerationStoryAccess.ValidateSnapshot(story, context); }
         catch (InvalidOperationException) { throw new ConflictException("LISTENING_CONTEXT_MISSING"); }
-        return CreateScope(version, context);
+        return CreateScope(version, context, targetAge);
     }
 
     /// <summary>Gọi AI cho một loại, thử lại kèm previousErrors (chỉ mã); hết lượt thì ném &lt;TYPE&gt;_VALIDATION_FAILED.</summary>
@@ -71,16 +71,19 @@ public sealed class ListeningInteractionGenerator
         ListeningJobState? durableState = null, Func<ListeningJobState, CancellationToken, Task>? checkpoint = null)
     {
         var item = scope.Plan.Items.FirstOrDefault(x => x.Type == type) ?? throw new ConflictException("LISTENING_TYPE_NOT_IN_PLAN");
-        if (type == ListeningInteractionType.RolePlay && item.Zones.Any(zone => !zone.Any(scope.Plan.DialogueBlockIds.Contains)))
+        if ((type == ListeningInteractionType.RolePlay && item.Zones.Any(zone => !zone.Any(scope.Plan.DialogueBlockIds.Contains))) ||
+            (type == ListeningInteractionType.WhoSaidIt && item.Zones.Any(zone => !scope.Blocks.Any(b => zone.Contains(b.BlockId) &&
+                scope.Blocks.Any(d => scope.Plan.DialogueBlockIds.Contains(d.BlockId) && d.EndOffset <= b.EndOffset)))))
             throw new ConflictException("LISTENING_PLAN_INFEASIBLE");
         // Neo của các loại khác đã lưu; loại đang sinh không tự chặn mình.
-        var occupied = (await LoadSavedAsync(scope.Version.Id, ct, scope.ParentStoryPackageId)).Where(x => x.Type != type).Select(x => x.AnchorOffset).ToArray();
+        var occupied = (await LoadSavedAsync(scope.Version.Id, ct, scope.ParentStoryPackageId, scope.TargetAge)).Where(x => x.Type != type).Select(x => x.AnchorOffset).ToArray();
         var context = RuleContext(scope, item, occupied);
         var vocabulary = type is ListeningInteractionType.FillBlank or ListeningInteractionType.ReadAloud
             ? (await _unitOfWork.Repository<StoryVocabulary>().FindAsync(
                 x => x.StoryVersionId == scope.Version.Id && x.ParentStoryPackageId == scope.ParentStoryPackageId && !x.IsDeleted, cancellationToken: ct)).Select(x => x.Term).ToArray()
             : [];
         var state = durableState ?? new ListeningJobState { MaximumValidationAttempts = _maxAttempts };
+        state.TargetAge = scope.TargetAge;
         var fingerprint = ListeningJobState.Fingerprint(scope);
         if (state.PinnedRequest is not null && state.SourceFingerprint != fingerprint)
             throw new InvalidOperationException("LISTENING_SOURCE_STALE");
@@ -88,11 +91,11 @@ public sealed class ListeningInteractionGenerator
         {
             var request = ListeningInteractionAiMapper.BuildRequest(requestIdPrefix, type, item.Count, context.AgeBand, scope.Context.Language,
                 scope.Version.Title, scope.Version.Lesson ?? string.Empty, scope.Blocks, scope.Plan.DialogueBlockIds, occupied,
-                item.Zones, vocabulary, []) with { ReadingLevel = scope.Context.ReadingLevel };
+                item.Zones, vocabulary, [], scope.TargetAge, item.Kind) with { ReadingLevel = scope.Context.ReadingLevel };
             // Direct construction without a gate is retained for isolated unit fixtures. Production DI always supplies the shared gate.
             if (_gate is not null || durableState is not null)
             {
-                var snapshot = await _aiClient.GetListeningPromptSnapshotAsync(type.ToString(), context.AgeBand.ToString(), scope.Context.Language, ct);
+                var snapshot = await _aiClient.GetListeningPromptSnapshotAsync(scope.TargetAge == 6 && type is ListeningInteractionType.Checkpoint or ListeningInteractionType.PicturePrediction ? $"{type}:Age6" : type.ToString(), context.AgeBand.ToString(), scope.Context.Language, ct);
                 if (snapshot is null || string.IsNullOrWhiteSpace(snapshot.Version) || string.IsNullOrWhiteSpace(snapshot.PromptType) ||
                     snapshot.Template?.Contains("{{context}}", StringComparison.Ordinal) != true)
                     throw new InvalidOperationException("LISTENING_SNAPSHOT_INVALID");
@@ -140,7 +143,7 @@ public sealed class ListeningInteractionGenerator
             if (response is null) throw new InvalidOperationException("LISTENING_RESPONSE_INVALID");
             var mapped = ListeningInteractionMapper.Resolve(ListeningInteractionAiMapper.ToDrafts(response, type), scope.Version.Content!, scope.Blocks);
             var errors = mapped.Errors.Concat(ListeningInteractionRules.Validate(mapped.Items, context)).Distinct().ToArray();
-            if (errors.Length == 0) return new(mapped.Items, response.Metadata);
+            if (errors.Length == 0) return new(mapped.Items.Select(d => d with { TargetAge = scope.TargetAge }).ToArray(), response.Metadata);
             state.ValidationFailures++;
             state.PreviousErrors = errors.Select(e => new ListeningPreviousErrorDto(e.Code, e.ItemIndex, e.Field)).ToArray();
             if (checkpoint is not null) await checkpoint(state, ct);
@@ -151,6 +154,7 @@ public sealed class ListeningInteractionGenerator
     public ListeningRuleContext RuleContext(ListeningScope scope, ListeningPlanItem item, IReadOnlyCollection<int> occupiedAnchorOffsets) => new()
     {
         Type = item.Type,
+        TargetAge = scope.TargetAge,
         Count = item.Count,
         AgeBand = ToAgeBand(scope.Context.AgeBand),
         Content = scope.Version.Content!,
@@ -163,17 +167,18 @@ public sealed class ListeningInteractionGenerator
         GradingWords = _gradingWords
     };
 
-    public async Task<IReadOnlyList<ListeningInteraction>> LoadSavedAsync(int versionId, CancellationToken ct, int? parentStoryPackageId = null) =>
+    public async Task<IReadOnlyList<ListeningInteraction>> LoadSavedAsync(int versionId, CancellationToken ct, int? parentStoryPackageId = null, int? targetAge = null) =>
         await _unitOfWork.Repository<ListeningInteraction>().FindAsync(
-            x => x.StoryVersionId == versionId && x.ParentStoryPackageId == parentStoryPackageId && !x.IsDeleted, cancellationToken: ct);
+            x => x.StoryVersionId == versionId && x.ParentStoryPackageId == parentStoryPackageId && x.TargetAge == targetAge && !x.IsDeleted, cancellationToken: ct);
 
     /// <summary>Lưu draft đã qua luật. Người gọi lo transaction và lần SaveChanges cuối.</summary>
-    public async Task<int> InsertAsync(int versionId, IReadOnlyList<ListeningInteractionDraft> drafts, CancellationToken ct, int? parentStoryPackageId = null)
+    public async Task<int> InsertAsync(int versionId, IReadOnlyList<ListeningInteractionDraft> drafts, CancellationToken ct, int? parentStoryPackageId = null, int? targetAge = null)
     {
         foreach (var draft in drafts)
         {
             var (interaction, options) = ListeningInteractionMapper.ToEntities(draft, versionId);
             interaction.ParentStoryPackageId = parentStoryPackageId;
+            interaction.TargetAge = targetAge ?? draft.TargetAge;
             await _unitOfWork.Repository<ListeningInteraction>().AddAsync(interaction, ct);
             await _unitOfWork.SaveChangesAsync(ct); // option cần Id của tương tác
             foreach (var option in options) option.ListeningInteractionId = interaction.Id;
@@ -184,12 +189,13 @@ public sealed class ListeningInteractionGenerator
 
     /// <summary>Thay toàn bộ dòng của một loại: xoá mềm dòng cũ, tắt media gắn với chúng, rồi thêm dòng mới.</summary>
     public async Task<int> ReplaceAsync(
-        int versionId, ListeningInteractionType type, IReadOnlyList<ListeningInteractionDraft> drafts, CancellationToken ct, int? parentStoryPackageId = null)
+        int versionId, ListeningInteractionType type, IReadOnlyList<ListeningInteractionDraft> drafts, CancellationToken ct, int? parentStoryPackageId = null, int? targetAge = null)
     {
+        targetAge ??= drafts.FirstOrDefault()?.TargetAge;
         var interactionRepo = _unitOfWork.Repository<ListeningInteraction>();
         var optionRepo = _unitOfWork.Repository<ListeningInteractionOption>();
         var old = await interactionRepo.FindAsync(
-            x => x.StoryVersionId == versionId && x.ParentStoryPackageId == parentStoryPackageId && x.Type == type && !x.IsDeleted, cancellationToken: ct);
+            x => x.StoryVersionId == versionId && x.ParentStoryPackageId == parentStoryPackageId && x.TargetAge == targetAge && x.Type == type && !x.IsDeleted, cancellationToken: ct);
         // List, không dùng mảng: C# 14 gắn int[].Contains vào ReadOnlySpan và EF không dịch được.
         var ids = old.Select(x => x.Id).ToList();
         var options = await optionRepo.FindAsync(x => ids.Contains(x.ListeningInteractionId) && !x.IsDeleted, cancellationToken: ct);
@@ -205,7 +211,7 @@ public sealed class ListeningInteractionGenerator
         }
         await RetireMediaAsync(ids, options.Select(x => x.Id).ToList(), ct);
         await _unitOfWork.SaveChangesAsync(ct); // xoá mềm trước để neo cũ không đụng index unique khi thêm mới
-        var count = await InsertAsync(versionId, drafts, ct, parentStoryPackageId);
+        var count = await InsertAsync(versionId, drafts, ct, parentStoryPackageId, targetAge);
         await _unitOfWork.SaveChangesAsync(ct);
         return count;
     }
@@ -228,7 +234,7 @@ public sealed class ListeningInteractionGenerator
     /// <summary>Luật trước khi duyệt (spec 5.3, 6.1): khớp kế hoạch, qua rules (kể cả vùng), không có neo lệch.</summary>
     public async Task<ListeningInspection> InspectAsync(ListeningScope scope, CancellationToken ct)
     {
-        var saved = await LoadSavedAsync(scope.Version.Id, ct, scope.ParentStoryPackageId);
+        var saved = await LoadSavedAsync(scope.Version.Id, ct, scope.ParentStoryPackageId, scope.TargetAge);
         var ids = saved.Select(x => x.Id).ToList();
         var options = (await _unitOfWork.Repository<ListeningInteractionOption>().FindAsync(
                 x => ids.Contains(x.ListeningInteractionId) && !x.IsDeleted, cancellationToken: ct))

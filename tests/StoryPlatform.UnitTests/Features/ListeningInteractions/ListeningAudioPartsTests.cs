@@ -7,6 +7,37 @@ namespace StoryPlatform.UnitTests.Features.ListeningInteractions;
 
 public sealed class ListeningAudioPartsTests
 {
+    [Fact]
+    public void CharacterLetter_ReadsNameSoundsAndFixedGuidance()
+    {
+        var interaction = new ListeningInteraction { Id = 1, Type = ListeningInteractionType.CharacterLetter,
+            TargetAge = 6, CharacterName = "Thỏ", BlankIndex = 0, MatchFeedback = "Giỏi quá!" };
+        var options = new[] { ("th", true), ("b", false), ("m", false) }.Select((o, i) =>
+            new ListeningInteractionOption { Id = 10 + i, ListeningInteractionId = 1, Text = o.Item1, IsMatch = o.Item2, SortOrder = i }).ToArray();
+        var parts = ListeningAudioParts.For(interaction, options);
+        Assert.Contains(parts, p => p.PartKey == ListeningAudioParts.Name && p.Text == "Thỏ");
+        Assert.Contains(parts, p => p.OptionId == 10 && p.PartKey == ListeningAudioParts.Sound && p.Text == "thờ");
+        Assert.Contains(parts, p => p.OptionId == 11 && p.PartKey == ListeningAudioParts.Sound && p.Text == "bờ");
+        Assert.Contains(parts, p => p.PartKey == ListeningAudioParts.RetryArrow && p.Text == "Đi theo mũi tên nhé.");
+        Assert.Contains(parts, p => p.PartKey == ListeningAudioParts.Unclear);
+        Assert.All(parts, p => Assert.True(p.Required));
+    }
+
+    [Fact]
+    public void WhoSaidIt_ReadsLineAndNames()
+    {
+        var interaction = new ListeningInteraction { Id = 2, Type = ListeningInteractionType.WhoSaidIt, TargetAge = 6,
+            SourceQuote = "Có ai ở đó không?", MatchFeedback = "Là Thỏ!", NoMatchFeedback = "Mình nghe lại nhé." };
+        var options = new[] { Option(20, 2, 0, "Thỏ"), Option(21, 2, 1, "bác Gấu") };
+        Assert.Equal([":instruction", ":text", ":match", ":noMatch", "20:text", "21:text"],
+            ListeningAudioParts.For(interaction, options).Select(p => $"{p.OptionId}:{p.PartKey}"));
+    }
+
+    [Fact]
+    public void Literal_AddsFixedRetryLook() => Assert.Contains(
+        ListeningAudioParts.For(new ListeningInteraction { Type = ListeningInteractionType.Checkpoint, Kind = CheckpointKind.Literal }, []),
+        p => p.PartKey == ListeningAudioParts.RetryLook && p.Text == "Bé nhìn lại tranh nhé.");
+
     private static ListeningInteractionOption Option(int id, int interactionId, int order, string text,
         string? feedback = null, bool deleted = false) => new()
     {

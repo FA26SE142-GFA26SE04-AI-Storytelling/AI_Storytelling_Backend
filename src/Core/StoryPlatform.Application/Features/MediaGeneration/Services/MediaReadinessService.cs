@@ -65,9 +65,15 @@ public sealed class MediaReadinessService : IMediaReadinessService
     // Tương tác cần scene, audio Ready và ảnh Đoán tranh Ready đã qua kiểm tra.
     private async Task<IReadOnlyList<string>> MissingListeningMediaAsync(int storyVersionId, CancellationToken ct)
     {
+        var version = await _unitOfWork.Repository<StoryVersion>().GetByIdAsync(storyVersionId, ct);
+        var story = version is null ? null : await _unitOfWork.Repository<Story>().GetByIdAsync(version.StoryId, ct);
+        var ages = story is { Source: StorySource.Ai, OutputMode: StoryOutputMode.Learning } && ListeningInteractionGenerator.HasPlan(version?.Content, ListeningInteractionGenerator.ToAgeBand(story.AgeBand))
+            ? ListeningAgeSets.TargetAgesFor(ListeningInteractionGenerator.ToAgeBand(story.AgeBand)).ToList() : [];
         var interactions = await _unitOfWork.Repository<ListeningInteraction>().FindAsync(
-            x => x.ParentStoryPackageId == null && x.StoryVersionId == storyVersionId && !x.IsDeleted, cancellationToken: ct);
-        if (interactions.Count == 0) return [];
+            x => x.ParentStoryPackageId == null && x.StoryVersionId == storyVersionId && x.TargetAge != null && !x.IsDeleted, cancellationToken: ct);
+        interactions = interactions.Where(x => x.TargetAge.HasValue && ages.Contains(x.TargetAge.Value)).ToList();
+        var missing = ages.Where(age => interactions.All(x => x.TargetAge != age)).Select(age => $"age:{age}:listening-set").ToList();
+        if (interactions.Count == 0) return missing;
         var ids = interactions.Select(x => x.Id).ToList();
         var options = await _unitOfWork.Repository<ListeningInteractionOption>().FindAsync(
             x => ids.Contains(x.ListeningInteractionId) && !x.IsDeleted, cancellationToken: ct);
@@ -75,7 +81,6 @@ public sealed class MediaReadinessService : IMediaReadinessService
             x.ParentStoryPackageId == null && x.StoryVersionId == storyVersionId && x.IsCurrent && !x.IsDeleted && x.Status == MediaStatus.Ready &&
             (x.Type == MediaType.ListeningAudio || x.Type == MediaType.ListeningImage), cancellationToken: ct);
 
-        var missing = new List<string>();
         foreach (var interaction in interactions.OrderBy(x => x.AnchorOffset))
         {
             if (interaction.StorySceneId is null) missing.Add($"{interaction.Id}:scene");

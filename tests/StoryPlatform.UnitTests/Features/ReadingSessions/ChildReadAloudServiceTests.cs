@@ -170,13 +170,105 @@ public class ChildReadAloudServiceTests
     {
         var interaction = new ListeningInteraction
         {
-            Id = 70, StoryVersionId = ReadingHarness.Version, Type = ListeningInteractionType.ReadAloud,
+            Id = 70, StoryVersionId = ReadingHarness.Version, TargetAge = 6, Type = ListeningInteractionType.ReadAloud,
             AnchorOffset = 100, SourceQuote = text, MatchFeedback = "Con đọc to rõ lắm!"
         };
         interaction.StorySceneId = _h.AddScene(0, text).Id;
         _h.ListeningInteractions.Add(interaction);
         _h.AddListeningMedia(interaction);
         return interaction;
+    }
+
+    [Fact]
+    public async Task RolePlay_Age6_SoftFeedbackPersistsPerWordStatuses()
+    {
+        VoiceOn();
+        var session = _h.AddSession();
+        var interaction = Practice("Có ai ở đó không?");
+        interaction.Type = ListeningInteractionType.RolePlay;
+        interaction.StorySceneId = null;
+        Hears(("có", 0.9), ("ai", 0.9), ("ở", 0.9), ("đó", 0.9));
+        var result = await _sut.CheckPracticeAsync(ReadingHarness.Child, session.Id, interaction.Id, Audio());
+        Assert.Equal(4, result.GoodCount);
+        Assert.Equal(1, result.RetryCount);
+        Assert.Equal("Mình nghe chưa rõ, mình đọc lại nhé.", result.Message);
+        Assert.Equal("[\"Good\",\"Good\",\"Good\",\"Good\",\"Retry\"]", Assert.Single(_h.ReadAloudRecordings).WordStatusesJson);
+    }
+
+    [Fact]
+    public async Task RolePlay_AllGood_ReturnsApprovedPraise()
+    {
+        VoiceOn();
+        var session = _h.AddSession();
+        var interaction = Practice("Có ai?");
+        interaction.Type = ListeningInteractionType.RolePlay;
+        Hears(("có", 0.9), ("ai", 0.9));
+        var result = await _sut.CheckPracticeAsync(ReadingHarness.Child, session.Id, interaction.Id, Audio());
+        Assert.Equal(interaction.MatchFeedback, result.Message);
+    }
+
+    [Fact]
+    public async Task CharacterLetter_ScoresSound_EmptySpeechGivesRetry()
+    {
+        VoiceOn();
+        var session = _h.AddSession();
+        var interaction = Practice();
+        interaction.Type = ListeningInteractionType.CharacterLetter;
+        interaction.SourceQuote = null;
+        _h.ListeningOptions.Add(new ListeningInteractionOption { Id = 701, ListeningInteractionId = interaction.Id, Text = "th", IsMatch = true });
+        Hears();
+        var result = await _sut.CheckPracticeAsync(ReadingHarness.Child, session.Id, interaction.Id, Audio());
+        Assert.Equal("thờ", Assert.Single(result.Words).Text);
+        Assert.Equal(1, result.RetryCount);
+        Assert.Equal("Mình nghe chưa rõ, mình đọc lại nhé.", result.Message);
+    }
+
+    [Fact]
+    public async Task OtherAgeSetInteraction_IsNotFound()
+    {
+        VoiceOn();
+        var session = _h.AddSession();
+        var interaction = Practice();
+        interaction.Type = ListeningInteractionType.RolePlay;
+        _h.Children.Single(x => x.Id == ReadingHarness.Child).Age = 7;
+        await Assert.ThrowsAsync<NotFoundException>(() => _sut.CheckPracticeAsync(ReadingHarness.Child, session.Id, interaction.Id, Audio()));
+        _recognizer.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData(ListeningInteractionType.RolePlay)]
+    [InlineData(ListeningInteractionType.CharacterLetter)]
+    public async Task Age6Practice_AllowsInitialAndTwoRereads_RejectsFourthWithoutSaving(ListeningInteractionType type)
+    {
+        VoiceOn();
+        var session = _h.AddSession();
+        var interaction = Practice("Thờ");
+        interaction.Type = type;
+        if (type == ListeningInteractionType.CharacterLetter)
+            _h.ListeningOptions.Add(new ListeningInteractionOption { Id = 701, ListeningInteractionId = interaction.Id, Text = "th", IsMatch = true });
+        Hears(("thờ", 0.9));
+        for (var attempt = 0; attempt < ChildReadAloudService.MaxAge6PracticeAttempts; attempt++)
+            await _sut.CheckPracticeAsync(ReadingHarness.Child, session.Id, interaction.Id, Audio());
+        Assert.Equal(3, _h.Telemetry.Count(log => log.EventType == TelemetryEventType.AsrWordResult));
+        var lastPath = Assert.Single(_h.ReadAloudRecordings).AudioStoragePath;
+        var error = await Assert.ThrowsAsync<ConflictException>(() =>
+            _sut.CheckPracticeAsync(ReadingHarness.Child, session.Id, interaction.Id, Audio()));
+        Assert.Equal(ChildReadAloudService.VoiceRetryLimitCode, error.Message);
+        Assert.Equal(3, _h.Telemetry.Count(log => log.EventType == TelemetryEventType.AsrWordResult));
+        Assert.Equal(lastPath, Assert.Single(_h.ReadAloudRecordings).AudioStoragePath);
+    }
+
+    [Fact]
+    public async Task ReadAloud_RemainsUnlimited()
+    {
+        VoiceOn();
+        var session = _h.AddSession();
+        var interaction = Practice("Thỏ");
+        Hears(("thỏ", 0.9));
+        for (var attempt = 0; attempt < 4; attempt++)
+            await _sut.CheckPracticeAsync(ReadingHarness.Child, session.Id, interaction.Id, Audio());
+        Assert.Equal(4, _h.Telemetry.Count(log => log.EventType == TelemetryEventType.AsrWordResult));
+        Assert.Single(_h.ReadAloudRecordings);
     }
 
     [Fact]
@@ -204,7 +296,7 @@ public class ChildReadAloudServiceTests
         VoiceOn();
         var session = _h.AddSession();
         var practice = Practice();
-        practice.Type = ListeningInteractionType.RolePlay;
+        practice.Type = ListeningInteractionType.Checkpoint;
         await Assert.ThrowsAsync<NotFoundException>(() =>
             _sut.CheckPracticeAsync(ReadingHarness.Child, session.Id, practice.Id, Audio()));
 

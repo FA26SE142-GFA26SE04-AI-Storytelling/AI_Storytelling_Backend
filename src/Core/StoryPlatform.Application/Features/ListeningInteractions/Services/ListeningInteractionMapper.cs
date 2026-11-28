@@ -33,10 +33,11 @@ public static class ListeningInteractionMapper
             item = item with { AnchorOffset = anchor.EndOffset };
             switch (item.Type)
             {
+                case ListeningInteractionType.WhoSaidIt:
                 case ListeningInteractionType.Checkpoint:
                 case ListeningInteractionType.PicturePrediction:
                     item = LocateBeforeAnchor(item, i, content, anchor.EndOffset, errors);
-                    if (item.Type == ListeningInteractionType.PicturePrediction)
+                    if (item.Type == ListeningInteractionType.PicturePrediction && item.RevealBlockId is not null)
                     {
                         if (item.RevealBlockId is not null && byId.TryGetValue(item.RevealBlockId, out var reveal))
                             item = item with { RevealOffset = reveal.EndOffset };
@@ -73,6 +74,8 @@ public static class ListeningInteractionMapper
         {
             StoryVersionId = storyVersionId,
             Type = draft.Type,
+            TargetAge = draft.TargetAge,
+            BlankIndex = draft.BlankIndex,
             AnchorOffset = draft.AnchorOffset ?? throw new InvalidOperationException("LISTENING_DRAFT_UNRESOLVED"),
             Kind = draft.Kind,
             Prompt = draft.Prompt,
@@ -107,6 +110,8 @@ public static class ListeningInteractionMapper
         ListeningInteraction interaction, IReadOnlyList<ListeningInteractionOption> options, IReadOnlyList<StoryTextBlock> blocks) => new()
     {
         Type = interaction.Type,
+        TargetAge = interaction.TargetAge,
+        BlankIndex = interaction.BlankIndex,
         AnchorBlockId = BlockIdEndingAt(blocks, interaction.AnchorOffset) ?? string.Empty,
         AnchorOffset = interaction.AnchorOffset,
         Kind = interaction.Kind,

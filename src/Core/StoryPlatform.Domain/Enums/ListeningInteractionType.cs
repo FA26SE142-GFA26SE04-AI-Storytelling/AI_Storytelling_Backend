@@ -8,5 +8,7 @@ public enum ListeningInteractionType
     FillBlank = 3,
     EventOrdering = 4,
     PicturePrediction = 5,
-    ReadAloud = 6
+    ReadAloud = 6,
+    CharacterLetter = 7,
+    WhoSaidIt = 8
 }

@@ -42,13 +42,14 @@ public class ListeningInteractionConfiguration : IEntityTypeConfiguration<Listen
             .OnDelete(DeleteBehavior.Restrict);
 
         // ReadAloud đứng chung neo cuối với EventOrdering và được trả riêng cho bé.
-        builder.HasIndex(x => new { x.StoryVersionId, x.AnchorOffset })
+        builder.HasIndex(x => new { x.StoryVersionId, x.TargetAge, x.AnchorOffset })
             .IsUnique()
             .HasFilter("\"IsDeleted\" = false AND \"ParentStoryPackageId\" IS NULL AND \"Type\" <> 'ReadAloud'");
-        builder.HasIndex(x => new { x.ParentStoryPackageId, x.AnchorOffset }).IsUnique()
+        builder.HasIndex(x => new { x.ParentStoryPackageId, x.TargetAge, x.AnchorOffset }).IsUnique()
             .HasFilter("\"IsDeleted\" = false AND \"ParentStoryPackageId\" IS NOT NULL AND \"Type\" <> 'ReadAloud'");
 
         builder.HasIndex(x => new { x.StoryVersionId, x.Type });
+        builder.HasIndex(x => new { x.StoryVersionId, x.ParentStoryPackageId, x.TargetAge });
 
         builder.HasQueryFilter(x => !x.IsDeleted);
     }

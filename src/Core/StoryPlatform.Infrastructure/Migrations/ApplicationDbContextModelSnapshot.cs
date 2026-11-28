@@ -2745,6 +2745,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int>("AnchorOffset")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("BlankIndex")
+                        .HasColumnType("integer");
+
                     b.Property<string>("CharacterName")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
@@ -2799,6 +2802,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int>("StoryVersionId")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("TargetAge")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Type")
                         .IsRequired()
                         .HasMaxLength(30)
@@ -2814,15 +2820,17 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasIndex("StorySceneId");
 
-                    b.HasIndex("ParentStoryPackageId", "AnchorOffset")
+                    b.HasIndex("StoryVersionId", "Type");
+
+                    b.HasIndex("ParentStoryPackageId", "TargetAge", "AnchorOffset")
                         .IsUnique()
                         .HasFilter("\"IsDeleted\" = false AND \"ParentStoryPackageId\" IS NOT NULL AND \"Type\" <> 'ReadAloud'");
 
-                    b.HasIndex("StoryVersionId", "AnchorOffset")
+                    b.HasIndex("StoryVersionId", "ParentStoryPackageId", "TargetAge");
+
+                    b.HasIndex("StoryVersionId", "TargetAge", "AnchorOffset")
                         .IsUnique()
                         .HasFilter("\"IsDeleted\" = false AND \"ParentStoryPackageId\" IS NULL AND \"Type\" <> 'ReadAloud'");
-
-                    b.HasIndex("StoryVersionId", "Type");
 
                     b.ToTable("listening_interactions", (string)null);
                 });
@@ -2866,6 +2874,9 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.Property<int?>("SelectedOptionId")
                         .HasColumnType("integer");
+
+                    b.Property<string>("StepResultsJson")
+                        .HasColumnType("text");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -4353,6 +4364,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("WordStatusesJson")
+                        .HasColumnType("text");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ChildProfileId")
@@ -5737,10 +5751,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .IsUnique()
                         .HasFilter("\"ParentStoryPackageId\" IS NOT NULL AND \"IsDeleted\" = false");
 
-                    b.HasIndex("StoryVersionId", "ListeningInteractionType")
-                        .IsUnique()
-                        .HasFilter("\"ParentStoryPackageId\" IS NULL AND \"Operation\" = 'GenerateListeningInteraction' AND \"StoryVersionId\" IS NOT NULL AND \"IsDeleted\" = false");
-
                     b.HasIndex("ParentJobId", "Status", "NextAttemptAt");
 
                     b.HasIndex("RequestedByUserId", "Operation", "OperationKey")
@@ -5748,6 +5758,10 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasFilter("\"RequestedByUserId\" IS NOT NULL AND \"OperationKey\" IS NOT NULL AND \"IsDeleted\" = false");
 
                     b.HasIndex("Status", "Stage", "LeaseExpiresAt");
+
+                    b.HasIndex("StoryVersionId", "ListeningInteractionType", "OperationKey")
+                        .IsUnique()
+                        .HasFilter("\"ParentStoryPackageId\" IS NULL AND \"Operation\" = 'GenerateListeningInteraction' AND \"StoryVersionId\" IS NOT NULL AND \"IsDeleted\" = false");
 
                     b.ToTable("story_generation_jobs", (string)null);
                 });

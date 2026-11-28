@@ -4,56 +4,31 @@ using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.ListeningInteractions.Services;
 
-/// <summary>
-/// Kế hoạch tương tác lúc nghe theo số chỗ trống (số đoạn - 1) và nhóm tuổi; không ngẫu nhiên.
-/// Thứ tự lấp chỗ: Checkpoint x2, RolePlay (6-8) hoặc FillBlank (9-10), PicturePrediction, thêm Checkpoint tới trần.
-/// EventOrdering và ReadAloud đặt sau đoạn cuối nên không chiếm chỗ trống; cần lần lượt từ 3 và 2 đoạn.
-/// Các tương tác giữa truyện được chia vùng (AssignZones) để rải đều, không để khúc dài không có tương tác.
-/// </summary>
+/// <summary>Plans independent listening interaction sets for each exact age.</summary>
 public static class ListeningInteractionPlanner
 {
-    public static ListeningInteractionPlan Create(AgeBand ageBand, IReadOnlyList<StoryTextBlock> blocks)
+    public static ListeningInteractionPlan Create(int targetAge, IReadOnlyList<StoryTextBlock> blocks) => targetAge switch
+    {
+        6 => CreateAge6(blocks) with { TargetAge = 6 },
+        _ => ListeningInteractionPlan.Empty with { TargetAge = targetAge }
+    };
+
+    private static ListeningInteractionPlan CreateAge6(IReadOnlyList<StoryTextBlock> blocks)
     {
         var slots = Math.Max(0, blocks.Count - 1);
         if (slots == 0) return ListeningInteractionPlan.Empty;
         var dialogue = FindDialogueBlockIds(blocks);
-        // Truyện 2 đoạn: chỉ 1 điểm dừng (ngoại lệ đã chốt 31/10/2026).
-        if (slots == 1) return new(slots, AssignZones([new(ListeningInteractionType.Checkpoint, 1),
-            new(ListeningInteractionType.ReadAloud, 1)], blocks, dialogue), dialogue);
-
-        var cap = ageBand == AgeBand.Age_6_8 ? 3 : 4; // Checkpoint + PicturePrediction
-        var checkpoints = 2;
-        var remaining = slots - checkpoints;
-        var middle = new List<ListeningPlanItem>();
-
-        if (remaining > 0 && ageBand == AgeBand.Age_6_8 && dialogue.Count > 0)
-        {
-            middle.Add(new(ListeningInteractionType.RolePlay, 1));
-            remaining--;
-        }
-        else if (remaining > 0 && ageBand == AgeBand.Age_9_10)
-        {
-            middle.Add(new(ListeningInteractionType.FillBlank, 1));
-            remaining--;
-        }
-        var picture = 0;
-        if (remaining > 0 && checkpoints + 1 <= cap)
-        {
-            picture = 1;
-            remaining--;
-        }
-        while (remaining > 0 && checkpoints + picture < cap)
-        {
-            checkpoints++;
-            remaining--;
-        }
-
-        var items = new List<ListeningPlanItem> { new(ListeningInteractionType.Checkpoint, checkpoints) };
-        items.AddRange(middle);
-        if (picture > 0) items.Add(new(ListeningInteractionType.PicturePrediction, picture));
-        // Đặt sau đoạn cuối, chạy sau cùng; cần 3 đoạn để 3 sự kiện ở 3 đoạn khác nhau.
-        if (blocks.Count >= 3) items.Add(new(ListeningInteractionType.EventOrdering, 1));
-        items.Add(new(ListeningInteractionType.ReadAloud, 1));
+        var hasDialogue = dialogue.Count > 0;
+        var order = new List<ListeningInteractionType> { ListeningInteractionType.Checkpoint };
+        if (hasDialogue) order.Add(ListeningInteractionType.RolePlay);
+        order.Add(ListeningInteractionType.CharacterLetter);
+        order.Add(ListeningInteractionType.PicturePrediction);
+        if (hasDialogue) order.Add(ListeningInteractionType.WhoSaidIt);
+        var chosen = order.Take(slots).ToList();
+        var literals = 1 + (!hasDialogue && slots > chosen.Count ? 1 : 0);
+        var items = chosen.Select(type => type == ListeningInteractionType.Checkpoint
+            ? new ListeningPlanItem(type, literals) { Kind = CheckpointKind.Literal }
+            : new ListeningPlanItem(type, 1)).ToArray();
         return new(slots, AssignZones(items, blocks, dialogue), dialogue);
     }
 
@@ -86,9 +61,11 @@ public static class ListeningInteractionPlanner
         var assigned = new Dictionary<ListeningInteractionType, IReadOnlyList<IReadOnlyList<string>>>();
         foreach (var item in items.Where(x => x.Type == ListeningInteractionType.RolePlay))
             assigned[item.Type] = [TakeFitting(b => dialogue.Contains(b.BlockId))];
+        foreach (var item in items.Where(x => x.Type == ListeningInteractionType.WhoSaidIt))
+            assigned[item.Type] = [TakeFitting(b => blocks.Any(d => dialogue.Contains(d.BlockId) && d.EndOffset <= b.EndOffset))];
         foreach (var item in items.Where(x => x.Type == ListeningInteractionType.FillBlank))
             assigned[item.Type] = [TakeFitting(HasShortSentence)];
-        foreach (var item in items.Where(x => x.Type == ListeningInteractionType.Checkpoint))
+        foreach (var item in items.Where(x => x.Type is ListeningInteractionType.Checkpoint or ListeningInteractionType.CharacterLetter))
             assigned[item.Type] = Enumerable.Range(0, item.Count).Select(_ => TakeEarliest()).ToArray();
         foreach (var item in items.Where(x => x.Type == ListeningInteractionType.PicturePrediction))
             assigned[item.Type] = [TakeEarliest()];

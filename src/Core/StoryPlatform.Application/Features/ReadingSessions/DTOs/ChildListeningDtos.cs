@@ -14,6 +14,8 @@ public class SubmitListeningAttemptRequestDto
 /// <summary>Phản hồi cho trẻ. Không có chữ "sai", không có EXP.</summary>
 public class ListeningAttemptResultDto
 {
+    public int? CorrectOptionId { get; set; }
+    public bool CanRetry { get; set; }
     public int InteractionId { get; set; }
     /// <summary>Loại tương tác, như Type của ReadingInteractionDto.</summary>
     public string Type { get; set; } = string.Empty;
@@ -30,4 +32,11 @@ public class ListeningAttemptResultDto
     public bool Revealed { get; set; }
     /// <summary>Khi Revealed: Id các thẻ theo thứ tự đúng.</summary>
     public List<int>? CorrectOrderOptionIds { get; set; }
+}
+
+/// <summary>CharacterLetter: chỉ ghi đã thử hoặc bỏ qua, không chấm điểm.</summary>
+public class ListeningStepsRequestDto
+{
+    public string? Sound { get; set; }
+    public string? Trace { get; set; }
 }

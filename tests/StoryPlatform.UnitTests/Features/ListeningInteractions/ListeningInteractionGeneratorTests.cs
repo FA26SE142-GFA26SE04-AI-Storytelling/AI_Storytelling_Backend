@@ -16,7 +16,15 @@ public sealed class ListeningInteractionGeneratorTests
 
     private static Task<StoryPlatform.Application.Features.ListeningInteractions.Models.ListeningScope> ScopeAsync(
         StoryReviewServiceTests.FakeUnitOfWork uow, ListeningInteractionGenerator generator) =>
-        generator.LoadScopeAsync(uow.Items<Story>().Single(), uow.Items<StoryVersion>().Single(x => x.IsCurrent), default);
+        generator.LoadScopeAsync(uow.Items<Story>().Single(), uow.Items<StoryVersion>().Single(x => x.IsCurrent), default, 6);
+
+    [Fact]
+    public void Unbuilt_band_does_not_require_listening_generation()
+    {
+        Assert.True(ListeningInteractionGenerator.HasPlan(ListeningTestStory.Content, AgeBand.Age_6_8));
+        Assert.False(ListeningInteractionGenerator.HasPlan(ListeningTestStory.Content, AgeBand.Age_9_10));
+        Assert.False(ListeningInteractionGenerator.HasPlan("Single paragraph", AgeBand.Age_6_8));
+    }
 
     [Fact]
     public async Task Generated_package_round_trips_through_the_rules()
@@ -41,7 +49,7 @@ public sealed class ListeningInteractionGeneratorTests
         var inspection = await generator.InspectAsync(await ScopeAsync(uow, generator), default);
 
         Assert.Contains(inspection.Issues, i => i.Code == "LISTENING_MISSING" && i.Type == ListeningInteractionType.RolePlay);
-        Assert.Contains(inspection.Issues, i => i.Code == "LISTENING_MISSING" && i.Type == ListeningInteractionType.ReadAloud);
+        Assert.Contains(inspection.Issues, i => i.Code == "LISTENING_MISSING" && i.Type == ListeningInteractionType.CharacterLetter);
         Assert.DoesNotContain(inspection.Issues, i => i.Type == ListeningInteractionType.Checkpoint);
     }
 
@@ -81,23 +89,36 @@ public sealed class ListeningInteractionGeneratorTests
         Assert.Contains(inspection.Items, i => i.IsStale);
     }
 
-    [Theory]
-    [InlineData(ListeningInteractionType.EventOrdering)]
-    [InlineData(ListeningInteractionType.ReadAloud)]
-    public async Task End_of_story_type_can_be_regenerated_without_colliding_with_the_other(ListeningInteractionType type)
+    [Fact]
+    public async Task Age6_regeneration_preserves_other_ages_and_untagged_rows()
     {
         var (uow, generator) = Setup();
         await ListeningTestStory.SeedPackageAsync(uow);
         var scope = await ScopeAsync(uow, generator);
-        var drafts = (await generator.GenerateAsync(scope, type, "regenerate", default)).Drafts;
-        await generator.ReplaceAsync(scope.Version.Id, type, drafts, default);
+        var current = uow.Items<ListeningInteraction>().Single(x => x.Type == ListeningInteractionType.Checkpoint);
+        var untagged = new ListeningInteraction { Id = 501, StoryVersionId = scope.Version.Id,
+            Type = current.Type, AnchorOffset = current.AnchorOffset };
+        var age7 = new ListeningInteraction { Id = 502, StoryVersionId = scope.Version.Id,
+            Type = current.Type, AnchorOffset = current.AnchorOffset, TargetAge = 7 };
+        uow.Seed(untagged); uow.Seed(age7);
+        var drafts = (await generator.GenerateAsync(scope, current.Type, "regenerate", default)).Drafts;
+        await generator.ReplaceAsync(scope.Version.Id, current.Type, drafts, default, targetAge: 6);
+        Assert.True(current.IsDeleted);
+        Assert.False(untagged.IsDeleted);
+        Assert.False(age7.IsDeleted);
+        Assert.All((await generator.InspectAsync(scope, default)).Items, x => Assert.Equal(6, x.Interaction.TargetAge));
+    }
 
-        var inspection = await generator.InspectAsync(scope, default);
-        Assert.True(inspection.Valid, string.Join(", ", inspection.Issues));
-        var atEnd = inspection.Items.Where(x => x.Interaction.AnchorOffset == scope.Blocks[^1].EndOffset).ToArray();
-        Assert.Equal(2, atEnd.Length);
-        Assert.Contains(atEnd, x => x.Interaction.Type == ListeningInteractionType.ReadAloud);
-        Assert.Contains(atEnd, x => x.Interaction.Type == ListeningInteractionType.EventOrdering);
+    [Fact]
+    public async Task Generated_letter_persists_age_and_blank_index()
+    {
+        var (uow, generator) = Setup();
+        var scope = await ScopeAsync(uow, generator);
+        var drafts = (await generator.GenerateAsync(scope, ListeningInteractionType.CharacterLetter, "letter", default)).Drafts;
+        await generator.InsertAsync(scope.Version.Id, drafts, default, targetAge: 6);
+        var row = Assert.Single(uow.Items<ListeningInteraction>());
+        Assert.Equal(6, row.TargetAge);
+        Assert.Equal(0, row.BlankIndex);
     }
 
     [Fact]
@@ -117,7 +138,7 @@ public sealed class ListeningInteractionGeneratorTests
         Assert.All(old, x => Assert.True(x.IsDeleted));
         Assert.All(uow.Items<ListeningInteractionOption>().Where(o => oldIds.Contains(o.ListeningInteractionId)), o => Assert.True(o.IsDeleted));
         Assert.False(media.IsCurrent);
-        Assert.Equal(2, uow.Items<ListeningInteraction>().Count(x => x.Type == ListeningInteractionType.Checkpoint && !x.IsDeleted));
+        Assert.Single(uow.Items<ListeningInteraction>().Where(x => x.Type == ListeningInteractionType.Checkpoint && !x.IsDeleted));
         Assert.True((await generator.InspectAsync(scope, default)).Valid);
     }
 
@@ -162,7 +183,7 @@ public sealed class ListeningInteractionGeneratorTests
         var generator = new ListeningInteractionGenerator(uow, ListeningTestStory.AiClient().Object);
         var scope = ListeningInteractionGenerator.CreateScope(version,
             new StoryPlatform.Application.Features.AIStoryInput.Models.AIStoryInputContextSnapshot(
-                1, "6-8", 2, "level_2", "vi", 1000, "always_manual", [], [], [], []));
+                1, "6-8", 2, "level_2", "vi", 1000, "always_manual", [], [], [], []), 6);
 
         foreach (var item in scope.Plan.Items)
             await generator.InsertAsync(version.Id, (await generator.GenerateAsync(scope, item.Type, "sqlite", default)).Drafts, default);
@@ -173,6 +194,6 @@ public sealed class ListeningInteractionGeneratorTests
 
         Assert.True(inspection.Valid, string.Join(", ", inspection.Issues.Select(i => $"{i.Type}:{i.Code}@{i.Field}")));
         Assert.Equal(scope.Plan.Items.Sum(x => x.Count), inspection.Items.Count);
-        Assert.Equal(2, db.Set<ListeningInteraction>().IgnoreQueryFilters().Count(x => x.Type == ListeningInteractionType.Checkpoint && x.IsDeleted));
+        Assert.Single(db.Set<ListeningInteraction>().IgnoreQueryFilters().Where(x => x.Type == ListeningInteractionType.Checkpoint && x.IsDeleted));
     }
 }

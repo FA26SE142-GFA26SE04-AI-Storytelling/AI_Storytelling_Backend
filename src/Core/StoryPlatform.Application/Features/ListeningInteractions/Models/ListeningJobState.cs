@@ -9,6 +9,7 @@ namespace StoryPlatform.Application.Features.ListeningInteractions.Models;
 /// <summary>Durable request and attempt receipt in the job's existing JSON column, not a new database entity.</summary>
 public sealed class ListeningJobState
 {
+    public int TargetAge { get; set; }
     public string SourceFingerprint { get; set; } = string.Empty;
     public GenerateListeningInteractionRequest? PinnedRequest { get; set; }
     public int ProviderCalls { get; set; }
@@ -18,5 +19,5 @@ public sealed class ListeningJobState
     public GenerationMetadataDto? Metadata { get; set; }
 
     public static string Fingerprint(ListeningScope scope) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
-        JsonSerializer.Serialize(new { scope.Version.Id, scope.Version.Title, scope.Version.Content, scope.Version.Lesson, scope.Context, scope.Plan }))));
+        JsonSerializer.Serialize(new { scope.TargetAge, scope.Version.Id, scope.Version.Title, scope.Version.Content, scope.Version.Lesson, scope.Context, scope.Plan }))));
 }

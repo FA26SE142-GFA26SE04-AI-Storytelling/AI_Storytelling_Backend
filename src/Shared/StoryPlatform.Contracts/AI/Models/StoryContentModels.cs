@@ -89,6 +89,8 @@ public sealed record ListeningChoiceDto
     public string? Text { get; init; }
     public string? Feedback { get; init; }
     public bool IsMatch { get; init; }
+    /// <summary>Checkpoint Literal (tuổi 6): tranh của đáp án, lấy từ cảnh truyện.</summary>
+    public string? ImageDescription { get; init; }
 }
 
 public sealed record CheckpointItemDto
@@ -161,4 +163,26 @@ public sealed record PicturePredictionItemDto
     public string? SourceQuote { get; init; }
     public string? WaitFeedback { get; init; }
     public IReadOnlyList<PicturePredictionOptionDto> Options { get; init; } = [];
+}
+
+public sealed record CharacterLetterItemDto
+{
+    public string? ImageDescription { get; init; }
+    public string? AfterBlockId { get; init; }
+    public string? CharacterName { get; init; }
+    public int? BlankIndex { get; init; }
+    public string? PraiseFeedback { get; init; }
+    public IReadOnlyList<ListeningChoiceDto> Options { get; init; } = [];
+}
+
+public sealed record ListeningSpeakerDto(string Name, bool IsMatch, string ImageDescription);
+
+public sealed record WhoSaidItItemDto
+{
+    public string? AfterBlockId { get; init; }
+    public string? SourceQuote { get; init; }
+    public string? LineQuote { get; init; }
+    public string? MatchFeedback { get; init; }
+    public string? RetryFeedback { get; init; }
+    public IReadOnlyList<ListeningSpeakerDto> Speakers { get; init; } = [];
 }

@@ -95,6 +95,10 @@ public sealed partial class MediaGenerationService
             asset.Url = await UploadGeneratedMediaAsync("ListeningAudioUpload", jobId, claimedToken, mediaContext.Id, asset,
                 storagePath, audio, ct);
             asset.MimeType = audio.MimeType;
+            // Chỉ phần cấp tương tác mà bé nhìn chữ theo giọng đọc mới cần mốc từng chữ (không phải audio đáp án);
+            // nhà cung cấp không có mốc thì để trống.
+            asset.WordTimings = part.OptionId is null && ListeningAudioParts.HighlightKeys.Contains(part.PartKey)
+                ? audio.GetMetadata("wordTimingsJson") : null;
             asset.Provider = audio.GetMetadata("provider") ?? "GoogleCloud";
             asset.Model = audio.GetMetadata("model") ?? "unknown";
             asset.Status = MediaStatus.Ready;
@@ -286,7 +290,7 @@ public sealed partial class MediaGenerationService
     private async Task QueueListeningImageTasksAsync(StoryGenerationJob branch, int versionId, CancellationToken ct)
     {
         var interactions = (await LoadListeningInteractionsAsync(versionId, ct))
-            .Where(x => x.Type == ListeningInteractionType.PicturePrediction).ToArray();
+            .Where(ListeningMediaRequirements.HasOptionImages).ToArray();
         if (interactions.Length == 0) return;
         var options = await LoadListeningOptionsAsync(interactions, ct);
         foreach (var interaction in interactions)
@@ -294,7 +298,7 @@ public sealed partial class MediaGenerationService
             var sceneId = interaction.StorySceneId ?? throw new InvalidOperationException("INTERACTION_SCENE_UNRESOLVED");
             var beat = (await _unitOfWork.Repository<IllustrationBeat>().FindAsync(x => x.StorySceneId == sceneId, cancellationToken: ct))
                 .OrderBy(x => x.BeatOrder).FirstOrDefault() ?? throw new InvalidOperationException("INVALID_MEDIA_HANDOFF");
-            foreach (var option in options.Where(x => x.ListeningInteractionId == interaction.Id).OrderBy(x => x.SortOrder))
+            foreach (var option in ListeningMediaRequirements.ImageOptions(interaction, options))
             {
                 var asset = await GetOrCreateListeningImageAssetAsync(versionId, interaction.Id, option.Id, ct);
                 if (ListeningMediaRequirements.IsUsable(asset)) continue;

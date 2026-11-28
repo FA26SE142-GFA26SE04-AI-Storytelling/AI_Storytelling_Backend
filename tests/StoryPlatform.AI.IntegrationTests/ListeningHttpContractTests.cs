@@ -25,6 +25,70 @@ namespace StoryPlatform.AI.IntegrationTests;
 public sealed class ListeningHttpContractTests
 {
     [Theory]
+    [InlineData("CharacterLetter", "9-10", 6)]
+    [InlineData("WhoSaidIt", "6-8", 7)]
+    [InlineData("WhoSaidIt", "6-8", null)]
+    [InlineData("ReadAloud", "6-8", 6)]
+    public async Task Unsupported_age_sets_are_rejected_without_calling_the_model(string type, string band, int? targetAge)
+    {
+        var model = new Model(Output("RolePlay"));
+        using var server = Server(model);
+        var error = await Assert.ThrowsAsync<AIServiceRequestException>(() => Client(server).GenerateListeningInteractionAsync(
+            Request(type, band) with { TargetAge = targetAge }));
+        Assert.Equal(400, error.StatusCode);
+        Assert.Equal(0, model.Calls);
+    }
+
+    [Theory]
+    [InlineData("Checkpoint:Age6")]
+    [InlineData("PicturePrediction:Age6")]
+    public async Task Age6_snapshot_rejects_the_older_band(string type)
+    {
+        var model = new Model(Output("RolePlay"));
+        using var server = Server(model);
+        var error = await Assert.ThrowsAsync<AIServiceRequestException>(() => Client(server).GetListeningPromptSnapshotAsync(type, "9-10", "vi"));
+        Assert.Equal(400, error.StatusCode);
+        Assert.Equal(0, model.Calls);
+    }
+
+    [Theory]
+    [InlineData("CharacterLetter")]
+    [InlineData("WhoSaidIt")]
+    public async Task Age6_contract_roundtrips_new_fields_and_uses_pinned_template(string type)
+    {
+        var output = type == "CharacterLetter"
+            ? """{"items":[{"afterBlockId":"P1","characterName":"Rabbit","imageDescription":"White rabbit","blankIndex":0,"options":[{"text":"th","isMatch":true},{"text":"b","isMatch":false},{"text":"m","isMatch":false}],"praiseFeedback":"Good effort!"}]}"""
+            : """{"items":[{"afterBlockId":"P1","sourceQuote":"Hello","speakers":[{"name":"Rabbit","isMatch":true,"imageDescription":"White rabbit"},{"name":"Bear","isMatch":false,"imageDescription":"Brown bear"}],"matchFeedback":"Good effort!","retryFeedback":"Listen again."}]}""";
+        var model = new Model(output);
+        using var server = Server(model);
+        var client = Client(server);
+        var snapshot = await client.GetListeningPromptSnapshotAsync(type, "6-8", "vi");
+        var response = await client.GenerateListeningInteractionAsync(Request(type, "6-8") with
+        {
+            TargetAge = 6, AllowedLetters = ["th", "b", "m"],
+            Snapshot = new() { PromptVersionNo = snapshot.Version, Templates = new Dictionary<string, string> { [snapshot.PromptType] = snapshot.Template } }
+        });
+        Assert.Contains("targetAge", model.Prompt);
+        if (type == "CharacterLetter")
+        {
+            var item = Assert.Single(response.CharacterLetters);
+            Assert.Equal(0, item.BlankIndex);
+            Assert.Equal("White rabbit", item.ImageDescription);
+        }
+        else Assert.Equal("Rabbit", Assert.Single(response.WhoSaidIts).Speakers[0].Name);
+    }
+
+    [Theory]
+    [InlineData("Checkpoint:Age6", "ListeningCheckpointLiteral")]
+    [InlineData("PicturePrediction:Age6", "ListeningPicturePredictionAge6")]
+    public async Task Age6_snapshot_selects_the_age_specific_template(string type, string promptType)
+    {
+        using var server = Server(new Model(Output("RolePlay")));
+        var snapshot = await Client(server).GetListeningPromptSnapshotAsync(type, "6-8", "vi");
+        Assert.Equal(promptType, snapshot.PromptType);
+    }
+
+    [Theory]
     [InlineData("Checkpoint", "6-8")]
     [InlineData("RolePlay", "6-8")]
     [InlineData("FillBlank", "9-10")]

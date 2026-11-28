@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using StoryPlatform.Application.Features.ListeningInteractions.Services;
 using StoryPlatform.Application.Features.ParentAuthoring;
 using System.Text.Json;
 using StoryPlatform.Application.Abstractions.Persistence;
@@ -330,7 +331,10 @@ public class ChildReadingService : IChildReadingService
         IReadOnlyList<ListeningInteractionAttempt> attempts = interactionIds.Count == 0 ? [] :
             await _unitOfWork.Repository<ListeningInteractionAttempt>().FindAsync(
                 attempt => attempt.ReadingSessionId == sessionId && !attempt.IsDeleted, cancellationToken: ct);
-        var listening = ChildListeningContent.Build(sessionId, scenes, segments, interactions, options, assets, attempts, beats);
+        var profile = await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(childProfileId, ct);
+        if (profile is null || profile.IsDeleted) throw new NotFoundException("Hồ sơ trẻ", childProfileId);
+        var childAge = ListeningAgeSets.AgeFor(profile.Age, profile.AgeBand);
+        var listening = ChildListeningContent.Build(sessionId, childAge, scenes, segments, interactions, options, assets, attempts, beats);
         var progress = await _unitOfWork.Repository<ReadingProgress>().FirstOrDefaultAsync(
             row => row.ChildProfileId == childProfileId && row.StoryId == session.StoryId, cancellationToken: ct);
 
@@ -369,7 +373,7 @@ public class ChildReadingService : IChildReadingService
                 Interaction = listening.GetValueOrDefault(scene.Id)?.Interaction,
                 AttemptedInSession = listening.GetValueOrDefault(scene.Id)?.AttemptedInSession ?? false
             }).ToList(),
-            ReadAloudPractice = ChildListeningContent.BuildReadAloud(
+            ReadAloudPractice = ChildListeningContent.BuildReadAloud(childAge,
                 interactions.Where(interaction => scenes.Any(scene => scene.Id == interaction.StorySceneId)).ToArray(), assets),
             Vocabulary = vocabulary.OrderBy(word => word.Id)
                 .Select(word => new ReadingVocabularyDto

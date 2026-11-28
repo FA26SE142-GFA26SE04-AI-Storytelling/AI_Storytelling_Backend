@@ -27,6 +27,8 @@ public class ReadAloudRecording : BaseEntity
     public int RetryCount { get; set; }
     public int SkippedCount { get; set; }
     public int TotalCount { get; set; }
+    /// <summary>Per-word statuses only; never contains the child's transcription.</summary>
+    public string? WordStatusesJson { get; set; }
 
     public DateTime RecordedAt { get; set; }
 }

@@ -41,12 +41,19 @@ public static partial class ListeningInteractionRules
                 case ListeningInteractionType.RolePlay: ValidateRolePlay(item, i, context, errors); break;
                 case ListeningInteractionType.FillBlank: ValidateFillBlankStructure(item, i, errors); break;
                 case ListeningInteractionType.EventOrdering: ValidateOrdering(item, i, errors); break;
+                case ListeningInteractionType.PicturePrediction when context.TargetAge == 6: ValidatePictureAge6(item, i, errors); break;
+                case ListeningInteractionType.CharacterLetter: ValidateCharacterLetter(item, i, context, errors); break;
+                case ListeningInteractionType.WhoSaidIt: ValidateWhoSaidIt(item, i, context, errors); break;
                 case ListeningInteractionType.PicturePrediction: ValidatePicture(item, i, errors); break;
                 case ListeningInteractionType.ReadAloud: ValidateReadAloud(item, i, context, errors); break;
             }
             errors.AddRange(ValidateText(item, i, context));
         }
-        if (context.Type == ListeningInteractionType.Checkpoint)
+        if (context.Type == ListeningInteractionType.Checkpoint && context.TargetAge == 6)
+        {
+            if (items.Any(x => x.Kind != CheckpointKind.Literal)) errors.Add(new("KIND_LIMIT"));
+        }
+        else if (context.Type == ListeningInteractionType.Checkpoint)
         {
             var kinds = items.Where(x => x.Kind is not null).GroupBy(x => x.Kind!.Value).ToArray();
             if (kinds.Any(g => g.Count() > 2) ||
@@ -169,6 +176,11 @@ public static partial class ListeningInteractionRules
         if (item.Kind == CheckpointKind.Opinion ? matches != 0 : matches != 1) errors.Add(new("MATCH_RULE_INVALID", index, "options"));
         if (item.SourceEnd is { } end && item.AnchorOffset is { } anchor && end > anchor)
             errors.Add(new("QUOTE_AFTER_ANCHOR", index, "sourceQuote"));
+        // Tuổi 6: mỗi đáp án là tranh kèm chữ, nên đáp án nào cũng phải có mô tả tranh.
+        if (item.Kind == CheckpointKind.Literal)
+            for (var j = 0; j < item.Options.Count; j++)
+                if (string.IsNullOrWhiteSpace(item.Options[j].ImageDescription))
+                    errors.Add(new("SCHEMA_INVALID", index, $"options[{j}].imageDescription"));
     }
 
     private static void ValidatePicture(ListeningInteractionDraft item, int index, List<ListeningValidationError> errors)
@@ -251,12 +263,14 @@ public static partial class ListeningInteractionRules
                 break;
             case ListeningInteractionType.RolePlay:
             case ListeningInteractionType.ReadAloud:
+            case ListeningInteractionType.CharacterLetter:
                 yield return ("praiseFeedback", item.MatchFeedback);
                 break;
             case ListeningInteractionType.FillBlank:
                 yield return ("matchFeedback", item.MatchFeedback);
                 yield return ("suggestFeedback", item.NoMatchFeedback);
                 break;
+            case ListeningInteractionType.WhoSaidIt:
             case ListeningInteractionType.EventOrdering:
                 yield return ("matchFeedback", item.MatchFeedback);
                 yield return ("retryFeedback", item.NoMatchFeedback);
@@ -278,14 +292,15 @@ public static partial class ListeningInteractionRules
         }
         Forbid(item.Kind is not null && t != ListeningInteractionType.Checkpoint, "kind");
         Forbid(item.Prompt is not null && t is not (ListeningInteractionType.Checkpoint or ListeningInteractionType.PicturePrediction), "question");
-        Forbid(item.SourceQuote is not null && t == ListeningInteractionType.EventOrdering, "sourceQuote");
-        Forbid(item.CharacterName is not null && t != ListeningInteractionType.RolePlay, "characterName");
+        Forbid(item.SourceQuote is not null && t is ListeningInteractionType.EventOrdering or ListeningInteractionType.CharacterLetter, "sourceQuote");
+        Forbid(item.CharacterName is not null && t is not (ListeningInteractionType.RolePlay or ListeningInteractionType.CharacterLetter), "characterName");
+        Forbid(item.BlankIndex is not null && t != ListeningInteractionType.CharacterLetter, "blankIndex");
         Forbid(item.HiddenWord is not null && t != ListeningInteractionType.FillBlank, "hiddenWord");
         Forbid(item.Hint is not null && t != ListeningInteractionType.FillBlank, "hint");
         Forbid(item.RevealOffset is not null && t != ListeningInteractionType.PicturePrediction, "revealBlockId");
         Forbid(item.Explanation is not null && t != ListeningInteractionType.Checkpoint, "explanation");
         Forbid(item.MatchFeedback is not null && t is ListeningInteractionType.Checkpoint or ListeningInteractionType.PicturePrediction, "matchFeedback");
-        Forbid(item.NoMatchFeedback is not null && t is ListeningInteractionType.RolePlay or ListeningInteractionType.PicturePrediction or ListeningInteractionType.ReadAloud, "noMatchFeedback");
+        Forbid(item.NoMatchFeedback is not null && t is ListeningInteractionType.RolePlay or ListeningInteractionType.PicturePrediction or ListeningInteractionType.ReadAloud or ListeningInteractionType.CharacterLetter, "noMatchFeedback");
         Forbid(item.WaitFeedback is not null && t != ListeningInteractionType.PicturePrediction, "waitFeedback");
         Forbid(item.Options.Count > 0 && t is ListeningInteractionType.RolePlay or ListeningInteractionType.ReadAloud, "options");
         Forbid(t == ListeningInteractionType.Checkpoint && item.Kind is null, "kind");
@@ -293,11 +308,13 @@ public static partial class ListeningInteractionRules
         for (var j = 0; j < item.Options.Count; j++)
         {
             var o = item.Options[j];
-            Forbid(o.Feedback is not null && t is ListeningInteractionType.FillBlank or ListeningInteractionType.EventOrdering, OptionField(item, j, "feedback"));
+            Forbid(o.Feedback is not null && t is ListeningInteractionType.FillBlank or ListeningInteractionType.EventOrdering or ListeningInteractionType.CharacterLetter or ListeningInteractionType.WhoSaidIt, OptionField(item, j, "feedback"));
             Forbid(o.IsMatch && t is ListeningInteractionType.FillBlank or ListeningInteractionType.EventOrdering, OptionField(item, j, "isMatch"));
             Forbid(o.CorrectOrder is not null && t != ListeningInteractionType.EventOrdering, OptionField(item, j, "order"));
             Forbid(o.SourceQuote is not null && t != ListeningInteractionType.EventOrdering, OptionField(item, j, "sourceQuote"));
-            Forbid(o.ImageDescription is not null && t != ListeningInteractionType.PicturePrediction, OptionField(item, j, "imageDescription"));
+            var optionHasPicture = t is ListeningInteractionType.PicturePrediction or ListeningInteractionType.WhoSaidIt or ListeningInteractionType.CharacterLetter ||
+                t == ListeningInteractionType.Checkpoint && item.Kind == CheckpointKind.Literal;
+            Forbid(o.ImageDescription is not null && !optionHasPicture, OptionField(item, j, "imageDescription"));
             Forbid(string.IsNullOrWhiteSpace(o.Text), OptionField(item, j, "text"));
         }
     }

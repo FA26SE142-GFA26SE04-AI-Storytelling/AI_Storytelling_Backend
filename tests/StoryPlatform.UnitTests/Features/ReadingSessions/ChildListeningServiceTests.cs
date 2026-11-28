@@ -47,7 +47,7 @@ public sealed class ChildListeningServiceTests
     {
         var interaction = new ListeningInteraction
         {
-            Id = id, StoryVersionId = ReadingHarness.Version, Type = type,
+            Id = id, StoryVersionId = ReadingHarness.Version, TargetAge = 6, Type = type,
             AnchorOffset = _scenes[sceneIndex].TextRangeEnd + id, StorySceneId = _scenes[sceneIndex].Id,
             MatchFeedback = "Giỏi quá!", NoMatchFeedback = "Mình nghe lại nhé."
         };
@@ -69,6 +69,107 @@ public sealed class ChildListeningServiceTests
 
     private Task<ListeningAttemptResultDto> Order(params int[] ids) =>
         Submit(4, new SubmitListeningAttemptRequestDto { OrderedOptionIds = ids.ToList() });
+
+    [Fact]
+    public async Task Literal_RetriesOnce_RevealsAndRepeatsLastResult()
+    {
+        _h.ListeningInteractions.Single(x => x.Id == 1).Kind = CheckpointKind.Literal;
+        _h.AddListeningMedia(_h.ListeningInteractions.Single(x => x.Id == 1));
+        var first = await Submit(1, new SubmitListeningAttemptRequestDto { OptionId = 11 });
+        Assert.True(first.CanRetry);
+        Assert.False(first.Revealed);
+        Assert.Null(first.CorrectOptionId);
+        Assert.Equal("Bé nhìn lại tranh nhé.", first.Feedback);
+        var second = await Submit(1, new SubmitListeningAttemptRequestDto { OptionId = 11 });
+        Assert.True(second.Revealed);
+        Assert.False(second.CanRetry);
+        Assert.Equal(10, second.CorrectOptionId);
+        var third = await Submit(1, new SubmitListeningAttemptRequestDto { OptionId = 10 });
+        Assert.Equal(second.CorrectOptionId, third.CorrectOptionId);
+        Assert.False(third.Matched);
+        Assert.Equal(2, _h.ListeningAttempts.Count);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(7)]
+    public async Task OtherAgeOrUntaggedInteraction_IsNotFound(int? age)
+    {
+        _h.ListeningInteractions.Single(x => x.Id == 1).TargetAge = age;
+        await Assert.ThrowsAsync<NotFoundException>(() => Submit(1, new SubmitListeningAttemptRequestDto { OptionId = 10 }));
+        Assert.Empty(_h.ListeningAttempts);
+    }
+
+    [Fact]
+    public async Task Age6Picture_RecordsUngradedChoice()
+    {
+        var interaction = _h.ListeningInteractions.Single(x => x.Id == 1);
+        interaction.Type = ListeningInteractionType.PicturePrediction;
+        interaction.Kind = null;
+        _h.AddListeningMedia(interaction);
+        var result = await Submit(1, new SubmitListeningAttemptRequestDto { OptionId = 10 });
+        Assert.Null(result.Matched);
+        Assert.Null(Assert.Single(_h.ListeningAttempts).IsMatch);
+    }
+
+    [Fact]
+    public async Task CharacterLetter_StepsRequireChoiceAndSaveToLatestAttempt()
+    {
+        var interaction = _h.ListeningInteractions.Single(x => x.Id == 1);
+        interaction.Type = ListeningInteractionType.CharacterLetter;
+        interaction.Kind = null;
+        interaction.CharacterName = "Thỏ";
+        interaction.BlankIndex = 0;
+        _h.ListeningOptions.Single(x => x.Id == 10).Text = "th";
+        _h.ListeningOptions.Single(x => x.Id == 11).Text = "b";
+        _h.AddListeningMedia(interaction);
+        var steps = new ListeningStepsRequestDto { Sound = "tried", Trace = "skipped" };
+        var error = await Assert.ThrowsAsync<ConflictException>(() => _sut.SaveStepsAsync(ReadingHarness.Child, _session.Id, 1, steps));
+        Assert.Equal("LISTENING_STEPS_BEFORE_ANSWER", error.Message);
+        var first = await Submit(1, new SubmitListeningAttemptRequestDto { OptionId = 11 });
+        Assert.True(first.CanRetry);
+        Assert.Equal("Mình chọn lại nhé.", first.Feedback);
+        var second = await Submit(1, new SubmitListeningAttemptRequestDto { OptionId = 11 });
+        Assert.True(second.Revealed);
+        Assert.Equal(10, second.CorrectOptionId);
+        Assert.Equal("Chữ còn thiếu là th.", second.Feedback);
+        Assert.Equal("listen-1-10-sound.mp3", second.FeedbackAudioUrl);
+        await _sut.SaveStepsAsync(ReadingHarness.Child, _session.Id, 1, steps);
+        Assert.Null(_h.ListeningAttempts[0].StepResultsJson);
+        Assert.Equal("{\"sound\":\"tried\",\"trace\":\"skipped\"}", _h.ListeningAttempts[1].StepResultsJson);
+        steps.Sound = "good";
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.SaveStepsAsync(ReadingHarness.Child, _session.Id, 1, steps));
+    }
+
+    [Fact]
+    public async Task WhoSaidIt_FirstRightFinishes_WithoutSecondAttempt()
+    {
+        var interaction = _h.ListeningInteractions.Single(x => x.Id == 1);
+        interaction.Type = ListeningInteractionType.WhoSaidIt;
+        interaction.SourceQuote = "Xin chào bạn!";
+        _h.AddListeningMedia(interaction);
+        var first = await Submit(1, new SubmitListeningAttemptRequestDto { OptionId = 10 });
+        Assert.True(first.Matched);
+        Assert.False(first.CanRetry);
+        Assert.Equal(interaction.MatchFeedback, first.Feedback);
+        var repeat = await Submit(1, new SubmitListeningAttemptRequestDto { OptionId = 11 });
+        Assert.True(repeat.Matched);
+        Assert.Single(_h.ListeningAttempts);
+    }
+
+    [Fact]
+    public async Task WhoSaidIt_SecondNonMatchPlaysCorrectSpeakerName()
+    {
+        var interaction = _h.ListeningInteractions.Single(x => x.Id == 1);
+        interaction.Type = ListeningInteractionType.WhoSaidIt;
+        interaction.SourceQuote = "Xin chào bạn!";
+        _h.AddListeningMedia(interaction);
+        await Submit(1, new SubmitListeningAttemptRequestDto { OptionId = 11 });
+        var second = await Submit(1, new SubmitListeningAttemptRequestDto { OptionId = 11 });
+        Assert.True(second.Revealed);
+        Assert.Equal(10, second.CorrectOptionId);
+        Assert.Equal("listen-1-10-text.mp3", second.FeedbackAudioUrl);
+    }
 
     [Fact]
     public async Task Checkpoint_ReturnsCardFeedback_SavesOnce_AndRepeatsTheSameResult()

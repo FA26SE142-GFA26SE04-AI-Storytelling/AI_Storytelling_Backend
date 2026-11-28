@@ -18,5 +18,7 @@ public class ListeningInteractionAttempt : BaseEntity
     public string? AnswerText { get; set; }
     public string? OrderedOptionIdsJson { get; set; }
     public bool? IsMatch { get; set; }
+    /// <summary>CharacterLetter sound/trace steps: tried or skipped, without grades.</summary>
+    public string? StepResultsJson { get; set; }
     public DateTime AttemptedAt { get; set; }
 }

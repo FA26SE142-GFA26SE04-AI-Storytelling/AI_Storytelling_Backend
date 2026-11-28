@@ -48,6 +48,33 @@ public class ChildListeningService : IChildListeningService
         }
     }
 
+    public async Task SaveStepsAsync(int childProfileId, int sessionId, int interactionId,
+        ListeningStepsRequestDto request, CancellationToken ct = default)
+    {
+        if (request.Sound is not ("tried" or "skipped") || request.Trace is not ("tried" or "skipped"))
+            throw new BadRequestException(AnswerInvalidCode);
+        var preview = await LoadAsync(childProfileId, sessionId, interactionId, ct);
+        await _unitOfWork.BeginTransactionAsync(ct);
+        try
+        {
+            await _unitOfWork.AcquireTransactionLockAsync(preview.Session.StoryId, ct);
+            var context = await LoadAsync(childProfileId, sessionId, interactionId, ct);
+            if (context.Interaction.Type != ListeningInteractionType.CharacterLetter)
+                throw new NotFoundException("Tương tác", interactionId);
+            var last = context.Attempts.LastOrDefault()
+                       ?? throw new ConflictException("LISTENING_STEPS_BEFORE_ANSWER");
+            last.StepResultsJson = JsonSerializer.Serialize(new { sound = request.Sound, trace = request.Trace });
+            _unitOfWork.Repository<ListeningInteractionAttempt>().Update(last);
+            await _unitOfWork.SaveChangesAsync(ct);
+            await _unitOfWork.CommitTransactionAsync(ct);
+        }
+        catch
+        {
+            await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
     private sealed record ListeningContext(ReadingSession Session, ListeningInteraction Interaction,
         IReadOnlyList<ListeningInteractionOption> Options, IReadOnlyList<StoryScene> Scenes,
         IReadOnlyList<MediaAsset> Assets, IReadOnlyList<ListeningInteractionAttempt> Attempts);
@@ -57,9 +84,12 @@ public class ChildListeningService : IChildListeningService
     {
         var interaction = context.Interaction;
         // Loại khác Sắp xếp: mỗi phiên ghi một lần, gửi lại thì trả kết quả cũ (audio vẫn ký như lần đầu).
-        if (interaction.Type != ListeningInteractionType.EventOrdering && context.Attempts.Count > 0)
+        var finished = ChildListeningContent.AllowsRetry(interaction)
+            ? context.Attempts.Any(attempt => attempt.IsMatch == true) || context.Attempts.Count >= ChildListeningContent.MaxChoiceAttempts
+            : interaction.Type != ListeningInteractionType.EventOrdering && context.Attempts.Count > 0;
+        if (finished)
         {
-            var previous = Result(context, context.Attempts[0]);
+            var previous = Result(context, context.Attempts[^1], context.Attempts.Count);
             previous.FeedbackAudioUrl = await _mediaUrls.SignAsync(previous.FeedbackAudioUrl, ct);
             return previous;
         }
@@ -73,12 +103,14 @@ public class ChildListeningService : IChildListeningService
         };
         switch (interaction.Type)
         {
-            case ListeningInteractionType.Checkpoint or ListeningInteractionType.PicturePrediction:
+            case ListeningInteractionType.Checkpoint or ListeningInteractionType.PicturePrediction
+                or ListeningInteractionType.CharacterLetter or ListeningInteractionType.WhoSaidIt:
             {
                 var option = context.Options.FirstOrDefault(x => x.Id == request.OptionId)
                              ?? throw new BadRequestException(AnswerInvalidCode);
                 attempt.SelectedOptionId = option.Id;
-                attempt.IsMatch = option.IsMatch;
+                attempt.IsMatch = interaction.Type == ListeningInteractionType.PicturePrediction && interaction.TargetAge == 6
+                    ? null : option.IsMatch;
                 break;
             }
             case ListeningInteractionType.FillBlank:
@@ -105,15 +137,62 @@ public class ChildListeningService : IChildListeningService
         await _unitOfWork.Repository<ListeningInteractionAttempt>().AddAsync(attempt, ct);
         var result = interaction.Type == ListeningInteractionType.EventOrdering
             ? OrderingResult(context, attempt, context.Attempts.Append(attempt).ToList())
-            : Result(context, attempt);
+            : Result(context, attempt, context.Attempts.Count + 1);
         result.FeedbackAudioUrl = await _mediaUrls.SignAsync(result.FeedbackAudioUrl, ct);
         return result;
     }
 
-    private static ListeningAttemptResultDto Result(ListeningContext context, ListeningInteractionAttempt attempt)
+    private static ListeningAttemptResultDto Result(ListeningContext context, ListeningInteractionAttempt attempt, int attemptsSoFar)
     {
         var interaction = context.Interaction;
         var result = new ListeningAttemptResultDto { InteractionId = interaction.Id, Type = interaction.Type.ToString() };
+        if (ChildListeningContent.AllowsRetry(interaction))
+        {
+            var selected = context.Options.FirstOrDefault(option => option.Id == attempt.SelectedOptionId);
+            var correct = context.Options.First(option => option.IsMatch);
+            var matched = attempt.IsMatch == true;
+            var revealed = !matched && attemptsSoFar >= ChildListeningContent.MaxChoiceAttempts;
+            result.Matched = matched;
+            result.CanRetry = !matched && !revealed;
+            result.Revealed = revealed;
+            result.CorrectOptionId = revealed ? correct.Id : null;
+            if (matched)
+            {
+                result.Feedback = interaction.Type == ListeningInteractionType.Checkpoint ? selected?.Feedback : interaction.MatchFeedback;
+                result.FeedbackAudioUrl = interaction.Type == ListeningInteractionType.Checkpoint
+                    ? ListeningMediaRequirements.FindAudio(context.Assets, interaction.Id, selected?.Id, ListeningAudioParts.Feedback)?.Url
+                    : Audio(context, ListeningAudioParts.Match);
+            }
+            else if (revealed)
+            {
+                result.Feedback = interaction.Type switch
+                {
+                    ListeningInteractionType.Checkpoint => correct.Feedback,
+                    ListeningInteractionType.WhoSaidIt => $"Bạn {correct.Text} đã nói câu này đó.",
+                    _ => $"Chữ còn thiếu là {correct.Text}."
+                };
+                result.FeedbackAudioUrl = interaction.Type == ListeningInteractionType.Checkpoint
+                    ? ListeningMediaRequirements.FindAudio(context.Assets, interaction.Id, correct.Id, ListeningAudioParts.Feedback)?.Url
+                    : ListeningMediaRequirements.FindAudio(context.Assets, interaction.Id, correct.Id,
+                        interaction.Type == ListeningInteractionType.CharacterLetter ? ListeningAudioParts.Sound : ListeningAudioParts.Text)?.Url;
+            }
+            else
+            {
+                result.Feedback = interaction.Type switch
+                {
+                    ListeningInteractionType.Checkpoint => ListeningAudioParts.FixedLine(ListeningAudioParts.RetryLook),
+                    ListeningInteractionType.WhoSaidIt => interaction.NoMatchFeedback,
+                    _ => "Mình chọn lại nhé."
+                };
+                result.FeedbackAudioUrl = interaction.Type switch
+                {
+                    ListeningInteractionType.Checkpoint => Audio(context, ListeningAudioParts.RetryLook),
+                    ListeningInteractionType.WhoSaidIt => Audio(context, ListeningAudioParts.NoMatch),
+                    _ => null
+                };
+            }
+            return result;
+        }
         switch (interaction.Type)
         {
             case ListeningInteractionType.Checkpoint or ListeningInteractionType.PicturePrediction:
@@ -204,12 +283,15 @@ public class ChildListeningService : IChildListeningService
             throw new ConflictException(SessionClosedCode);
 
         var parentPackage = await ParentStoryPackageReader.ForSessionAsync(_unitOfWork, session, ct);
+        var profile = await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(childProfileId, ct);
+        if (profile is null || profile.IsDeleted) throw new NotFoundException("Hồ sơ trẻ", childProfileId);
+        var childAge = ListeningAgeSets.AgeFor(profile.Age, profile.AgeBand);
         var versionId = session.StoryVersionId ?? throw new ForbiddenException(ChildReadingPolicy.StoryUnavailableMessage);
         var interaction = await _unitOfWork.Repository<ListeningInteraction>().FirstOrDefaultAsync(
             value => value.Id == interactionId && value.StoryVersionId == versionId && value.ParentStoryPackageId == session.ParentStoryPackageId && !value.IsDeleted, cancellationToken: ct);
         if (parentPackage is not null && !System.Text.Json.JsonSerializer.Deserialize<ParentPackageManifest>(parentPackage.ManifestJson, ParentPackageContext.Json)!.ListeningIds.Contains(interactionId))
             throw new NotFoundException("Interaction", interactionId);
-        if (interaction?.StorySceneId is null) throw new NotFoundException("Tương tác", interactionId);
+        if (interaction?.StorySceneId is null || interaction.TargetAge != childAge) throw new NotFoundException("Tương tác", interactionId);
 
         var options = (await _unitOfWork.Repository<ListeningInteractionOption>().FindAsync(
                 value => value.ListeningInteractionId == interactionId && !value.IsDeleted, cancellationToken: ct))

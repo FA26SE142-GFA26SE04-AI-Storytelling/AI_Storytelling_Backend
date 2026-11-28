@@ -11,12 +11,14 @@ public sealed record ListeningPlanItem(ListeningInteractionType Type, int Count)
 {
     /// <summary>Zones[i] = các đoạn mục thứ i được phép neo vào. EventOrdering và ReadAloud không có vùng (luôn sau đoạn cuối).</summary>
     public IReadOnlyList<IReadOnlyList<string>> Zones { get; init; } = [];
+    public CheckpointKind? Kind { get; init; }
 }
 
 /// <summary>Kế hoạch do backend tính: có loại nào, mỗi loại bao nhiêu. Thứ tự Items = thứ tự gọi AI.</summary>
 public sealed record ListeningInteractionPlan(int Slots, IReadOnlyList<ListeningPlanItem> Items, IReadOnlyList<string> DialogueBlockIds)
 {
     public static readonly ListeningInteractionPlan Empty = new(0, [], []);
+    public int TargetAge { get; init; }
 }
 
 /// <summary>Lỗi kiểm tra; cũng là một phần tử của previousErrors gửi lại cho AI.</summary>
@@ -42,6 +44,7 @@ public sealed record ListeningOptionDraft
 /// </summary>
 public sealed record ListeningInteractionDraft
 {
+    public int? TargetAge { get; init; }
     public ListeningInteractionType Type { get; init; }
     public string AnchorBlockId { get; init; } = string.Empty;
     public int? AnchorOffset { get; init; }
@@ -53,6 +56,7 @@ public sealed record ListeningInteractionDraft
     /// <summary>ReadAloud: block containing the passage, used to resolve its offsets.</summary>
     public string? SourceBlockId { get; init; }
     public string? CharacterName { get; init; }
+    public int? BlankIndex { get; init; }
     public string? HiddenWord { get; init; }
     public string? Hint { get; init; }
     public string? RevealBlockId { get; init; }
@@ -69,6 +73,7 @@ public sealed record ListeningRuleContext
     public ListeningInteractionType Type { get; init; }
     public int Count { get; init; }
     public AgeBand AgeBand { get; init; }
+    public int TargetAge { get; init; }
     public string Content { get; init; } = string.Empty;
     public IReadOnlyList<StoryTextBlock> Blocks { get; init; } = [];
     /// <summary>Neo của các loại khác đã lưu trên cùng version.</summary>
@@ -86,7 +91,8 @@ public sealed record ListeningRuleContext
 /// <summary>Ngữ cảnh, các đoạn và kế hoạch tương tác của một version.</summary>
 public sealed record ListeningScope(
     StoryVersion Version, AIStoryInputContextSnapshot Context, IReadOnlyList<StoryTextBlock> Blocks, ListeningInteractionPlan Plan)
-{ public int? ParentStoryPackageId { get; init; } }
+{ public int? ParentStoryPackageId { get; init; }
+  public int TargetAge { get; init; } }
 
 public sealed record ListeningGenerationResult(IReadOnlyList<ListeningInteractionDraft> Drafts, GenerationMetadataDto Metadata);
 

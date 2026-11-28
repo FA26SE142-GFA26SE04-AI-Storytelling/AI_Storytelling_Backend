@@ -17,9 +17,12 @@ public static class ListeningInteractionAiMapper
         string requestId, ListeningInteractionType type, int count, AgeBand ageBand, string language, string title, string lesson,
         IReadOnlyList<StoryTextBlock> blocks, IReadOnlyCollection<string> dialogueBlockIds, IReadOnlyCollection<int> occupiedAnchorOffsets,
         IReadOnlyList<IReadOnlyList<string>> allowedBlockIds, IReadOnlyList<string> vocabularyTerms,
-        IReadOnlyList<ListeningValidationError> previousErrors) => new()
+        IReadOnlyList<ListeningValidationError> previousErrors, int? targetAge = null, CheckpointKind? kind = null) => new()
     {
         RequestId = requestId,
+        TargetAge = targetAge,
+        CheckpointKind = kind?.ToString(),
+        AllowedLetters = type == ListeningInteractionType.CharacterLetter ? VietnameseLetterUnits.BaseLetters.ToArray() : [],
         InteractionType = type.ToString(),
         Count = count,
         AgeBand = ageBand.ToString(),
@@ -30,7 +33,7 @@ public static class ListeningInteractionAiMapper
         OccupiedBlockIds = blocks.Where(b => occupiedAnchorOffsets.Contains(b.EndOffset)).Select(b => b.BlockId).ToArray(),
         // Từ vựng gợi ý chọn câu cho FillBlank và ReadAloud, đoạn có thoại cho RolePlay.
         VocabularyTerms = type is ListeningInteractionType.FillBlank or ListeningInteractionType.ReadAloud ? vocabularyTerms.ToArray() : [],
-        DialogueBlockIds = type == ListeningInteractionType.RolePlay ? dialogueBlockIds.ToArray() : [],
+        DialogueBlockIds = type is ListeningInteractionType.RolePlay or ListeningInteractionType.WhoSaidIt ? dialogueBlockIds.ToArray() : [],
         AllowedBlockIds = allowedBlockIds,
         PreviousErrors = previousErrors.Select(e => new ListeningPreviousErrorDto(e.Code, e.ItemIndex, e.Field)).ToArray()
     };
@@ -48,7 +51,8 @@ public static class ListeningInteractionAiMapper
             NoMatchFeedback = x.OtherFeedback,
             Options = (x.Options ?? []).Select(o => new ListeningOptionDraft
             {
-                Text = o.Text ?? string.Empty, Feedback = o.Feedback, IsMatch = o.IsMatch
+                Text = o.Text ?? string.Empty, Feedback = o.Feedback, IsMatch = o.IsMatch,
+                ImageDescription = ParseKind(x.Kind) == CheckpointKind.Literal ? o.ImageDescription : null
             }).ToArray()
         }).ToArray(),
         ListeningInteractionType.RolePlay => (response.RolePlays ?? []).Select(x => new ListeningInteractionDraft
@@ -99,6 +103,18 @@ public static class ListeningInteractionAiMapper
             SourceBlockId = x.BlockId,
             SourceQuote = x.PassageQuote,
             MatchFeedback = x.PraiseFeedback
+        }).ToArray(),
+        ListeningInteractionType.CharacterLetter => (response.CharacterLetters ?? []).Select(x => new ListeningInteractionDraft
+        {
+            Type = type, AnchorBlockId = x.AfterBlockId ?? string.Empty, CharacterName = x.CharacterName,
+            BlankIndex = x.BlankIndex, MatchFeedback = x.PraiseFeedback,
+            Options = (x.Options ?? []).Select(o => new ListeningOptionDraft { Text = o.Text ?? string.Empty, IsMatch = o.IsMatch, ImageDescription = o.IsMatch ? x.ImageDescription : null }).ToArray()
+        }).ToArray(),
+        ListeningInteractionType.WhoSaidIt => (response.WhoSaidIts ?? []).Select(x => new ListeningInteractionDraft
+        {
+            Type = type, AnchorBlockId = x.AfterBlockId ?? string.Empty, SourceQuote = x.SourceQuote ?? x.LineQuote,
+            MatchFeedback = x.MatchFeedback, NoMatchFeedback = x.RetryFeedback,
+            Options = (x.Speakers ?? []).Select(o => new ListeningOptionDraft { Text = o.Name, IsMatch = o.IsMatch, ImageDescription = o.ImageDescription }).ToArray()
         }).ToArray(),
         _ => []
     };

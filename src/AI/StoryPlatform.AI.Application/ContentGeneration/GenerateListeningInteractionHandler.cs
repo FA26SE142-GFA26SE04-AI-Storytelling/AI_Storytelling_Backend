@@ -21,7 +21,7 @@ public sealed class GenerateListeningInteractionHandler(StoryContentGenerationEx
 
     public async Task<GenerateListeningInteractionResponse> HandleAsync(GenerateListeningInteractionRequest request, CancellationToken ct = default)
     {
-        var type = ListeningGenerationContract.PromptTypeFor(request.InteractionType);
+        var type = ListeningGenerationContract.PromptTypeFor(request.InteractionType, request.TargetAge);
         ValidateProfile(request.InteractionType, request.AgeBand, request.Language);
         if (request.ReadingLevel is < 1 or > 5) throw new ArgumentException("Reading level must be between 1 and 5.");
         if (string.IsNullOrWhiteSpace(request.RequestId) || request.Count is < 1 or > 4 ||
@@ -30,6 +30,12 @@ public sealed class GenerateListeningInteractionHandler(StoryContentGenerationEx
             request.Blocks.Select(b => b.BlockId).Distinct().Count() != request.Blocks.Count ||
             request.Blocks.Sum(b => b.Text.Length) > 100_000 || request.LastBlockId != request.Blocks[^1].BlockId)
             throw new ArgumentException("Invalid listening request, count or canonical blocks.");
+        if (request.TargetAge is { } age && (age != 6 || !(request.AgeBand is "6-8" or "Age_6_8") ||
+            request.InteractionType is not ("Checkpoint" or "RolePlay" or "CharacterLetter" or "PicturePrediction" or "WhoSaidIt") ||
+            request.InteractionType == "Checkpoint" && request.CheckpointKind != "Literal"))
+            throw new ArgumentException("Unsupported target age or interaction kind.");
+        if (request.InteractionType is "CharacterLetter" or "WhoSaidIt" && request.TargetAge != 6)
+            throw new ArgumentException("This interaction requires targetAge 6.");
         var blockIds = request.Blocks.Select(b => b.BlockId).ToHashSet(StringComparer.Ordinal);
         if (request.OccupiedBlockIds.Any(id => !blockIds.Contains(id)) ||
             request.AllowedBlockIds.SelectMany(x => x).Any(id => !blockIds.Contains(id) || id == request.LastBlockId) ||
@@ -47,7 +53,7 @@ public sealed class GenerateListeningInteractionHandler(StoryContentGenerationEx
         }
         else template = prompts.GetActive(type, request.Language, request.AgeBand);
 
-        var schema = ListeningGenerationContract.Schema(request.InteractionType, request.Count);
+        var schema = ListeningGenerationContract.Schema(request.InteractionType, request.Count, request.TargetAge);
         var result = await executor.ExecuteAsync(PromptComposer.Compose(template, request),
             "listening_" + request.InteractionType.ToLowerInvariant(), schema,
             json => Parse(json, schema, request), ct, technicalAttempts: 1, executionBudgetSeconds: 110);
@@ -67,6 +73,8 @@ public sealed class GenerateListeningInteractionHandler(StoryContentGenerationEx
             "FillBlank" => response with { FillBlanks = items.Deserialize<FillBlankItemDto[]>(JsonDefaults.Options)! },
             "PicturePrediction" => response with { PicturePredictions = items.Deserialize<PicturePredictionItemDto[]>(JsonDefaults.Options)! },
             "EventOrdering" => response with { EventOrderings = items.Deserialize<EventOrderingItemDto[]>(JsonDefaults.Options)! },
+            "CharacterLetter" => response with { CharacterLetters = items.Deserialize<CharacterLetterItemDto[]>(JsonDefaults.Options)! },
+            "WhoSaidIt" => response with { WhoSaidIts = items.Deserialize<WhoSaidItItemDto[]>(JsonDefaults.Options)! },
             "ReadAloud" => response with { ReadAloudPassages = items.Deserialize<ReadAloudItemDto[]>(JsonDefaults.Options)! },
             _ => throw new ArgumentException("Unsupported listening interaction type.")
         };
@@ -77,15 +85,18 @@ public sealed class GenerateListeningInteractionHandler(StoryContentGenerationEx
         var younger = ageBand is "6-8" or "Age_6_8";
         var older = ageBand is "9-10" or "Age_9_10";
         if ((!younger && !older) || string.IsNullOrWhiteSpace(language) || language.Length > 16 ||
-            (type == "RolePlay" && !younger) || (type == "FillBlank" && !older))
+            (type == "RolePlay" && !younger) || (type == "FillBlank" && !older) ||
+            (type is "CharacterLetter" or "WhoSaidIt" or "Checkpoint:Age6" or "PicturePrediction:Age6" && !younger))
             throw new ArgumentException("Listening type is incompatible with the age band or language.");
     }
 }
 
 public static class ListeningGenerationContract
 {
-    public static PromptType PromptTypeFor(string type) => type switch
+    public static PromptType PromptTypeFor(string type, int? targetAge = null) => (targetAge == 6 && type is "Checkpoint" or "PicturePrediction" ? type + ":Age6" : type) switch
     {
+        "CharacterLetter" => PromptType.ListeningCharacterLetter, "WhoSaidIt" => PromptType.ListeningWhoSaidIt,
+        "Checkpoint:Age6" => PromptType.ListeningCheckpointLiteral, "PicturePrediction:Age6" => PromptType.ListeningPicturePredictionAge6,
         "Checkpoint" => PromptType.ListeningCheckpoint, "RolePlay" => PromptType.ListeningRolePlay,
         "FillBlank" => PromptType.ListeningFillBlank, "PicturePrediction" => PromptType.ListeningPicturePrediction,
         "EventOrdering" => PromptType.ListeningEventOrdering, "ReadAloud" => PromptType.ListeningReadAloud,
@@ -97,6 +108,10 @@ public static class ListeningGenerationContract
         _ = PromptTypeFor(type);
         var rules = type switch
         {
+            "CharacterLetter" => "Choose a character name already heard through afterBlockId. Split its name into letter cells; ngh/ng/nh/ch/gh/gi/kh/ph/qu/th/tr each form ONE cell, spaces remain separate nonblankable cells. blankIndex is zero-based and may point only to an original unaccented unit from allowedLetters, never remove accents or tones. Supply an imageDescription of this character for its portrait, preserving story appearance without text. Supply exactly three distinct allowedLetters options, exactly one isMatch equal to that cell. Include short praiseFeedback. Do not include option feedback.",
+            "WhoSaidIt" => "Choose a verbatim spoken line already heard by afterBlockId, sourceQuote excludes narration and quotation marks, at most 12 whitespace-separated units. Supply two or three distinct speakers with name as in the heard story, exactly one isMatch, and child-safe imageDescription without text. Include matchFeedback and retryFeedback without grading words.",
+            "Checkpoint:Age6" => "Use only kind Literal. Ask a short literal question answerable from the just-heard story or picture, with two or three options and exactly one isMatch. Include encouraging feedback for every option and otherFeedback. Every option also has imageDescription: a picture of that answer taken only from the heard story scene, keeping the story's characters and setting, with no writing and nothing that is not in the story. All information must be available through afterBlockId.",
+            "PicturePrediction:Age6" => "Use exactly two pictures, every isMatch false. Do not output revealBlockId. Never grade or reveal an answer; record only the child's choice. Every imageDescription preserves story characters and setting without writing. Include question, a verbatim sourceQuote from the heard story, waitFeedback and friendly feedback for both choices.",
             "Checkpoint" => "Use Prediction, Emotion or Opinion kinds; each kind at most twice and include Emotion or Opinion. Emotion has four options, other kinds two or three. Prediction/Emotion have exactly one isMatch, Opinion none. Explanation is reviewer-only and may refer to later events; feedback must not. Emotion/Opinion options must be understandable alone. Include otherFeedback for future voice answers.",
             "RolePlay" => "Choose verbatim dialogue from a supplied dialogueBlockId in its allowed zone. Name the character as in the story. lineQuote excludes quotation marks/narration and is at most 12 whitespace-separated units. Praise only the attempt, never grade speech.",
             "FillBlank" => "Choose a verbatim sentence in its anchor block, at most 15 whitespace-separated units. Hide a meaningful word/phrase, preferring vocabularyTerms; acceptedAnswers includes hiddenWord. Hint must not contain the answer. suggestFeedback gently gives the answer. Only matchFeedback may praise a matching answer as correct.",
@@ -111,14 +126,14 @@ public static class ListeningGenerationContract
             "For each item choose an afterBlockId in its corresponding AllowedBlockIds zone, never lastBlockId, occupied or duplicate anchors; event ordering is the exception. " +
             "Questions and immediate feedback may use only information through their anchor; do not spoil later events. " +
             "Use short friendly sentences, con for the child and mình for invitations in Vietnamese. No personal-data questions, frightening content, rankings, countdowns, emojis or markdown. " +
-            "Never use sai, chưa đúng or không đúng in child-facing feedback. Only FillBlank and EventOrdering may praise a correct match. " +
+            "Never use sai, chưa đúng or không đúng in child-facing feedback. Age-six literal and speaker answers may receive friendly praise; do not show scores. " +
             "On previousErrors regenerate ALL count items and correct those codes; do not repeat rejected output. " + rules + " Context JSON: {{context}}");
     }
 
     /// <summary>Placed by Core after the final block, so the request carries no anchor zones.</summary>
     public static bool IsEndOfStory(string type) => type is "EventOrdering" or "ReadAloud";
 
-    public static JsonElement Schema(string type, int count)
+    public static JsonElement Schema(string type, int count, int? targetAge = null)
     {
         _ = PromptTypeFor(type);
         JsonObject S() => new() { ["type"] = "string", ["minLength"] = 1 };
@@ -130,8 +145,20 @@ public static class ListeningGenerationContract
             foreach (var field in fields) { properties[field.Key] = field.Schema; required.Add(field.Key); }
             return new() { ["type"] = "object", ["properties"] = properties, ["required"] = required, ["additionalProperties"] = false };
         }
-        var item = type switch
+        var schemaType = targetAge == 6 && type is "Checkpoint" or "PicturePrediction" ? type + ":Age6" : type;
+        var item = schemaType switch
         {
+            "CharacterLetter" => O(("afterBlockId", S()), ("characterName", S()), ("imageDescription", S()),
+                ("blankIndex", new JsonObject { ["type"] = "integer", ["minimum"] = 0, ["maximum"] = 100 }),
+                ("options", A(O(("text", S()), ("isMatch", B())), 3, 3)), ("praiseFeedback", S())),
+            "WhoSaidIt" => O(("afterBlockId", S()), ("sourceQuote", S()),
+                ("speakers", A(O(("name", S()), ("isMatch", B()), ("imageDescription", S())), 2, 3)),
+                ("matchFeedback", S()), ("retryFeedback", S())),
+            "Checkpoint:Age6" => O(("kind", new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("Literal") }),
+                ("afterBlockId", S()), ("question", S()), ("sourceQuote", S()), ("explanation", S()),
+                ("options", A(O(("text", S()), ("imageDescription", S()), ("feedback", S()), ("isMatch", B())), 2, 3)), ("otherFeedback", S())),
+            "PicturePrediction:Age6" => O(("afterBlockId", S()), ("question", S()), ("sourceQuote", S()), ("waitFeedback", S()),
+                ("options", A(O(("label", S()), ("imageDescription", S()), ("feedback", S()), ("isMatch", B())), 2, 2))),
             "Checkpoint" => O(("kind", new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("Prediction", "Emotion", "Opinion") }),
                 ("afterBlockId", S()), ("question", S()), ("sourceQuote", S()), ("explanation", S()),
                 ("options", A(O(("text", S()), ("feedback", S()), ("isMatch", B())), 2, 4)), ("otherFeedback", S())),
@@ -174,7 +201,7 @@ public static class ListeningGenerationContract
                 if (schema.TryGetProperty("enum", out var choices) && !choices.EnumerateArray().Any(c => c.GetString() == value.GetString())) Invalid();
                 break;
             case "boolean": if (value.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) Invalid(); break;
-            case "integer": if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out var number) || number < 1 || number > 3) Invalid(); break;
+            case "integer": if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out var number) || number < schema.GetProperty("minimum").GetInt32() || number > schema.GetProperty("maximum").GetInt32()) Invalid(); break;
         }
     }
 }

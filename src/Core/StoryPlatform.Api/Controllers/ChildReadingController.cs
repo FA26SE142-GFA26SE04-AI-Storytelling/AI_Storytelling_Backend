@@ -136,6 +136,15 @@ public sealed class ChildReadingController : ControllerBase
         return Ok(ApiResponse<ListeningAttemptResultDto>.Ok(result));
     }
 
+    /// <summary>Ghi bước đọc âm/vẽ của tương tác chữ cái.</summary>
+    [HttpPatch("sessions/{sessionId:int}/listening/{interactionId:int}/steps")]
+    public async Task<IActionResult> SaveListeningSteps(int sessionId, int interactionId,
+        [FromBody] ListeningStepsRequestDto request, CancellationToken ct)
+    {
+        await _listening.SaveStepsAsync(ChildId, sessionId, interactionId, request, ct);
+        return Ok(ApiResponse<object>.Ok(new { }));
+    }
+
     /// <summary>Trẻ chọn cảm nhận sau khi đọc xong. Chỉ ghi lại, không có phản hồi hay thưởng.</summary>
     [HttpPut("sessions/{sessionId:int}/feeling")]
     public async Task<ActionResult<ApiResponse<ReadingFeelingDto>>> SetFeeling(

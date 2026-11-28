@@ -97,7 +97,7 @@ public class StoryGenerationJobConfiguration : IEntityTypeConfiguration<StoryGen
         builder.HasIndex(x => x.StoryVersionId);
 
         // Tương tác lúc nghe: một job cho mỗi loại trên cùng một version.
-        builder.HasIndex(x => new { x.StoryVersionId, x.ListeningInteractionType })
+        builder.HasIndex(x => new { x.StoryVersionId, x.ListeningInteractionType, x.OperationKey })
             .IsUnique()
             .HasFilter("\"ParentStoryPackageId\" IS NULL AND \"Operation\" = 'GenerateListeningInteraction' AND \"StoryVersionId\" IS NOT NULL AND \"IsDeleted\" = false");
 

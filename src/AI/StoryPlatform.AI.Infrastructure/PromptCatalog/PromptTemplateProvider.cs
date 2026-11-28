@@ -11,6 +11,10 @@ public sealed class PromptTemplateProvider : IPromptTemplateProvider
     private static readonly IReadOnlyDictionary<PromptType, PromptTemplate> Templates =
         new Dictionary<PromptType, PromptTemplate>
         {
+            [PromptType.ListeningCharacterLetter] = StoryPlatform.AI.Application.ContentGeneration.ListeningGenerationContract.Template("CharacterLetter"),
+            [PromptType.ListeningWhoSaidIt] = StoryPlatform.AI.Application.ContentGeneration.ListeningGenerationContract.Template("WhoSaidIt"),
+            [PromptType.ListeningCheckpointLiteral] = StoryPlatform.AI.Application.ContentGeneration.ListeningGenerationContract.Template("Checkpoint:Age6"),
+            [PromptType.ListeningPicturePredictionAge6] = StoryPlatform.AI.Application.ContentGeneration.ListeningGenerationContract.Template("PicturePrediction:Age6"),
             [PromptType.ListeningCheckpoint] = StoryPlatform.AI.Application.ContentGeneration.ListeningGenerationContract.Template("Checkpoint"),
             [PromptType.ListeningRolePlay] = StoryPlatform.AI.Application.ContentGeneration.ListeningGenerationContract.Template("RolePlay"),
             [PromptType.ListeningFillBlank] = StoryPlatform.AI.Application.ContentGeneration.ListeningGenerationContract.Template("FillBlank"),

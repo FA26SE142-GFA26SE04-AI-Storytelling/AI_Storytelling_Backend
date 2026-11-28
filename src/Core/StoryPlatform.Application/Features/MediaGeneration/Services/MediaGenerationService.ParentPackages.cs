@@ -119,11 +119,11 @@ public sealed partial class MediaGenerationService
                 await EnsureListeningAudioAsync(observed.Id, token, story.Id, version.Id, context, ct);
                 var interactions = await LoadListeningInteractionsAsync(version.Id, ct);
                 var options = await LoadListeningOptionsAsync(interactions, ct);
-                foreach (var interaction in interactions.Where(x => x.Type == ListeningInteractionType.PicturePrediction))
+                foreach (var interaction in interactions.Where(ListeningMediaRequirements.HasOptionImages))
                 {
                     var scene = scenes.Single(x => x.Id == interaction.StorySceneId);
                     var spec = _specificationBuilder.Build(version.Id, scene.Id, scene.SceneIndex, scene.SceneText, scene.VisualDescription, _contextProjector.Project(context.ContextJson));
-                    foreach (var option in options.Where(x => x.ListeningInteractionId == interaction.Id))
+                    foreach (var option in ListeningMediaRequirements.ImageOptions(interaction, options))
                     {
                         var asset = await GetOrCreateClaimedListeningAssetAsync(observed.Id, token, version.Id, context.Id,
                             () => GetOrCreateListeningImageAssetAsync(version.Id, interaction.Id, option.Id, ct), ct);
@@ -140,8 +140,7 @@ public sealed partial class MediaGenerationService
                         if (audio is null && !part.Required) continue;
                         selected.Add((audio ?? throw new ConflictException("MEDIA_PACKAGE_INCOMPLETE")).Id);
                     }
-                    if (interaction.Type == ListeningInteractionType.PicturePrediction)
-                        foreach (var option in options.Where(x => x.ListeningInteractionId == interaction.Id && !x.IsDeleted))
+                    foreach (var option in ListeningMediaRequirements.ImageOptions(interaction, options))
                             selected.Add((ListeningMediaRequirements.FindImage(assets, option.Id)
                                 ?? throw new ConflictException("MEDIA_PACKAGE_INCOMPLETE")).Id);
                 }

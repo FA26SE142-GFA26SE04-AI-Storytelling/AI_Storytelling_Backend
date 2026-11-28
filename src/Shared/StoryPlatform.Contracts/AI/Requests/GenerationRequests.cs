@@ -116,6 +116,9 @@ public sealed record GenerateQuizRequest
 
 public sealed record GenerateListeningInteractionRequest
 {
+    public int? TargetAge { get; init; }
+    public string? CheckpointKind { get; init; }
+    public IReadOnlyList<string> AllowedLetters { get; init; } = [];
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public int? ReadingLevel { get; init; }
     public AiGenerationSnapshot? Snapshot { get; init; }

@@ -7,6 +7,47 @@ namespace StoryPlatform.UnitTests.Features.ListeningInteractions;
 
 public sealed class ListeningMediaRequirementsTests
 {
+    [Theory]
+    [InlineData(ListeningInteractionType.WhoSaidIt)]
+    [InlineData(ListeningInteractionType.CharacterLetter)]
+    public void NewTypes_RequireCharacterImages(ListeningInteractionType type)
+    {
+        var interaction = new ListeningInteraction { Id = 5, Type = type };
+        var options = new[] {
+            new ListeningInteractionOption { Id = 50, ListeningInteractionId = 5, Text = "b", IsMatch = true },
+            new ListeningInteractionOption { Id = 51, ListeningInteractionId = 5, Text = "m" }
+        };
+        var missing = ListeningMediaRequirements.Missing(interaction, options, []);
+        Assert.Contains("5:o50:image", missing);
+        Assert.Equal(type == ListeningInteractionType.WhoSaidIt, missing.Contains("5:o51:image"));
+    }
+
+    [Fact]
+    public void Literal_RequiresPictureForEveryOption()
+    {
+        var interaction = new ListeningInteraction { Id = 7, Type = ListeningInteractionType.Checkpoint, Kind = CheckpointKind.Literal };
+        var options = new[] {
+            new ListeningInteractionOption { Id = 70, ListeningInteractionId = 7, Text = "Thỏ con", IsMatch = true },
+            new ListeningInteractionOption { Id = 71, ListeningInteractionId = 7, Text = "bác Gấu" }
+        };
+        var missing = ListeningMediaRequirements.Missing(interaction, options, []);
+        Assert.Contains("7:o70:image", missing);
+        Assert.Contains("7:o71:image", missing);
+        Assert.Equal(["70", "71"], ListeningMediaRequirements.ImageOptions(interaction, options).Select(x => x.Id.ToString()));
+    }
+
+    [Theory]
+    [InlineData(CheckpointKind.Prediction)]
+    [InlineData(CheckpointKind.Emotion)]
+    [InlineData(CheckpointKind.Opinion)]
+    public void OtherCheckpointKinds_DoNotRequirePictures(CheckpointKind kind)
+    {
+        var interaction = new ListeningInteraction { Id = 8, Type = ListeningInteractionType.Checkpoint, Kind = kind };
+        var options = new[] { new ListeningInteractionOption { Id = 80, ListeningInteractionId = 8, Text = "Thỏ vui" } };
+        Assert.False(ListeningMediaRequirements.HasOptionImages(interaction));
+        Assert.DoesNotContain(ListeningMediaRequirements.Missing(interaction, options, []), x => x.EndsWith(":image"));
+    }
+
     [Fact]
     public void ReadAloud_RequiresBothPassageAndPraiseAudio()
     {

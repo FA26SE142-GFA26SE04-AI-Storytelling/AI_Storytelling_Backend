@@ -101,6 +101,137 @@ public class CreatorStatisticsServiceTests
     // ---------- Lượt đọc hợp lệ ----------
 
     [Fact]
+    public async Task ValidRead_AtMostSixtyPerFamilyPerMonth_AcrossChildrenAndStories()
+    {
+        Child(12, PaidParentId);
+        Child(13, PaidParentId);
+        PublishedStory(102, CreatorId, "Fourth early story");
+        int[] childIds = [PaidChildId, SecondPaidChildId, 12, 13];
+        int[] earlyStoryIds = [StoryId, SecondStoryId, OtherCreatorStoryId, 102];
+        int[] lateStoryIds = [103, 104, 105, 106];
+        foreach (var storyId in lateStoryIds)
+        {
+            PublishedStory(storyId, CreatorId, $"Story {storyId}");
+        }
+
+        for (var day = 29; day >= 0; day--)
+        {
+            for (var index = 0; index < childIds.Length; index++)
+            {
+                var storyId = day < 15 ? earlyStoryIds[index] : lateStoryIds[index];
+                Completed(storyId, childIds[index], PeriodStart.AddDays(day).AddHours(2));
+            }
+        }
+
+        var result = await _sut.GetRevenueAsync(CreatorId, PeriodStart, PeriodEnd, null);
+
+        Assert.Equal(60, result.TotalValidReadsAllCreators);
+        Assert.All(result.Stories, story =>
+            Assert.Equal(earlyStoryIds.Contains(story.StoryId) ? 15 : 0, story.ValidReads));
+    }
+
+    [Fact]
+    public async Task ValidRead_FamilyCap_IsPerFamily()
+    {
+        SeedDailyReads(PeriodStart.AddHours(2), 15, 4, PaidChildId, CreatorId);
+        Subscription(FreeParentId, BeforePeriod, PeriodEnd.AddDays(30));
+        Completed(StoryId, FreeChildId, Morning);
+
+        var result = await _sut.GetPeriodEarningsAsync(PeriodStart, PeriodEnd);
+
+        Assert.Equal(61, result.TotalValidReads);
+    }
+
+    [Fact]
+    public async Task ValidRead_FamilyCap_ResetsEachVietnamMonth()
+    {
+        SeedDailyReads(PeriodStart.AddHours(2), 15, 4, PaidChildId, CreatorId);
+        var decemberStart = PeriodStart.AddMonths(1);
+        Completed(StoryId, PaidChildId, decemberStart.AddHours(2));
+
+        Assert.Equal(60, (await _sut.GetPeriodEarningsAsync(PeriodStart, PeriodEnd)).TotalValidReads);
+        Assert.Equal(1, (await _sut.GetPeriodEarningsAsync(decemberStart, decemberStart.AddDays(30))).TotalValidReads);
+    }
+
+    [Fact]
+    public async Task ValidRead_FamilyCap_UtcWindowAndVietnamMonthBoundary()
+    {
+        SeedDailyReads(PeriodStart.AddHours(2), 15, 4, PaidChildId, CreatorId);
+        Completed(StoryId, PaidChildId, PeriodEnd.AddHours(18));
+        var decemberStart = PeriodStart.AddMonths(1);
+        var decemberEnd = decemberStart.AddDays(30);
+
+        Assert.Equal(61, (await _sut.GetPeriodEarningsAsync(PeriodStart, PeriodEnd)).TotalValidReads);
+        Assert.Equal(0, (await _sut.GetPeriodEarningsAsync(decemberStart, decemberEnd)).TotalValidReads);
+
+        SeedDailyReads(decemberStart.AddHours(2), 15, 4, PaidChildId, CreatorId);
+
+        Assert.Equal(59, (await _sut.GetPeriodEarningsAsync(decemberStart, decemberEnd)).TotalValidReads);
+    }
+
+    [Fact]
+    public async Task ValidRead_FamilyCap_HoldsWhenTheMonthIsClosedInTwoPeriods()
+    {
+        SeedDailyReads(PeriodStart.AddHours(2), 10, 4, PaidChildId, CreatorId);
+        var secondPeriodStart = PeriodStart.AddDays(15);
+        SeedDailyReads(secondPeriodStart.AddHours(2), 10, 4, PaidChildId, CreatorId);
+
+        Assert.Equal(40, (await _sut.GetPeriodEarningsAsync(PeriodStart, secondPeriodStart.AddDays(-1))).TotalValidReads);
+        Assert.Equal(20, (await _sut.GetPeriodEarningsAsync(secondPeriodStart, PeriodEnd)).TotalValidReads);
+    }
+
+    [Fact]
+    public async Task ValidRead_FamilyCap_DoesNotDiluteOtherCreators()
+    {
+        Subscription(FreeParentId, BeforePeriod, PeriodEnd.AddDays(30));
+        SeedDailyReads(PeriodStart.AddHours(2), 30, 10, FreeChildId, OtherCreatorId);
+        for (var day = 0; day < 30; day++)
+        {
+            Completed(StoryId, PaidChildId, PeriodStart.AddDays(day).AddHours(2));
+        }
+
+        PaidRevenue(2, 49000, Morning);
+        var result = await _sut.GetRevenueAsync(OtherCreatorId, PeriodStart, PeriodEnd, null);
+
+        Assert.True(result.CreatorFundVnd > 0);
+        Assert.Equal(90, result.TotalValidReadsAllCreators);
+        Assert.Equal(60 * result.CreatorFundVnd / 90, result.EstimatedEarningsVnd);
+    }
+
+    [Fact]
+    public async Task ValidRead_ReadingTimeIsCappedByWallClock()
+    {
+        Completed(StoryId, PaidChildId, Morning, seconds: 600).StartedAt = Morning.AddSeconds(-5);
+
+        Assert.Equal(0, await ValidReadsAsync());
+    }
+
+    [Fact]
+    public async Task ValidRead_ReadingTimeWithinWallClock_StillCounts()
+    {
+        Completed(StoryId, PaidChildId, Morning, seconds: 120).StartedAt = Morning.AddMinutes(-10);
+
+        Assert.Equal(1, await ValidReadsAsync());
+    }
+
+    private void SeedDailyReads(DateTime firstRead, int days, int storiesPerDay, int childId, int authorId)
+    {
+        for (var index = 0; index < storiesPerDay; index++)
+        {
+            var storyId = authorId * 100 + index;
+            if (!_store.Items<Story>().Any(story => story.Id == storyId))
+            {
+                PublishedStory(storyId, authorId, $"Story {storyId}");
+            }
+
+            for (var day = 0; day < days; day++)
+            {
+                Completed(storyId, childId, firstRead.AddDays(day).AddMinutes(index));
+            }
+        }
+    }
+
+    [Fact]
     public async Task ValidRead_CompletedReadOfPublishedCreatorStoryByPaidAccountChild_Counts()
     {
         Completed(StoryId, PaidChildId, Morning);
@@ -242,8 +373,9 @@ public class CreatorStatisticsServiceTests
     [Fact]
     public async Task ValidRead_OnlyReadsCompletedInsideThePeriod_Count()
     {
+        // Cùng trẻ và truyện chỉ tính một lượt mỗi ngày Việt Nam, kể cả qua ranh giới kỳ.
         Completed(StoryId, PaidChildId, PeriodStart.AddMinutes(-1));
-        Completed(StoryId, PaidChildId, PeriodStart.AddHours(1));
+        Completed(StoryId, PaidChildId, PeriodStart.AddDays(1));
         Completed(StoryId, SecondPaidChildId, PeriodEnd.AddHours(23));    // cuối ngày cuối kỳ
         Completed(StoryId, SecondPaidChildId, PeriodEnd.AddDays(1));
 
@@ -497,8 +629,7 @@ public class CreatorStatisticsServiceTests
         Assert.Equal((0m, false), (progress.Criteria[2].Current, progress.Criteria[2].Met));
         Assert.True(progress.Criteria[3].Met);
 
-        // Đủ 10 truyện Published và 600 lượt đọc hợp lệ (1 trẻ × 10 truyện × 60 ngày, tối đa 10 lượt mỗi ngày).
-        // Ngưỡng 600 theo bản cập nhật 15/11/2026; 60 ngày nằm trong cửa sổ 90 ngày và sau ngày truyện / gói bắt đầu.
+        // Đủ 10 truyện Published và 600 lượt đọc hợp lệ (10 gia đình × 1 lượt/ngày × 60 ngày).
         var storyIds = new List<int> { StoryId, SecondStoryId };
         for (var id = 400; id < 408; id++)
         {
@@ -506,11 +637,18 @@ public class CreatorStatisticsServiceTests
             storyIds.Add(id);
         }
 
-        for (var day = 0; day < 60; day++)
+        for (var family = 0; family < storyIds.Count; family++)
         {
-            foreach (var storyId in storyIds)
+            var parentId = 1000 + family;
+            var childId = 2000 + family;
+            _store.Seed(new UserAccount { Id = parentId, Role = UserRole.User, Status = AccountStatus.Active });
+            Child(childId, parentId);
+            Subscription(parentId, progress.WindowStart, PeriodEnd.AddDays(1));
+
+            for (var day = 0; day < 60; day++)
             {
-                Completed(storyId, PaidChildId, Morning.AddDays(day - 54).AddMinutes(storyIds.IndexOf(storyId)));
+                var storyId = storyIds[(family + day) % storyIds.Count];
+                Completed(storyId, childId, Morning.AddDays(day - 54));
             }
         }
 

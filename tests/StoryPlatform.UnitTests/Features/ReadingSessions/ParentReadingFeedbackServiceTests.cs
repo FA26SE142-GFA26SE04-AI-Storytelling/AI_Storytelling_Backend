@@ -663,6 +663,23 @@ public class ParentReadingFeedbackServiceTests
     }
 
     [Fact]
+    public async Task ListAsync_StoryId_KeepsOnlyThatStorysReads_BothStatuses()
+    {
+        var mine = Done(DateTime.UtcNow);
+        var other = _h.AddSession(SessionStatus.Completed, storyId: ReadingHarness.Story + 1);
+        other.CompletedAt = DateTime.UtcNow;
+        var mineOpen = _h.AddSession(SessionStatus.Reading);
+        _h.AddSession(SessionStatus.Reading, storyId: ReadingHarness.Story + 1);
+
+        var done = await List(new ParentReadingFeedbackQueryDto { StoryId = ReadingHarness.Story });
+        var open = await List(new ParentReadingFeedbackQueryDto { StoryId = ReadingHarness.Story, Status = "Unfinished" });
+
+        Assert.Equal(new[] { mine.Id }, done.Items.Select(i => i.SessionId));
+        Assert.Equal(1, done.TotalCount);
+        Assert.Equal(new[] { mineOpen.Id }, open.Items.Select(i => i.SessionId));
+    }
+
+    [Fact]
     public async Task ListAsync_ReadCountAndOrdinal_CountEveryCompletedReadOfTheStory()
     {
         Done(new DateTime(2026, 11, 1, 8, 0, 0, DateTimeKind.Utc));                       // lần 1, ngoài bộ lọc

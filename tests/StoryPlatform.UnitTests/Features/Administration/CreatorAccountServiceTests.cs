@@ -69,6 +69,29 @@ public class CreatorAccountServiceTests
     }
 
     [Fact]
+    public async Task List_And_Get_ExposeLatestApplicationStatus()
+    {
+        SeedCreator(CreatorId, AccountStatus.AwaitingApproval, "rejected_writer");
+        SeedCreator(4, AccountStatus.AwaitingApproval, "resubmitted_writer");
+        SeedCreator(5, AccountStatus.Active, "seeded_writer");
+        var older = DateTime.UtcNow.AddDays(-2);
+        _store.Seed(new CreatorApplication { ApplicantUserId = CreatorId, Status = CreatorApplicationStatus.Pending, CreatedAt = older });
+        _store.Seed(new CreatorApplication { ApplicantUserId = CreatorId, Status = CreatorApplicationStatus.Rejected, CreatedAt = DateTime.UtcNow.AddDays(-1) });
+        _store.Seed(new CreatorApplication { ApplicantUserId = 4, Status = CreatorApplicationStatus.Rejected, CreatedAt = older });
+        _store.Seed(new CreatorApplication { ApplicantUserId = 4, Status = CreatorApplicationStatus.Pending, CreatedAt = DateTime.UtcNow });
+
+        var list = await _sut.ListAsync(null, null, 1, 20);
+        var single = await _sut.GetAsync(CreatorId);
+
+        var byName = list.Items.ToDictionary(item => item.Username, item => item.LatestApplicationStatus);
+        Assert.Equal("Rejected", byName["rejected_writer"]);
+        Assert.Equal("Pending", byName["resubmitted_writer"]);
+        // Creator tạo trước khi có đơn đăng ký (seed, Admin cấp) không có đơn nào.
+        Assert.Null(byName["seeded_writer"]);
+        Assert.Equal("Rejected", single.LatestApplicationStatus);
+    }
+
+    [Fact]
     public async Task Get_NonCreator_Is404()
     {
         await Assert.ThrowsAsync<NotFoundException>(() => _sut.GetAsync(ModeratorId));

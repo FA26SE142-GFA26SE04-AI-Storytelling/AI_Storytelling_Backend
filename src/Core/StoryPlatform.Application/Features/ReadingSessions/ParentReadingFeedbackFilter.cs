@@ -41,16 +41,17 @@ public static class ParentReadingFeedbackFilter
     /// <summary>
     /// Phiên của trẻ theo trạng thái và khoảng thời gian [from, to). Phiên đã xong lọc theo CompletedAt; phiên chưa xong
     /// (Started/Reading/Activity/Abandoned/ForceExited) lọc theo StartedAt. Viết OR tường minh để EF dịch được với
-    /// cột enum lưu dạng chuỗi.
+    /// cột enum lưu dạng chuỗi. storyId khác null thì chỉ lấy phiên của truyện đó.
     /// </summary>
     public static Expression<Func<ReadingSession, bool>> Sessions(
-        int childProfileId, bool unfinished, DateTime? from, DateTime? to)
+        int childProfileId, bool unfinished, DateTime? from, DateTime? to, int? storyId = null)
     {
         if (!unfinished)
         {
             return session => session.ChildProfileId == childProfileId
                               && session.Status == SessionStatus.Completed
                               && !session.IsDeleted
+                              && (storyId == null || session.StoryId == storyId)
                               && (from == null || session.CompletedAt >= from)
                               && (to == null || session.CompletedAt < to);
         }
@@ -62,6 +63,7 @@ public static class ParentReadingFeedbackFilter
                               || session.Status == SessionStatus.Abandoned
                               || session.Status == SessionStatus.ForceExited)
                           && !session.IsDeleted
+                          && (storyId == null || session.StoryId == storyId)
                           && (from == null || session.StartedAt >= from)
                           && (to == null || session.StartedAt < to);
     }

@@ -16,12 +16,24 @@ public static class ListeningMediaRequirements
         foreach (var option in ImageOptions(interaction, options))
             if (FindImage(assets, option.Id) is null)
                 missing.Add($"{interaction.Id}:o{option.Id}:image");
+        if (interaction.Type == ListeningInteractionType.PictureSearch)
+        {
+            var hotspot = HotspotBox.TryParse(interaction.HotspotJson);
+            if (hotspot is null || !assets.Any(asset => asset.Id == hotspot.AssetId &&
+                asset.Type == MediaType.Illustration && IsUsable(asset)))
+                missing.Add($"{interaction.Id}:i:hotspot");
+        }
+        // Bong bóng suy nghĩ: bé nhìn nhân vật trong tranh của đoạn, nên cần tranh minh họa dùng được.
+        if (interaction.Type == ListeningInteractionType.ThoughtBubble && !assets.Any(asset =>
+                asset.Type == MediaType.Illustration && asset.StorySceneId == interaction.StorySceneId && IsUsable(asset)))
+            missing.Add($"{interaction.Id}:i:picture");
         return missing;
     }
 
     /// <summary>Loại có tranh gắn với đáp án: Đoán tranh, Chạm vào nhân vật, Chữ cái (chân dung) và điểm dừng nghĩa đen tuổi 6.</summary>
     public static bool HasOptionImages(ListeningInteraction interaction) =>
         interaction.Type is ListeningInteractionType.PicturePrediction or ListeningInteractionType.WhoSaidIt
+            or ListeningInteractionType.FollowAction
             or ListeningInteractionType.CharacterLetter ||
         interaction is { Type: ListeningInteractionType.Checkpoint, Kind: CheckpointKind.Literal };
 

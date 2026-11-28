@@ -73,7 +73,7 @@ INSERT INTO story_versions (
     "Id", "StoryId", "VersionNo", "Title", "Content", "OutlineOpening", "OutlineDevelopment", "OutlineEnding", "Lesson", "ReadabilityFkgl", "ReadabilityFre", "SafetyScore", "EditType", "EditorUserId", "OutlineApprovedByUserId", "OutlineApprovedAt", "IsCurrent", "CreatedAt", "IsDeleted", "AudienceRevision", "BaseVersionId"
 )
 VALUES
-    (900, 900, 1, 'Thỏ con đi lạc', E'Thỏ con đi lạc vào rừng. Trời bắt đầu tối.\n\nThỏ nghe tiếng sột soạt sau bụi cây. Thỏ hỏi: "Có ai ở đó không?"\n\nHóa ra đó là bác Gấu đến giúp Thỏ tìm đường về.\n\nBác Gấu dẫn Thỏ về tới cửa hang.\n\nMẹ Thỏ ôm Thỏ vào lòng.\n\nTừ đó Thỏ luôn nhờ người lớn khi bị lạc.', 'Thỏ đi lạc', 'Bác Gấu giúp Thỏ', 'Thỏ về nhà', 'Nhờ người lớn giúp khi bị lạc', NULL, NULL, 95.000, 'Initial', NULL, 2, NOW() - INTERVAL '1 day', true, NOW() - INTERVAL '1 day', false, 1, NULL)
+    (900, 900, 1, 'Thỏ con đi lạc', E'Thỏ con đi lạc vào rừng. Trời bắt đầu tối.\n\nThỏ nghe tiếng sột soạt sau bụi cây. Thỏ hỏi: "Có ai ở đó không?"\nBác Gấu đáp: "Bác đây, đừng sợ nhé!"\n\nHóa ra đó là bác Gấu đến giúp Thỏ tìm đường về.\n\nBác Gấu dẫn Thỏ về tới cửa hang.\n\nMẹ Thỏ ôm Thỏ vào lòng.\n\nTừ đó Thỏ luôn nhờ người lớn khi bị lạc.', 'Thỏ đi lạc', 'Bác Gấu giúp Thỏ', 'Thỏ về nhà', 'Nhờ người lớn giúp khi bị lạc', NULL, NULL, 95.000, 'Initial', NULL, 2, NOW() - INTERVAL '1 day', true, NOW() - INTERVAL '1 day', false, 1, NULL)
 ON CONFLICT ("Id") DO NOTHING;
 
 -- Story 20: v1 (Id 25) công khai, đang chờ duyệt yêu cầu gỡ (mục 29).

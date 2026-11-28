@@ -9,12 +9,27 @@ public sealed record ParentListeningFeedbackDto
     public int ChoiceCount { get; init; }
     public bool Graded { get; init; }
     public IReadOnlyList<ParentListeningChoiceDto> Choices { get; init; } = [];
+    public IReadOnlyList<ParentListeningTapDto> Taps { get; init; } = [];
     public IReadOnlyDictionary<string, string> Steps { get; init; } = new Dictionary<string, string>();
     public IReadOnlyList<string> WordStatuses { get; init; } = [];
     public IReadOnlyList<string> UnclearWords { get; init; } = [];
+    /// <summary>Đọc luân phiên: nhân vật bé đã chọn đóng.</summary>
+    public string? Speaker { get; init; }
+    /// <summary>Đọc luân phiên: kết quả từng lượt thoại bé đã đọc (chỉ trạng thái từng chữ, không có lời bé nói).</summary>
+    public IReadOnlyList<ParentListeningLineDto> Lines { get; init; } = [];
 }
 
-public sealed record ParentListeningChoiceDto(int? SelectedOptionId, string? AnswerText, bool? IsMatch, DateTime AnsweredAt);
+public sealed record ParentListeningLineDto(
+    int OptionId, string Text, IReadOnlyList<string> WordStatuses, IReadOnlyList<string> UnclearWords, DateTime RecordedAt);
+
+public sealed record ParentListeningChoiceDto(int? SelectedOptionId, string? AnswerText, bool? IsMatch, DateTime AnsweredAt)
+{
+    public bool? Truth { get; init; }
+    public int? ActionTargetOptionId { get; init; }
+    public IReadOnlyList<int>? OrderedOptionIds { get; init; }
+}
+
+public sealed record ParentListeningTapDto(double X, double Y, bool? IsMatch, DateTime AnsweredAt);
 
 public class ParentReadingFeedbackQueryDto
 {

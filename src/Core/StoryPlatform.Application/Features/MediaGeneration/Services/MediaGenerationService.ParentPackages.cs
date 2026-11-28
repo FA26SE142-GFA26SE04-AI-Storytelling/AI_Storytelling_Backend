@@ -116,8 +116,11 @@ public sealed partial class MediaGenerationService
             }
             if (c.Listening)
             {
+                await LocateListeningHotspotsAsync(version.Id, p.Id, ct);
                 await EnsureListeningAudioAsync(observed.Id, token, story.Id, version.Id, context, ct);
                 var interactions = await LoadListeningInteractionsAsync(version.Id, ct);
+                foreach (var search in interactions.Where(x => x.Type == ListeningInteractionType.PictureSearch))
+                    if (HotspotBox.TryParse(search.HotspotJson) is { } hotspot) selected.Add(hotspot.AssetId);
                 var options = await LoadListeningOptionsAsync(interactions, ct);
                 foreach (var interaction in interactions.Where(ListeningMediaRequirements.HasOptionImages))
                 {

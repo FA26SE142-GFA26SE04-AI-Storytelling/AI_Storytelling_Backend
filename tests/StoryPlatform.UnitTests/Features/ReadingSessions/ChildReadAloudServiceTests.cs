@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Features.MediaStorage.Interfaces;
 using StoryPlatform.Application.Common.Exceptions;
+using StoryPlatform.Application.Features.ListeningInteractions.Services;
 using StoryPlatform.Application.Features.ReadingSessions;
 using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
 using StoryPlatform.Application.Features.ReadingSessions.Services;
@@ -223,6 +224,133 @@ public class ChildReadAloudServiceTests
         Assert.Equal("Mình nghe chưa rõ, mình đọc lại nhé.", result.Message);
     }
 
+    // ---- Ghép từ thành câu (tuổi 7): đọc to câu bé vừa ghép ----
+    private ListeningInteraction Builder(params int[][] attemptsAsOrder)
+    {
+        _h.Children.Single(x => x.Id == ReadingHarness.Child).Age = 7;
+        var interaction = Practice("Thỏ con đi lạc vào rừng.");
+        interaction.Type = ListeningInteractionType.SentenceBuilder;
+        interaction.TargetAge = 7;
+        interaction.StorySceneId = null;
+        interaction.AcceptedOrdersJson = "[[1,2,3],[2,1,3]]";
+        interaction.MatchFeedback = "Con ghép và đọc giỏi quá!";
+        string[] cards = ["Thỏ con", "đi lạc", "vào rừng"];
+        for (var i = 0; i < cards.Length; i++)
+            _h.ListeningOptions.Add(new ListeningInteractionOption
+                { Id = 710 + i, ListeningInteractionId = interaction.Id, SortOrder = i, Text = cards[i], CorrectOrder = i + 1 });
+        foreach (var order in attemptsAsOrder)
+        {
+            var ids = order.Select(position => 709 + position).ToArray();
+            var accepted = SentenceOrders.Matches([[1, 2, 3], [2, 1, 3]], order);
+            _h.ListeningAttempts.Add(new ListeningInteractionAttempt
+            {
+                Id = _h.ListeningAttempts.Count + 1, ReadingSessionId = _h.Sessions.Max(x => x.Id), ChildProfileId = ReadingHarness.Child,
+                ListeningInteractionId = interaction.Id, IsMatch = accepted,
+                OrderedOptionIdsJson = System.Text.Json.JsonSerializer.Serialize(ids), AttemptedAt = DateTime.UtcNow
+            });
+        }
+        return interaction;
+    }
+
+    [Fact]
+    public async Task SentenceBuilder_ScoresAgainstTheOrderTheChildBuilt()
+    {
+        VoiceOn();
+        var session = _h.AddSession();
+        var interaction = Builder([2, 1, 3]);      // thứ tự thứ hai được chấp nhận: "đi lạc Thỏ con vào rừng"
+        Hears(("đi", 0.9), ("lạc", 0.9), ("thỏ", 0.9), ("con", 0.9), ("vào", 0.9), ("rừng", 0.9));
+        var result = await _sut.CheckPracticeAsync(ReadingHarness.Child, session.Id, interaction.Id, Audio());
+        Assert.Equal(["đi", "lạc", "Thỏ", "con", "vào", "rừng"], result.Words.Select(w => w.Text));
+        Assert.Equal((6, 0, 6), (result.GoodCount, result.RetryCount, result.TotalCount));
+        Assert.Equal(interaction.MatchFeedback, result.Message);
+    }
+
+    [Fact]
+    public async Task SentenceBuilder_AfterReveal_ScoresAgainstTheCanonicalSentence()
+    {
+        VoiceOn();
+        var session = _h.AddSession();
+        var interaction = Builder([3, 2, 1], [3, 1, 2]);     // hai lần ghép chưa đúng → hệ thống đã hiện câu chuẩn
+        Hears(("thỏ", 0.9), ("con", 0.9), ("đi", 0.9), ("lạc", 0.9), ("vào", 0.9), ("rừng", 0.9));
+        var result = await _sut.CheckPracticeAsync(ReadingHarness.Child, session.Id, interaction.Id, Audio());
+        Assert.Equal(["Thỏ", "con", "đi", "lạc", "vào", "rừng"], result.Words.Select(w => w.Text));
+        Assert.Equal(0, result.RetryCount);
+    }
+
+    [Fact]
+    public async Task SentenceBuilder_BeforeBuilding_IsConflict_WithoutRecognitionOrUpload()
+    {
+        VoiceOn();
+        var session = _h.AddSession();
+        var interaction = Builder();
+        var error = await Assert.ThrowsAsync<ConflictException>(() => _sut.CheckPracticeAsync(ReadingHarness.Child, session.Id, interaction.Id, Audio()));
+        Assert.Equal("LISTENING_SENTENCE_NOT_BUILT", error.Message);
+        _recognizer.VerifyNoOtherCalls();
+        _storage.VerifyNoOtherCalls();
+        Assert.Empty(_h.ReadAloudRecordings);
+    }
+
+    [Fact]
+    public async Task SentenceBuilder_OneWrongAttemptOnly_IsStillConflict()
+    {
+        VoiceOn();
+        var session = _h.AddSession();
+        var interaction = Builder([3, 2, 1]);        // mới sai một lần: bé còn được ghép lại, chưa có câu để đọc
+        await Assert.ThrowsAsync<ConflictException>(() => _sut.CheckPracticeAsync(ReadingHarness.Child, session.Id, interaction.Id, Audio()));
+        _recognizer.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task SentenceBuilder_UnclearWords_UseSoftMessage_AndPersistStatuses()
+    {
+        VoiceOn();
+        var session = _h.AddSession();
+        var interaction = Builder([1, 2, 3]);
+        Hears(("thỏ", 0.9), ("con", 0.9), ("đi", 0.9), ("lạc", 0.9), ("vào", 0.9));      // thiếu "rừng"
+        var result = await _sut.CheckPracticeAsync(ReadingHarness.Child, session.Id, interaction.Id, Audio());
+        Assert.Equal(1, result.RetryCount);
+        Assert.Equal(0, result.SkippedCount);
+        Assert.Equal("Mình nghe chưa rõ, mình đọc lại nhé.", result.Message);
+        Assert.Equal("[\"Good\",\"Good\",\"Good\",\"Good\",\"Good\",\"Retry\"]", Assert.Single(_h.ReadAloudRecordings).WordStatusesJson);
+        Assert.DoesNotContain(_h.Telemetry, log => log.EventPayload!.Contains("rừng"));
+    }
+
+    [Fact]
+    public async Task SentenceBuilder_AllowsInitialAndTwoRereads_RejectsFourth()
+    {
+        VoiceOn();
+        var session = _h.AddSession();
+        var interaction = Builder([1, 2, 3]);
+        Hears(("thỏ", 0.9));
+        for (var attempt = 0; attempt < ChildReadAloudService.MaxPracticeAttempts; attempt++)
+            await _sut.CheckPracticeAsync(ReadingHarness.Child, session.Id, interaction.Id, Audio());
+        var error = await Assert.ThrowsAsync<ConflictException>(() => _sut.CheckPracticeAsync(ReadingHarness.Child, session.Id, interaction.Id, Audio()));
+        Assert.Equal(ChildReadAloudService.VoiceRetryLimitCode, error.Message);
+        Assert.Equal(3, _h.Telemetry.Count(log => log.EventType == TelemetryEventType.AsrWordResult));
+    }
+
+    [Fact]
+    public async Task SentenceBuilder_VoiceOff_IsForbidden()
+    {
+        VoiceOn(enabled: false);
+        var session = _h.AddSession();
+        var interaction = Builder([1, 2, 3]);
+        var error = await Assert.ThrowsAsync<ForbiddenException>(() => _sut.CheckPracticeAsync(ReadingHarness.Child, session.Id, interaction.Id, Audio()));
+        Assert.Equal(ReadAloudPolicy.VoiceOffMessage, error.Message);
+        _recognizer.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task SentenceBuilder_ChildOfAnotherAge_IsNotFound()
+    {
+        VoiceOn();
+        var session = _h.AddSession();
+        var interaction = Builder([1, 2, 3]);
+        _h.Children.Single(x => x.Id == ReadingHarness.Child).Age = 6;
+        await Assert.ThrowsAsync<NotFoundException>(() => _sut.CheckPracticeAsync(ReadingHarness.Child, session.Id, interaction.Id, Audio()));
+        _recognizer.VerifyNoOtherCalls();
+    }
+
     [Fact]
     public async Task OtherAgeSetInteraction_IsNotFound()
     {
@@ -247,7 +375,7 @@ public class ChildReadAloudServiceTests
         if (type == ListeningInteractionType.CharacterLetter)
             _h.ListeningOptions.Add(new ListeningInteractionOption { Id = 701, ListeningInteractionId = interaction.Id, Text = "th", IsMatch = true });
         Hears(("thờ", 0.9));
-        for (var attempt = 0; attempt < ChildReadAloudService.MaxAge6PracticeAttempts; attempt++)
+        for (var attempt = 0; attempt < ChildReadAloudService.MaxPracticeAttempts; attempt++)
             await _sut.CheckPracticeAsync(ReadingHarness.Child, session.Id, interaction.Id, Audio());
         Assert.Equal(3, _h.Telemetry.Count(log => log.EventType == TelemetryEventType.AsrWordResult));
         var lastPath = Assert.Single(_h.ReadAloudRecordings).AudioStoragePath;

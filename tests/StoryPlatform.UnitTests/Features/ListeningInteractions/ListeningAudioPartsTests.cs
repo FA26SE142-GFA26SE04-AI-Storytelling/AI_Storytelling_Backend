@@ -8,6 +8,31 @@ namespace StoryPlatform.UnitTests.Features.ListeningInteractions;
 public sealed class ListeningAudioPartsTests
 {
     [Fact]
+    public void SentenceBuilder_ReadsCardsAndAcceptedSentences()
+    {
+        var interaction = new ListeningInteraction { Id = 9, Type = ListeningInteractionType.SentenceBuilder,
+            TargetAge = 7, SourceQuote = "Bác Gấu dẫn Thỏ về hang.", AcceptedOrdersJson = "[[1,2,3],[2,1,3]]" };
+        var options = new[] { "Bác Gấu", "dẫn Thỏ", "về hang" }.Select((text, index) =>
+            new ListeningInteractionOption { Id = 90 + index, ListeningInteractionId = 9, Text = text,
+                SortOrder = index, CorrectOrder = index + 1 }).ToArray();
+        var parts = ListeningAudioParts.For(interaction, options);
+        Assert.Equal(3, parts.Count(x => x.OptionId is not null && x.PartKey == ListeningAudioParts.Text));
+        Assert.Equal("Bác Gấu dẫn Thỏ về hang.", parts.Single(x => x.PartKey == "sentence").Text);
+        Assert.Equal("dẫn Thỏ Bác Gấu về hang", parts.Single(x => x.PartKey == "sentence:2").Text);
+        Assert.Contains(ListeningAudioParts.Sentence, ListeningAudioParts.HighlightKeys);
+    }
+
+    [Fact]
+    public void PictureSearch_ReadsPromptAndRetryHint()
+    {
+        var interaction = new ListeningInteraction { Id = 7, Type = ListeningInteractionType.PictureSearch,
+            TargetAge = 7, Prompt = "Tìm bác Gấu", MatchFeedback = "Con tìm giỏi quá!" };
+        var parts = ListeningAudioParts.For(interaction, []);
+        Assert.Contains(parts, x => x.PartKey == ListeningAudioParts.Prompt);
+        Assert.Contains(parts, x => x.PartKey == ListeningAudioParts.RetryLookClose && x.Text == "Nhìn kỹ lại nhé.");
+    }
+
+    [Fact]
     public void CharacterLetter_ReadsNameSoundsAndFixedGuidance()
     {
         var interaction = new ListeningInteraction { Id = 1, Type = ListeningInteractionType.CharacterLetter,
@@ -120,5 +145,84 @@ public sealed class ListeningAudioPartsTests
         Assert.Equal(["i:text:Mẹ Thỏ ôm Thỏ vào lòng.", "i:match:Con đọc to rõ lắm!"], Keys(ListeningAudioParts.For(
             new ListeningInteraction { Id = 6, Type = ListeningInteractionType.ReadAloud,
                 SourceQuote = "Mẹ Thỏ ôm Thỏ vào lòng.", MatchFeedback = "Con đọc to rõ lắm!" }, [])));
+
+
+    // ---- Đúng/sai: nói đáp án khi sai lần 2 ----
+    [Fact]
+    public void TrueFalse_ReadsBothStatementsAndTheFixedTruthLines()
+    {
+        var interaction = new ListeningInteraction { Id = 6, Type = ListeningInteractionType.TrueFalse, TargetAge = 7,
+            MatchFeedback = "Con nghe kỹ quá!", NoMatchFeedback = "Mình nghe lại nhé." };
+        var options = new[]
+        {
+            new ListeningInteractionOption { Id = 60, ListeningInteractionId = 6, SortOrder = 1, Text = "Thỏ nghe tiếng động", IsMatch = true },
+            new ListeningInteractionOption { Id = 61, ListeningInteractionId = 6, SortOrder = 2, Text = "Thỏ ngủ trong hang" }
+        };
+        var parts = ListeningAudioParts.For(interaction, options);
+        Assert.Equal(["60:text", "61:text"], parts.Where(p => p.OptionId is not null).Select(p => $"{p.OptionId}:{p.PartKey}"));
+        Assert.Equal(ListeningAudioParts.FixedLine(ListeningAudioParts.TruthYes), parts.Single(p => p.PartKey == ListeningAudioParts.TruthYes).Text);
+        Assert.Equal(ListeningAudioParts.FixedLine(ListeningAudioParts.TruthNo), parts.Single(p => p.PartKey == ListeningAudioParts.TruthNo).Text);
+        Assert.All(parts.Where(p => p.PartKey is ListeningAudioParts.TruthYes or ListeningAudioParts.TruthNo), p => Assert.True(p.Required));
+    }
+
+    [Theory]
+    [InlineData(ListeningAudioParts.TruthYes)]
+    [InlineData(ListeningAudioParts.TruthNo)]
+    [InlineData(ListeningAudioParts.RetryLookClose)]
+    [InlineData(ListeningAudioParts.RetryHear)]
+    [InlineData(ListeningAudioParts.RetryTry)]
+    public void FixedLines_NeverContainGradingWords_AndFitTheAudioKeyColumn(string key)
+    {
+        Assert.False(ListeningInteractionRules.ContainsGradingWord(ListeningAudioParts.FixedLine(key), ListeningInteractionRules.DefaultGradingWords));
+        Assert.True(key.Length <= 30);              // MediaAsset.AudioPartKey HasMaxLength(30)
+    }
+
+    [Theory]
+    [InlineData(0, "sentence")]
+    [InlineData(1, "sentence:2")]
+    [InlineData(5, "sentence:6")]
+    public void SentenceKey_NumbersTheAcceptedOrders(int index, string expected)
+    {
+        Assert.Equal(expected, ListeningAudioParts.SentenceKey(index));
+        Assert.True(ListeningAudioParts.SentenceKey(index).Length <= 30);
+    }
+
+    [Fact]
+    public void FollowAction_ReadsPromptCardsAndFeedback_AndNeedsPicturesForEveryCard()
+    {
+        var interaction = new ListeningInteraction { Id = 8, Type = ListeningInteractionType.FollowAction, TargetAge = 7,
+            Prompt = "Bé giúp Thỏ nhé: dắt bác Gấu về cửa hang", MatchFeedback = "Con kéo giỏi quá!", NoMatchFeedback = "Bé thử lại nhé." };
+        var options = new[]
+        {
+            new ListeningInteractionOption { Id = 80, ListeningInteractionId = 8, SortOrder = 1, Text = "bác Gấu", Role = ListeningOptionRole.Item, IsMatch = true },
+            new ListeningInteractionOption { Id = 81, ListeningInteractionId = 8, SortOrder = 2, Text = "cửa hang", Role = ListeningOptionRole.Target }
+        };
+        var keys = ListeningAudioParts.For(interaction, options).Select(p => $"{p.OptionId?.ToString() ?? "i"}:{p.PartKey}").ToArray();
+        Assert.Contains("i:prompt", keys);
+        Assert.Contains("80:text", keys);
+        Assert.Contains("81:text", keys);
+        Assert.Contains("i:retryTry", keys);
+        Assert.True(ListeningMediaRequirements.HasOptionImages(interaction));
+    }
+
+    [Fact]
+    public void HighlightKeys_CoverTheSentenceButNotFeedback()
+    {
+        Assert.Contains(ListeningAudioParts.Sentence, ListeningAudioParts.HighlightKeys);
+        Assert.DoesNotContain(ListeningAudioParts.Match, ListeningAudioParts.HighlightKeys);
+        Assert.DoesNotContain(ListeningAudioParts.NoMatch, ListeningAudioParts.HighlightKeys);
+    }
+
+    [Theory]
+    [InlineData(ListeningInteractionType.PictureSearch)]
+    [InlineData(ListeningInteractionType.TrueFalse)]
+    [InlineData(ListeningInteractionType.FollowAction)]
+    [InlineData(ListeningInteractionType.SentenceBuilder)]
+    public void Age7Types_HaveARequiredSpokenInstruction(ListeningInteractionType type)
+    {
+        var interaction = new ListeningInteraction { Id = 1, Type = type, TargetAge = 7 };
+        Assert.False(string.IsNullOrWhiteSpace(ListeningAudioParts.InstructionFor(interaction)));
+        Assert.True(ListeningAudioParts.For(interaction, []).Single(p => p.PartKey == ListeningAudioParts.Instruction).Required);
+    }
 
 }

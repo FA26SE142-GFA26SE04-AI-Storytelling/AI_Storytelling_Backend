@@ -7,7 +7,7 @@ namespace StoryPlatform.UnitTests.Features.ListeningInteractions;
 public sealed class ListeningAgeSetsTests
 {
     [Fact]
-    public void Band6To8_GeneratesOnlyBuiltAges() => Assert.Equal([6], ListeningAgeSets.TargetAgesFor(AgeBand.Age_6_8));
+    public void Band6To8_GeneratesOnlyBuiltAges() => Assert.Equal([6, 7, 8], ListeningAgeSets.TargetAgesFor(AgeBand.Age_6_8));
 
     [Fact]
     public void Band9To10_GeneratesNothingUntilBuilt() => Assert.Empty(ListeningAgeSets.TargetAgesFor(AgeBand.Age_9_10));

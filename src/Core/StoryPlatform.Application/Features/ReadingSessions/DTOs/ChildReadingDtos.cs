@@ -81,11 +81,30 @@ public class ReadingSceneDto
 /// <summary>Tương tác lúc nghe cho trẻ. Không có đáp án: không IsMatch, CorrectOrder, HiddenWord, Explanation.</summary>
 public class ReadingInteractionDto
 {
+    public string? SearchImageUrl { get; set; }
+    public string? SearchTarget { get; set; }
+    public List<ReadingStatementDto>? Statements { get; set; }
+    public List<ReadingActionItemDto>? ActionItems { get; set; }
+    public ReadingActionItemDto? ActionTarget { get; set; }
+    public List<ReadingWordCardDto>? WordCards { get; set; }
+    public int? SlotCount { get; set; }
     public int? TargetAge { get; set; }
     public string? MaskedName { get; set; }
     public IReadOnlyList<string?>? NameUnits { get; set; }
     public IReadOnlyList<ReadingLetterOptionDto>? LetterOptions { get; set; }
     public string? SpeakerLine { get; set; }
+    /// <summary>InferenceQuestion: đoạn truyện bé nghe (2–3 câu); manh mối chỉ lộ trong kết quả sau khi trả lời.</summary>
+    public string? Passage { get; set; }
+    /// <summary>AlternateReading: hai nhân vật bé có thể chọn.</summary>
+    public IReadOnlyList<string>? Characters { get; set; }
+    /// <summary>AlternateReading: các lượt thoại theo thứ tự truyện, mỗi lượt có người nói và audio.</summary>
+    public List<ReadingLineDto>? Lines { get; set; }
+    /// <summary>CauseEffect: thẻ "chuyện xảy ra" (đã xáo, không có số cặp).</summary>
+    public List<ReadingPairCardDto>? Effects { get; set; }
+    /// <summary>CauseEffect: thẻ "vì sao" (đã xáo, không có số cặp).</summary>
+    public List<ReadingPairCardDto>? Causes { get; set; }
+    /// <summary>SceneTitle, ThoughtBubble: tranh của đoạn.</summary>
+    public string? SceneImageUrl { get; set; }
     public IReadOnlyList<ReadingSpeakerDto>? Speakers { get; set; }
     public int MaxChoices { get; set; } = 1;
     public bool Graded { get; set; } = true;
@@ -129,6 +148,45 @@ public class ReadingInteractionDto
     public Dictionary<string, string> AudioWordTimings { get; set; } = new();
     /// <summary>Thẻ của Checkpoint, PicturePrediction, EventOrdering (đã xáo). Rỗng với RolePlay, FillBlank.</summary>
     public List<ReadingInteractionOptionDto> Options { get; set; } = new();
+}
+
+public class ReadingLineDto
+{
+    public int Id { get; set; }
+    public string Speaker { get; set; } = string.Empty;
+    public string Text { get; set; } = string.Empty;
+    public string? AudioUrl { get; set; }
+    /// <summary>Mốc thời gian từng chữ (có khi nhà cung cấp giọng đọc hoặc bước bù mốc có), để lời sáng lên theo giọng đọc.</summary>
+    public string? WordTimings { get; set; }
+}
+
+public class ReadingPairCardDto
+{
+    public int Id { get; set; }
+    public string Text { get; set; } = string.Empty;
+    public string? AudioUrl { get; set; }
+}
+
+public class ReadingStatementDto
+{
+    public int Id { get; set; }
+    public string Text { get; set; } = string.Empty;
+    public string? AudioUrl { get; set; }
+}
+
+public class ReadingActionItemDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? ImageUrl { get; set; }
+    public string? AudioUrl { get; set; }
+}
+
+public class ReadingWordCardDto
+{
+    public int Id { get; set; }
+    public string Text { get; set; } = string.Empty;
+    public string? AudioUrl { get; set; }
 }
 
 public class ReadingLetterOptionDto

@@ -222,7 +222,7 @@ public sealed class ChildReadingController : ControllerBase
             audio = buffer.ToArray();
         }
 
-        return new ReadAloudRequest { Audio = audio, ContentType = form.Audio?.ContentType };
+        return new ReadAloudRequest { Audio = audio, ContentType = form.Audio?.ContentType, LineId = form.LineId };
     }
 }
 
@@ -230,4 +230,6 @@ public sealed class ReadAloudForm
 {
     /// <summary>Đoạn ghi âm (webm/ogg/wav/mp3/m4a/flac), tối đa 1 MB.</summary>
     public IFormFile? Audio { get; set; }
+    /// <summary>Đọc luân phiên: id lượt thoại bé đang đọc (lời của nhân vật bé đã chọn).</summary>
+    public int? LineId { get; set; }
 }

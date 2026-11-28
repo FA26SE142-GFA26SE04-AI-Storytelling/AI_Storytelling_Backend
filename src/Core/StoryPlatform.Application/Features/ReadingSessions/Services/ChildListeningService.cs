@@ -84,13 +84,27 @@ public class ChildListeningService : IChildListeningService
     {
         var interaction = context.Interaction;
         // Loại khác Sắp xếp: mỗi phiên ghi một lần, gửi lại thì trả kết quả cũ (audio vẫn ký như lần đầu).
-        var finished = ChildListeningContent.AllowsRetry(interaction)
+        var finished = interaction.Type == ListeningInteractionType.TrueFalse
+            ? TrueFalseComplete(context)
+            : interaction.Type == ListeningInteractionType.CauseEffect
+            ? false   // mỗi lần gửi là một cặp; cặp đã xong được xử lý trong nhánh riêng bên dưới
+            : ChildListeningContent.AllowsRetry(interaction)
             ? context.Attempts.Any(attempt => attempt.IsMatch == true) || context.Attempts.Count >= ChildListeningContent.MaxChoiceAttempts
-            : interaction.Type != ListeningInteractionType.EventOrdering && context.Attempts.Count > 0;
+            : interaction.Type == ListeningInteractionType.EventOrdering && interaction.TargetAge == 7
+                ? context.Attempts.Any(attempt => attempt.IsMatch == true) ||
+                    context.Attempts.Count(x => x.IsMatch == false) >= ChildListeningContent.RevealAfterWrongOrdersFor(interaction.TargetAge)
+                : interaction.Type == ListeningInteractionType.EventOrdering ? false : context.Attempts.Count > 0;
         if (finished)
         {
-            var previous = Result(context, context.Attempts[^1], context.Attempts.Count);
-            previous.FeedbackAudioUrl = await _mediaUrls.SignAsync(previous.FeedbackAudioUrl, ct);
+            var previous = IsAge8Type(interaction.Type)
+                ? Age8Result(context, context.Attempts[^1], context.Attempts)
+                : interaction.Type is ListeningInteractionType.PictureSearch or ListeningInteractionType.TrueFalse or
+                ListeningInteractionType.FollowAction or ListeningInteractionType.SentenceBuilder
+                ? Age7Result(context, context.Attempts[^1], context.Attempts)
+                : interaction.Type == ListeningInteractionType.EventOrdering
+                    ? OrderingResult(context, context.Attempts[^1], context.Attempts)
+                    : Result(context, context.Attempts[^1], context.Attempts.Count);
+            await SignAsync(previous, ct);
             return previous;
         }
 
@@ -104,9 +118,11 @@ public class ChildListeningService : IChildListeningService
         switch (interaction.Type)
         {
             case ListeningInteractionType.Checkpoint or ListeningInteractionType.PicturePrediction
-                or ListeningInteractionType.CharacterLetter or ListeningInteractionType.WhoSaidIt:
+                or ListeningInteractionType.CharacterLetter or ListeningInteractionType.WhoSaidIt
+                or ListeningInteractionType.InferenceQuestion or ListeningInteractionType.SceneTitle or ListeningInteractionType.ThoughtBubble:
             {
-                var option = context.Options.FirstOrDefault(x => x.Id == request.OptionId)
+                // Manh mối của Suy luận không phải đáp án để chọn.
+                var option = context.Options.FirstOrDefault(x => x.Id == request.OptionId && x.Role == ListeningOptionRole.None)
                              ?? throw new BadRequestException(AnswerInvalidCode);
                 attempt.SelectedOptionId = option.Id;
                 attempt.IsMatch = interaction.Type == ListeningInteractionType.PicturePrediction && interaction.TargetAge == 6
@@ -132,13 +148,217 @@ public class ChildListeningService : IChildListeningService
                 attempt.IsMatch = Misplaced(context.Options, ordered).Count == 0;
                 break;
             }
+            case ListeningInteractionType.PictureSearch:
+            {
+                var box = HotspotBox.TryParse(interaction.HotspotJson) ?? throw new BadRequestException(AnswerInvalidCode);
+                if (request.X is not { } x || request.Y is not { } y || !double.IsFinite(x) || !double.IsFinite(y) ||
+                    x is < 0 or > 1 || y is < 0 or > 1) throw new BadRequestException(AnswerInvalidCode);
+                attempt.AnswerText = JsonSerializer.Serialize(new { x, y });
+                attempt.IsMatch = box.Hits(x, y);
+                break;
+            }
+            case ListeningInteractionType.TrueFalse:
+            {
+                var option = context.Options.FirstOrDefault(x => x.Id == request.OptionId)
+                    ?? throw new BadRequestException(AnswerInvalidCode);
+                if (request.Truth is not { } truth || option.Id != TrueFalseOpenOption(context)?.Id)
+                    throw new BadRequestException(AnswerInvalidCode);
+                attempt.SelectedOptionId = option.Id;
+                attempt.AnswerText = truth ? "true" : "false";
+                attempt.IsMatch = truth == option.IsMatch;
+                break;
+            }
+            case ListeningInteractionType.FollowAction:
+            {
+                var item = context.Options.FirstOrDefault(x => x.Id == request.OptionId && x.Role == ListeningOptionRole.Item);
+                var target = context.Options.FirstOrDefault(x => x.Id == request.TargetOptionId && x.Role == ListeningOptionRole.Target);
+                if (item is null || target is null) throw new BadRequestException(AnswerInvalidCode);
+                attempt.SelectedOptionId = item.Id;
+                attempt.AnswerText = JsonSerializer.Serialize(new { target = target.Id });
+                attempt.IsMatch = item.IsMatch;
+                break;
+            }
+            case ListeningInteractionType.SentenceBuilder:
+            {
+                var ordered = request.OrderedOptionIds ?? [];
+                if (ordered.Count != context.Options.Count || ordered.Distinct().Count() != ordered.Count ||
+                    ordered.Any(id => context.Options.All(option => option.Id != id)))
+                    throw new BadRequestException(AnswerInvalidCode);
+                var chosen = ordered.Select(id => context.Options.First(option => option.Id == id).CorrectOrder ?? 0).ToArray();
+                var accepted = SentenceOrders.Parse(interaction.AcceptedOrdersJson)
+                    ?? throw new BadRequestException(AnswerInvalidCode);
+                attempt.OrderedOptionIdsJson = JsonSerializer.Serialize(ordered);
+                attempt.IsMatch = SentenceOrders.Matches(accepted, chosen);
+                break;
+            }
+            case ListeningInteractionType.AlternateReading:
+            {
+                var speaker = context.Options.Select(x => x.Speaker).FirstOrDefault(name =>
+                    !string.IsNullOrWhiteSpace(name) && string.Equals(name.Trim(), request.Speaker?.Trim(), StringComparison.OrdinalIgnoreCase))
+                    ?? throw new BadRequestException(AnswerInvalidCode);
+                attempt.AnswerText = speaker.Trim();
+                break;
+            }
+            case ListeningInteractionType.CauseEffect:
+            {
+                var effect = context.Options.FirstOrDefault(x => x.Id == request.OptionId && x.Role == ListeningOptionRole.Item);
+                var cause = context.Options.FirstOrDefault(x => x.Id == request.TargetOptionId && x.Role == ListeningOptionRole.Target);
+                if (effect is null || cause is null) throw new BadRequestException(AnswerInvalidCode);
+                var tries = context.Attempts.Where(x => x.SelectedOptionId == effect.Id).ToList();
+                if (tries.Any(x => x.IsMatch == true) || tries.Count >= ChildListeningContent.MaxChoiceAttempts)
+                {
+                    // Thẻ này đã xong (nối đúng hoặc đã được nối sẵn): trả kết quả cũ, không ghi thêm dòng.
+                    var done = Age8Result(context, tries[^1], context.Attempts);
+                    await SignAsync(done, ct);
+                    return done;
+                }
+                attempt.SelectedOptionId = effect.Id;
+                attempt.AnswerText = JsonSerializer.Serialize(new { target = cause.Id });
+                attempt.IsMatch = CausePairs.Matches(effect, cause);
+                break;
+            }
         }
 
         await _unitOfWork.Repository<ListeningInteractionAttempt>().AddAsync(attempt, ct);
-        var result = interaction.Type == ListeningInteractionType.EventOrdering
+        var result = IsAge8Type(interaction.Type)
+            ? Age8Result(context, attempt, context.Attempts.Append(attempt).ToList())
+            : interaction.Type == ListeningInteractionType.EventOrdering
             ? OrderingResult(context, attempt, context.Attempts.Append(attempt).ToList())
-            : Result(context, attempt, context.Attempts.Count + 1);
+            : interaction.Type is ListeningInteractionType.PictureSearch or ListeningInteractionType.TrueFalse or
+                ListeningInteractionType.FollowAction or ListeningInteractionType.SentenceBuilder
+                ? Age7Result(context, attempt, context.Attempts.Append(attempt).ToList())
+                : Result(context, attempt, context.Attempts.Count + 1);
+        await SignAsync(result, ct);
+        return result;
+    }
+
+    private async Task SignAsync(ListeningAttemptResultDto result, CancellationToken ct)
+    {
         result.FeedbackAudioUrl = await _mediaUrls.SignAsync(result.FeedbackAudioUrl, ct);
+        result.SentenceAudioUrl = await _mediaUrls.SignAsync(result.SentenceAudioUrl, ct);
+        result.RevealImageUrl = await _mediaUrls.SignAsync(result.RevealImageUrl, ct);
+        result.ExplanationAudioUrl = await _mediaUrls.SignAsync(result.ExplanationAudioUrl, ct);
+        if (result.ChainSentences is not null)
+            foreach (var sentence in result.ChainSentences)
+                sentence.AudioUrl = await _mediaUrls.SignAsync(sentence.AudioUrl, ct);
+    }
+
+    private static bool IsAge8Type(ListeningInteractionType type) =>
+        type is ListeningInteractionType.AlternateReading or ListeningInteractionType.InferenceQuestion or
+            ListeningInteractionType.CauseEffect or ListeningInteractionType.SceneTitle or ListeningInteractionType.ThoughtBubble;
+
+    // Bộ tuổi 8: không có chữ "sai" và không có điểm; lộ đáp án (kèm giải thích) khi hết lượt chọn.
+    private static ListeningAttemptResultDto Age8Result(ListeningContext context, ListeningInteractionAttempt attempt,
+        IReadOnlyList<ListeningInteractionAttempt> attempts)
+    {
+        var interaction = context.Interaction;
+        var result = new ListeningAttemptResultDto { InteractionId = interaction.Id, Type = interaction.Type.ToString() };
+        if (interaction.Type == ListeningInteractionType.AlternateReading)
+        {
+            result.Speaker = attempt.AnswerText;
+            result.Completed = true;
+            return result;
+        }
+        if (interaction.Type == ListeningInteractionType.CauseEffect) return CauseEffectResult(context, attempt, attempts, result);
+
+        var answers = context.Options.Where(x => x.Role == ListeningOptionRole.None).ToList();
+        var selected = answers.FirstOrDefault(x => x.Id == attempt.SelectedOptionId);
+        var correct = answers.First(x => x.IsMatch);
+        var matched = attempt.IsMatch == true;
+        var revealed = !matched && attempts.Count >= ChildListeningContent.MaxChoiceAttempts;
+        result.OptionId = attempt.SelectedOptionId;
+        result.Matched = matched;
+        result.Revealed = revealed;
+        result.CanRetry = !matched && !revealed;
+        result.Completed = matched || revealed;
+        if (revealed) result.CorrectOptionId = correct.Id;
+
+        if (interaction.Type == ListeningInteractionType.InferenceQuestion && interaction.SourceQuote is { } passage &&
+            ClueSpans.Find(passage, context.Options.Where(x => x.Role == ListeningOptionRole.Clue).Select(x => x.Text).ToArray()) is { } spans)
+            // Manh mối lộ khi đúng, khi chọn lại và khi lộ đáp án.
+            result.ClueSpans = spans.Select(span => new ClueSpanDto { Start = span.Start, End = span.End }).ToList();
+
+        if (matched)
+        {
+            result.Feedback = interaction.MatchFeedback;
+            result.FeedbackAudioUrl = Audio(context, ListeningAudioParts.Match);
+        }
+        else if (!revealed)
+        {
+            // Chọn lại: Đặt tên cảnh nói vì sao tiêu đề đã chọn chỉ là một chi tiết; hai loại kia dùng câu cố định.
+            var retryKey = interaction.Type == ListeningInteractionType.ThoughtBubble ? ListeningAudioParts.RetryLook : ListeningAudioParts.RetryLookClose;
+            if (interaction.Type == ListeningInteractionType.SceneTitle)
+            {
+                result.Feedback = selected?.Feedback;
+                result.FeedbackAudioUrl = selected is null ? null : ListeningMediaRequirements.FindAudio(
+                    context.Assets, interaction.Id, selected.Id, ListeningAudioParts.Feedback)?.Url;
+            }
+            else
+            {
+                result.Feedback = ListeningAudioParts.FixedLine(retryKey);
+                result.FeedbackAudioUrl = Audio(context, retryKey);
+            }
+        }
+        else if (interaction.Type == ListeningInteractionType.SceneTitle)
+        {
+            result.Feedback = correct.Feedback;
+            result.FeedbackAudioUrl = ListeningMediaRequirements.FindAudio(context.Assets, interaction.Id, correct.Id, ListeningAudioParts.Feedback)?.Url;
+        }
+
+        if (matched || revealed)
+        {
+            if (interaction.Type is ListeningInteractionType.InferenceQuestion or ListeningInteractionType.SceneTitle)
+            {
+                result.Explanation = interaction.Explanation;
+                result.ExplanationAudioUrl = Audio(context, ListeningAudioParts.Explanation);
+            }
+            if (interaction.Type == ListeningInteractionType.ThoughtBubble) result.RevealEmotion = correct.Emotion;
+        }
+        return result;
+    }
+
+    private static ListeningAttemptResultDto CauseEffectResult(ListeningContext context, ListeningInteractionAttempt attempt,
+        IReadOnlyList<ListeningInteractionAttempt> attempts, ListeningAttemptResultDto result)
+    {
+        var interaction = context.Interaction;
+        var effects = context.Options.Where(x => x.Role == ListeningOptionRole.Item).OrderBy(x => x.CorrectOrder).ToList();
+        var effect = effects.FirstOrDefault(x => x.Id == attempt.SelectedOptionId);
+        var tries = attempts.Where(x => x.SelectedOptionId == attempt.SelectedOptionId).ToList();
+        var matched = attempt.IsMatch == true;
+        var revealed = !matched && tries.Count >= ChildListeningContent.MaxChoiceAttempts;
+        result.OptionId = attempt.SelectedOptionId;
+        result.Matched = matched;
+        result.Revealed = revealed;
+        result.CanRetry = !matched && !revealed;
+        if (effect is not null && (matched || revealed))
+            result.MatchedCauseOptionId = context.Options.FirstOrDefault(x => CausePairs.Matches(effect, x))?.Id;
+        if (result.CanRetry)
+        {
+            result.Feedback = ListeningAudioParts.FixedLine(ListeningAudioParts.RetryTry);
+            result.FeedbackAudioUrl = Audio(context, ListeningAudioParts.RetryTry);
+        }
+
+        bool Done(ListeningInteractionOption item)
+        {
+            var mine = attempts.Where(x => x.SelectedOptionId == item.Id).ToList();
+            return mine.Any(x => x.IsMatch == true) || mine.Count >= ChildListeningContent.MaxChoiceAttempts;
+        }
+        result.Completed = effects.Count > 0 && effects.All(Done);
+        if (result.Completed)
+        {
+            result.Feedback = interaction.MatchFeedback;
+            result.FeedbackAudioUrl = Audio(context, ListeningAudioParts.Match);
+            result.ChainSentences = effects.Select(item =>
+            {
+                var cause = context.Options.FirstOrDefault(x => CausePairs.Matches(item, x));
+                return new ChainSentenceDto
+                {
+                    EffectOptionId = item.Id,
+                    Text = cause is null ? item.Text : CausePairs.Sentence(cause.Text, item.Text),
+                    AudioUrl = ListeningMediaRequirements.FindAudio(context.Assets, interaction.Id, item.Id, ListeningAudioParts.Chain)?.Url
+                };
+            }).ToList();
+        }
         return result;
     }
 
@@ -221,12 +441,112 @@ public class ChildListeningService : IChildListeningService
         return result;
     }
 
+    private static ListeningInteractionOption? TrueFalseOpenOption(ListeningContext context) =>
+        ChildListeningContent.ShuffleItems(context.Session.Id, context.Interaction.Id, context.Options)
+            .FirstOrDefault(option =>
+        {
+            var attempts = context.Attempts.Where(x => x.SelectedOptionId == option.Id).ToArray();
+            return !attempts.Any(x => x.IsMatch == true) && attempts.Length < ChildListeningContent.MaxChoiceAttempts;
+        });
+
+    private static bool TrueFalseComplete(ListeningContext context) => TrueFalseOpenOption(context) is null;
+
+    private static ListeningAttemptResultDto Age7Result(ListeningContext context, ListeningInteractionAttempt attempt,
+        IReadOnlyList<ListeningInteractionAttempt> attempts)
+    {
+        var interaction = context.Interaction;
+        var matched = attempt.IsMatch == true;
+        var count = interaction.Type == ListeningInteractionType.TrueFalse
+            ? attempts.Count(x => x.SelectedOptionId == attempt.SelectedOptionId)
+            : attempts.Count;
+        var revealed = !matched && count >= ChildListeningContent.MaxChoiceAttempts;
+        var result = new ListeningAttemptResultDto
+        {
+            InteractionId = interaction.Id, Type = interaction.Type.ToString(), OptionId = attempt.SelectedOptionId,
+            Matched = matched, Revealed = revealed, CanRetry = !matched && !revealed,
+            Completed = interaction.Type == ListeningInteractionType.TrueFalse
+                ? context.Options.All(option =>
+                {
+                    var mine = attempts.Where(x => x.SelectedOptionId == option.Id).ToArray();
+                    return mine.Any(x => x.IsMatch == true) || mine.Length >= ChildListeningContent.MaxChoiceAttempts;
+                })
+                : interaction.Type != ListeningInteractionType.SentenceBuilder && (matched || revealed) ||
+                    interaction.Type == ListeningInteractionType.SentenceBuilder && revealed
+        };
+        if (matched)
+        {
+            result.Feedback = interaction.MatchFeedback;
+            result.FeedbackAudioUrl = Audio(context, ListeningAudioParts.Match);
+        }
+        else if (revealed)
+        {
+            result.Feedback = interaction.NoMatchFeedback;
+            result.FeedbackAudioUrl = Audio(context, ListeningAudioParts.NoMatch);
+            if (interaction.Type == ListeningInteractionType.TrueFalse)
+                RevealStatement(context, attempt, result);
+            if (interaction.Type == ListeningInteractionType.PictureSearch && HotspotBox.TryParse(interaction.HotspotJson) is { } box)
+                result.RevealHotspot = new HotspotDto { X = box.X, Y = box.Y, W = box.W, H = box.H };
+            if (interaction.Type == ListeningInteractionType.FollowAction)
+                result.CorrectOptionId = context.Options.FirstOrDefault(x => x.Role == ListeningOptionRole.Item && x.IsMatch)?.Id;
+            if (interaction.Type == ListeningInteractionType.SentenceBuilder)
+                result.CorrectOrderOptionIds = context.Options.OrderBy(x => x.CorrectOrder).Select(x => x.Id).ToList();
+        }
+        else
+        {
+            var retryKey = interaction.Type switch
+            {
+                ListeningInteractionType.PictureSearch => ListeningAudioParts.RetryLookClose,
+                ListeningInteractionType.SentenceBuilder => ListeningAudioParts.RetryHear,
+                _ => ListeningAudioParts.RetryTry
+            };
+            result.Feedback = interaction.Type == ListeningInteractionType.TrueFalse
+                ? interaction.NoMatchFeedback : ListeningAudioParts.FixedLine(retryKey);
+            result.FeedbackAudioUrl = Audio(context, interaction.Type == ListeningInteractionType.TrueFalse
+                ? ListeningAudioParts.NoMatch : retryKey);
+        }
+        if (interaction.Type == ListeningInteractionType.SentenceBuilder && (matched || revealed))
+        {
+            var orderIndex = 0;
+            if (matched && attempt.OrderedOptionIdsJson is { } chosenJson &&
+                SentenceOrders.Parse(interaction.AcceptedOrdersJson) is { } accepted)
+            {
+                var ids = JsonSerializer.Deserialize<int[]>(chosenJson) ?? [];
+                var order = ids.Select(id => context.Options.First(x => x.Id == id).CorrectOrder ?? 0).ToArray();
+                var found = Enumerable.Range(0, accepted.Count).FirstOrDefault(index => accepted[index].SequenceEqual(order));
+                orderIndex = found;
+            }
+            var sentenceAudio = ListeningMediaRequirements.FindAudio(context.Assets, interaction.Id, null,
+                ListeningAudioParts.SentenceKey(orderIndex));
+            result.SentenceAudioUrl = sentenceAudio?.Url;
+            result.SentenceWordTimings = sentenceAudio?.WordTimings;
+        }
+        return result;
+    }
+
+    // Đúng/sai sai lần 2: nói đáp án của câu và, nếu đã định vị được chi tiết bằng chứng, chỉ vào tranh.
+    private static void RevealStatement(ListeningContext context, ListeningInteractionAttempt attempt, ListeningAttemptResultDto result)
+    {
+        var option = context.Options.FirstOrDefault(x => x.Id == attempt.SelectedOptionId);
+        if (option is null) return;
+        result.CorrectTruth = option.IsMatch;
+        var key = option.IsMatch ? ListeningAudioParts.TruthYes : ListeningAudioParts.TruthNo;
+        result.Feedback = ListeningAudioParts.FixedLine(key);
+        result.FeedbackAudioUrl = Audio(context, key);
+        // Câu đúng: chỉ vào chi tiết chứng minh. Câu không đúng: chỉ vào chi tiết thật mà câu đó nói lệch.
+        if (HotspotBox.TryParse(option.HotspotJson) is not { } box) return;
+        var picture = context.Assets.FirstOrDefault(x => x.Id == box.AssetId && x.Type == MediaType.Illustration &&
+            ListeningMediaRequirements.IsUsable(x));
+        if (picture is null) return;
+        result.RevealHotspot = new HotspotDto { X = box.X, Y = box.Y, W = box.W, H = box.H };
+        result.RevealImageUrl = picture.Url;
+    }
+
     private static ListeningAttemptResultDto OrderingResult(ListeningContext context,
         ListeningInteractionAttempt attempt, IReadOnlyList<ListeningInteractionAttempt> sessionAttempts)
     {
         var interaction = context.Interaction;
         var matched = attempt.IsMatch == true;
-        var revealed = sessionAttempts.Count(x => x.IsMatch == false) >= ChildListeningContent.RevealAfterWrongOrders;
+        var revealed = sessionAttempts.Count(x => x.IsMatch == false) >= ChildListeningContent.RevealAfterWrongOrdersFor(interaction.TargetAge);
         var result = new ListeningAttemptResultDto
         {
             InteractionId = interaction.Id,
@@ -297,7 +617,8 @@ public class ChildListeningService : IChildListeningService
                 value => value.ListeningInteractionId == interactionId && !value.IsDeleted, cancellationToken: ct))
             .OrderBy(value => value.SortOrder).ToList();
         var assets = await _unitOfWork.Repository<MediaAsset>().FindAsync(
-            value => value.StoryVersionId == versionId && value.ListeningInteractionId == interactionId && !value.IsDeleted,
+            value => value.StoryVersionId == versionId &&
+                (value.ListeningInteractionId == interactionId || value.Type == MediaType.Illustration) && !value.IsDeleted,
             cancellationToken: ct);
         if (parentPackage is not null)
         {

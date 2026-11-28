@@ -70,6 +70,11 @@ public static class ChildMediaUrlSigning
             .Concat(content.Vocabulary.Select(word => word.AudioUrl))
             .Concat(interactions.Select(interaction => interaction.ModelAudioUrl))
             .Concat(interactions.Select(interaction => interaction.CharacterImageUrl))
+            .Concat(interactions.Select(interaction => interaction.SearchImageUrl))
+            .Concat(interactions.SelectMany(interaction => interaction.Statements ?? []).Select(item => item.AudioUrl))
+            .Concat(interactions.SelectMany(interaction => interaction.ActionItems ?? []).SelectMany(item => new[] { item.ImageUrl, item.AudioUrl }))
+            .Concat(interactions.SelectMany(interaction => interaction.ActionTarget is { } target ? new[] { target.ImageUrl, target.AudioUrl } : []))
+            .Concat(interactions.SelectMany(interaction => interaction.WordCards ?? []).Select(item => item.AudioUrl))
             .Concat(interactions.SelectMany(interaction => interaction.AudioUrls.Values))
             .Concat(interactions.SelectMany(interaction => interaction.LetterOptions ?? []).Select(option => option.SoundAudioUrl))
             .Concat(interactions.SelectMany(interaction => interaction.Speakers ?? []).SelectMany(speaker => new[] { speaker.ImageUrl, speaker.NameAudioUrl }))
@@ -89,6 +94,19 @@ public static class ChildMediaUrlSigning
         {
             interaction.ModelAudioUrl = url(interaction.ModelAudioUrl);
             interaction.CharacterImageUrl = url(interaction.CharacterImageUrl);
+            interaction.SearchImageUrl = url(interaction.SearchImageUrl);
+            foreach (var statement in interaction.Statements ?? []) statement.AudioUrl = url(statement.AudioUrl);
+            foreach (var item in interaction.ActionItems ?? [])
+            {
+                item.ImageUrl = url(item.ImageUrl);
+                item.AudioUrl = url(item.AudioUrl);
+            }
+            if (interaction.ActionTarget is { } target)
+            {
+                target.ImageUrl = url(target.ImageUrl);
+                target.AudioUrl = url(target.AudioUrl);
+            }
+            foreach (var card in interaction.WordCards ?? []) card.AudioUrl = url(card.AudioUrl);
             foreach (var letter in interaction.LetterOptions ?? []) letter.SoundAudioUrl = url(letter.SoundAudioUrl);
             foreach (var speaker in interaction.Speakers ?? [])
             {

@@ -2,6 +2,7 @@ using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Features.ListeningInteractions.Services;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
+using StoryPlatform.Application.Features.ReadingSessions;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -79,12 +80,27 @@ public sealed class MediaReadinessService : IMediaReadinessService
             x => ids.Contains(x.ListeningInteractionId) && !x.IsDeleted, cancellationToken: ct);
         var assets = await _unitOfWork.Repository<MediaAsset>().FindAsync(x =>
             x.ParentStoryPackageId == null && x.StoryVersionId == storyVersionId && x.IsCurrent && !x.IsDeleted && x.Status == MediaStatus.Ready &&
-            (x.Type == MediaType.ListeningAudio || x.Type == MediaType.ListeningImage), cancellationToken: ct);
+            (x.Type == MediaType.ListeningAudio || x.Type == MediaType.ListeningImage || x.Type == MediaType.Illustration), cancellationToken: ct);
+        IReadOnlyList<StoryScene> scenes = [];
+        IReadOnlyList<IllustrationBeat> beats = [];
+        if (interactions.Any(x => x.Type == ListeningInteractionType.PictureSearch))
+        {
+            scenes = await _unitOfWork.Repository<StoryScene>().FindAsync(x =>
+                x.StoryVersionId == storyVersionId && !x.IsDeleted, cancellationToken: ct);
+            var sceneIds = scenes.Select(x => x.Id).ToList();
+            beats = await _unitOfWork.Repository<IllustrationBeat>().FindAsync(x =>
+                sceneIds.Contains(x.StorySceneId) && !x.IsDeleted, cancellationToken: ct);
+        }
 
         foreach (var interaction in interactions.OrderBy(x => x.AnchorOffset))
         {
             if (interaction.StorySceneId is null) missing.Add($"{interaction.Id}:scene");
             missing.AddRange(ListeningMediaRequirements.Missing(interaction, options, assets));
+            if (interaction.Type == ListeningInteractionType.PictureSearch &&
+                (HotspotBox.TryParse(interaction.HotspotJson) is not { } hotspot ||
+                 ChildListeningContent.StoryPicture(interaction.SourceStart, scenes, beats, assets, true)?.Id != hotspot.AssetId) &&
+                !missing.Contains($"{interaction.Id}:i:hotspot"))
+                missing.Add($"{interaction.Id}:i:hotspot");
         }
         return missing;
     }

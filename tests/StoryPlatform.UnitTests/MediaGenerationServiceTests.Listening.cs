@@ -235,7 +235,7 @@ public sealed partial class MediaGenerationServiceTests
         ConfigureAge6Readiness(uow);
         uow.Items<ListeningInteraction>().Single(x => x.Id == 70).TargetAge = 6;
         var readiness = new MediaReadinessService(uow);
-        Assert.True((await readiness.CheckAsync(10, null)).IsReady);
+        Assert.Equal(["age:7:listening-set", "age:8:listening-set"], (await readiness.CheckAsync(10, null)).MissingListeningMedia);
 
         uow.Items<MediaAsset>().Single(x => x.Type == MediaType.ListeningAudio && x.AudioPartKey == "prompt").Status = MediaStatus.ManualReview;
         uow.Items<MediaAsset>().Single(x => x.Type == MediaType.ListeningAudio &&
@@ -243,7 +243,7 @@ public sealed partial class MediaGenerationServiceTests
 
         var result = await readiness.CheckAsync(10, null);
         Assert.False(result.IsReady);
-        Assert.Equal(new[] { "70:i:prompt", "70:o81:text" }, result.MissingListeningMedia);
+        Assert.Equal(new[] { "age:7:listening-set", "age:8:listening-set", "70:i:prompt", "70:o81:text" }, result.MissingListeningMedia);
     }
 
     [Fact]
@@ -255,14 +255,14 @@ public sealed partial class MediaGenerationServiceTests
         ConfigureAge6Readiness(uow);
         uow.Items<ListeningInteraction>().Single(x => x.Id == 71).TargetAge = 6;
         var readiness = new MediaReadinessService(uow);
-        Assert.True((await readiness.CheckAsync(10, null)).IsReady);
+        Assert.Equal(["age:7:listening-set", "age:8:listening-set"], (await readiness.CheckAsync(10, null)).MissingListeningMedia);
         uow.Items<ListeningInteraction>().Single(x => x.Id == 71).StorySceneId = null;
         uow.Items<MediaAsset>().Single(x => x.Type == MediaType.ListeningImage &&
             x.ListeningInteractionOptionId == 90).ValidationStatus = ValidationStatus.Failed;
 
         var result = await readiness.CheckAsync(10, null);
         Assert.False(result.IsReady);
-        Assert.Equal(new[] { "71:scene", "71:o90:image" }, result.MissingListeningMedia);
+        Assert.Equal(new[] { "age:7:listening-set", "age:8:listening-set", "71:scene", "71:o90:image" }, result.MissingListeningMedia);
     }
 
     private static void ConfigureAge6Readiness(StoryReviewServiceTests.FakeUnitOfWork uow)
@@ -281,7 +281,7 @@ public sealed partial class MediaGenerationServiceTests
         Assert.True((await Create(uow).RunPackageAsync()).Success);
         ConfigureAge6Readiness(uow);
         var result = await new MediaReadinessService(uow).CheckAsync(10, null);
-        Assert.Equal(["age:6:listening-set"], result.MissingListeningMedia);
+        Assert.Equal(["age:6:listening-set", "age:7:listening-set", "age:8:listening-set"], result.MissingListeningMedia);
         Assert.False(result.IsReady);
     }
 

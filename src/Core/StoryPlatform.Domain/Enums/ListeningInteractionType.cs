@@ -10,5 +10,14 @@ public enum ListeningInteractionType
     PicturePrediction = 5,
     ReadAloud = 6,
     CharacterLetter = 7,
-    WhoSaidIt = 8
+    WhoSaidIt = 8,
+    PictureSearch = 9,
+    TrueFalse = 10,
+    FollowAction = 11,
+    SentenceBuilder = 12,
+    AlternateReading = 13,
+    InferenceQuestion = 14,
+    CauseEffect = 15,
+    SceneTitle = 16,
+    ThoughtBubble = 17
 }

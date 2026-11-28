@@ -69,7 +69,7 @@ public sealed class ListeningWorkflowPersistenceTests
         var finalizer = new Mock<IContentGenerationJobFailureFinalizer>();
         finalizer.Setup(x => x.MarkFailedAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Callback<int, string, string, CancellationToken>((id, token, code, ct) => failures.Add(code)).Returns(Task.CompletedTask);
-        for (var i = 0; i < 5; i++)
+        for (var i = 0; i < 15; i++)
         {
             await using var db = new ListeningDb(options);
             var service = new ContentGenerationService(new UnitOfWork(db), ai.Object, null!, finalizer.Object, null!, new());
@@ -78,7 +78,7 @@ public sealed class ListeningWorkflowPersistenceTests
         }
         await using var result = new ListeningDb(options);
         var jobs = await result.StoryGenerationJobs.AsNoTracking().ToListAsync();
-        Assert.Equal(5, jobs.Count);
+        Assert.Equal(15, jobs.Count);
         Assert.All(jobs, x => Assert.Equal(GenerationJobStatus.Completed, x.Status));
         Assert.All(jobs, x =>
         {
@@ -86,12 +86,14 @@ public sealed class ListeningWorkflowPersistenceTests
             Assert.NotNull(receipt.PinnedRequest?.Snapshot);
             Assert.Equal(1, receipt.ProviderCalls);
         });
-        Assert.Equal(5, await result.Set<ListeningInteraction>().CountAsync());
-        Assert.All(await result.Set<ListeningInteraction>().ToListAsync(), x => Assert.Equal(6, x.TargetAge));
+        Assert.Equal(15, await result.Set<ListeningInteraction>().CountAsync());
+        Assert.Equal(5, await result.Set<ListeningInteraction>().CountAsync(x => x.TargetAge == 6));
+        Assert.Equal(5, await result.Set<ListeningInteraction>().CountAsync(x => x.TargetAge == 7));
+        Assert.Equal(5, await result.Set<ListeningInteraction>().CountAsync(x => x.TargetAge == 8));
         Assert.Equal(StoryStatus.ContentReview, (await result.Stories.SingleAsync()).Status);
         var progress = await new ContentGenerationService(new UnitOfWork(result), ai.Object, null!, finalizer.Object, null!, new()).GetProgressAsync(1, 1);
         Assert.True(progress.IsComplete);
-        Assert.Equal(5, progress.ListeningDetails.Count);
+        Assert.Equal(15, progress.ListeningDetails.Count);
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);

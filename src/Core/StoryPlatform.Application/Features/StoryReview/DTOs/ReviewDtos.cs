@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using StoryPlatform.Application.Features.ListeningInteractions.Services;
+using StoryPlatform.Domain.Enums;
 namespace StoryPlatform.Application.Features.StoryReview.DTOs;
 
 #region Review Package
@@ -191,6 +193,10 @@ public sealed record ListeningInteractionReviewDto
     public int AnchorOffset { get; init; }
     public string? Kind { get; init; }
     public string? Prompt { get; init; }
+    public string? TargetLabel { get; init; }
+    public HotspotBox? Hotspot { get; init; }
+    public bool HasValidHotspot { get; init; }
+    public IReadOnlyList<IReadOnlyList<int>>? AcceptedOrders { get; init; }
     public string? SourceQuote { get; init; }
     public string? CharacterName { get; init; }
     public string? HiddenWord { get; init; }
@@ -217,6 +223,11 @@ public sealed record ListeningOptionReviewDto
     public string? BlockId { get; init; }
     public string? SourceQuote { get; init; }
     public string? ImageDescription { get; init; }
+    public ListeningOptionRole Role { get; init; }
+    /// <summary>Đọc luân phiên: người nói lượt này.</summary>
+    public string? Speaker { get; init; }
+    /// <summary>Bong bóng suy nghĩ: cảm xúc của bong bóng.</summary>
+    public string? Emotion { get; init; }
 }
 
 public sealed record ListeningIssueDto
@@ -235,6 +246,8 @@ public sealed record UpdateListeningInteractionRequestDto
     public string? CharacterName { get; init; }
     public string? SourceQuote { get; init; }
     public string? Prompt { get; init; }
+    public string? TargetLabel { get; init; }
+    public IReadOnlyList<IReadOnlyList<int>>? AcceptedOrders { get; init; }
     public string? Hint { get; init; }
     public string? Explanation { get; init; }
     public string? MatchFeedback { get; init; }
@@ -248,9 +261,12 @@ public sealed record UpdateListeningOptionDto
 {
     public int Id { get; init; }
     public string? ImageDescription { get; init; }
+    public ListeningOptionRole? Role { get; init; }
     public bool? IsMatch { get; init; }
     public string? Text { get; init; }
     public string? Feedback { get; init; }
+    public string? Speaker { get; init; }
+    public string? Emotion { get; init; }
     [JsonExtensionData] public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }
 

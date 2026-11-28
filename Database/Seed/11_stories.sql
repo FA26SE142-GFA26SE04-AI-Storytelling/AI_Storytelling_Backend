@@ -83,7 +83,7 @@ INSERT INTO stories (
     "Id", "Title", "Description", "Content", "CoverImageUrl", "Genre", "MoralLesson", "Language", "AgeBand", "ReadingLevel", "VocabularyLevel", "Status", "Source", "IsPublished", "ChildVisibleAt", "ArchivedReason", "AuthorUserId", "ChildProfileId", "CreatedAt", "IsDeleted", "Scope", "OutputMode", "AudienceRevision", "AuthoringLastVersionNo", "AuthoringRevisionToken", "ExperienceMode"
 )
 VALUES
-    (900, 'Thỏ con đi lạc', 'Mẫu tương tác lúc nghe của bé 1, đang chờ duyệt', E'Thỏ con đi lạc vào rừng. Trời bắt đầu tối.\n\nThỏ nghe tiếng sột soạt sau bụi cây. Thỏ hỏi: "Có ai ở đó không?"\n\nHóa ra đó là bác Gấu đến giúp Thỏ tìm đường về.\n\nBác Gấu dẫn Thỏ về tới cửa hang.\n\nMẹ Thỏ ôm Thỏ vào lòng.\n\nTừ đó Thỏ luôn nhờ người lớn khi bị lạc.', NULL, 'Ngụ ngôn', 'Nhờ người lớn giúp khi bị lạc', 'vi', '6-8', 2, 'level_2', 'ContentReview', 'Ai', false, NULL, NULL, 2, 1, NOW() - INTERVAL '1 day', false, 'Parent', 'Learning', 1, 1, md5('seed-parent-story-900'), 'reading')
+    (900, 'Thỏ con đi lạc', 'Mẫu tương tác lúc nghe của bé 1, đang chờ duyệt', E'Thỏ con đi lạc vào rừng. Trời bắt đầu tối.\n\nThỏ nghe tiếng sột soạt sau bụi cây. Thỏ hỏi: "Có ai ở đó không?"\nBác Gấu đáp: "Bác đây, đừng sợ nhé!"\n\nHóa ra đó là bác Gấu đến giúp Thỏ tìm đường về.\n\nBác Gấu dẫn Thỏ về tới cửa hang.\n\nMẹ Thỏ ôm Thỏ vào lòng.\n\nTừ đó Thỏ luôn nhờ người lớn khi bị lạc.', NULL, 'Ngụ ngôn', 'Nhờ người lớn giúp khi bị lạc', 'vi', '6-8', 2, 'level_2', 'ContentReview', 'Ai', false, NULL, NULL, 2, 1, NOW() - INTERVAL '1 day', false, 'Parent', 'Learning', 1, 1, md5('seed-parent-story-900'), 'reading')
 ON CONFLICT ("Id") DO NOTHING;
 
 -- Fixture xem người gửi trong hàng đợi (2026-11-12), không dùng chung với các truyện WF-L5A ở trên:

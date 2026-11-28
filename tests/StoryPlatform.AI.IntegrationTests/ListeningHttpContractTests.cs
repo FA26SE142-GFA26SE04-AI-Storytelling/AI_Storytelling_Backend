@@ -25,6 +25,149 @@ namespace StoryPlatform.AI.IntegrationTests;
 public sealed class ListeningHttpContractTests
 {
     [Theory]
+    [InlineData("PictureSearch")]
+    [InlineData("TrueFalse")]
+    [InlineData("FollowAction")]
+    [InlineData("SentenceBuilder")]
+    [InlineData("EventOrdering")]
+    public async Task Age7_contract_accepts_each_planned_type(string type)
+    {
+        var item = type switch
+        {
+            "PictureSearch" => """{"afterBlockId":"P1","sourceQuote":"Thỏ hỏi","targetLabel":"Thỏ","question":"Tìm Thỏ","matchFeedback":"Hay quá!","retryFeedback":"Thử lại nhé."}""",
+            "TrueFalse" => """{"afterBlockId":"P1","statements":[{"text":"Thỏ hỏi","isTrue":true,"evidenceLabel":"Thỏ"},{"text":"Gấu hỏi","isTrue":false,"evidenceLabel":"Thỏ"}],"matchFeedback":"Hay quá!","retryFeedback":"Thử lại nhé."}""",
+            "FollowAction" => """{"afterBlockId":"P1","characterName":"Thỏ","question":"Bé giúp Thỏ nhé","items":[{"name":"Gấu","isCorrect":true,"imageDescription":"Gấu nâu"},{"name":"cây","isCorrect":false,"imageDescription":"Cây xanh"}],"target":{"name":"hang","imageDescription":"Hang trong rừng"},"matchFeedback":"Hay quá!","retryFeedback":"Thử lại nhé."}""",
+            "SentenceBuilder" => """{"afterBlockId":"P1","sentenceQuote":"Thỏ hỏi","cards":["Thỏ","đang","hỏi"],"acceptedOrders":[[1,2,3]],"matchFeedback":"Hay quá!","retryFeedback":"Thử lại nhé."}""",
+            _ => """{"afterBlockId":"P2","events":[{"order":1,"blockId":"P1","text":"Thỏ hỏi","sourceQuote":"Thỏ hỏi"},{"order":2,"blockId":"P2","text":"Gấu giúp","sourceQuote":"Gấu giúp"},{"order":3,"blockId":"P3","text":"Thỏ về","sourceQuote":"Thỏ về"}],"matchFeedback":"Hay quá!","retryFeedback":"Thử lại nhé."}"""
+        };
+        var model = new Model("{\"items\":[" + item + "]}");
+        using var server = Server(model);
+        var request = Request(type, "6-8") with { TargetAge = 7, AllowedBlockIds = type == "EventOrdering" ? [["P2"]] : [["P1"]] };
+        var response = await Client(server).GenerateListeningInteractionAsync(request);
+        Assert.Equal(1, model.Calls);
+        Assert.Equal("listening-http", response.RequestId);
+        if (type == "SentenceBuilder") Assert.Equal(3, Assert.Single(response.SentenceBuilders).Cards.Count);
+        if (type == "EventOrdering") Assert.Equal("P2", Assert.Single(response.EventOrderings).AfterBlockId);
+    }
+
+    [Fact]
+    public async Task Age7_TrueFalse_roundtrips_the_evidence_label_of_each_statement()
+    {
+        var model = new Model("""{"items":[{"afterBlockId":"P1","statements":[{"text":"Thỏ hỏi","isTrue":true,"evidenceLabel":"Thỏ"},{"text":"Gấu hỏi","isTrue":false,"evidenceLabel":"cái tai dài"}],"matchFeedback":"Hay quá!","retryFeedback":"Thử lại nhé."}]}""");
+        using var server = Server(model);
+        var response = await Client(server).GenerateListeningInteractionAsync(
+            Request("TrueFalse", "6-8") with { TargetAge = 7, AllowedBlockIds = [["P1"]] });
+        var item = Assert.Single(response.TrueFalses);
+        Assert.Equal(["Thỏ", "cái tai dài"], item.Statements.Select(x => x.EvidenceLabel));
+        Assert.Equal([true, false], item.Statements.Select(x => x.IsTrue));
+        Assert.Contains("evidenceLabel", model.Prompt);
+        var statements = model.Schema.GetProperty("properties").GetProperty("items").GetProperty("items")
+            .GetProperty("properties").GetProperty("statements").GetProperty("items");
+        Assert.Contains("evidenceLabel", statements.GetProperty("required").EnumerateArray().Select(x => x.GetString()));
+    }
+
+    [Fact]
+    public async Task Age7_TrueFalse_without_an_evidence_label_is_rejected()
+    {
+        var model = new Model("""{"items":[{"afterBlockId":"P1","statements":[{"text":"Thỏ hỏi","isTrue":true},{"text":"Gấu hỏi","isTrue":false}],"matchFeedback":"Hay quá!","retryFeedback":"Thử lại nhé."}]}""");
+        using var server = Server(model);
+        var error = await Assert.ThrowsAsync<AIServiceRequestException>(() => Client(server).GenerateListeningInteractionAsync(
+            Request("TrueFalse", "6-8") with { TargetAge = 7, AllowedBlockIds = [["P1"]] }));
+        Assert.Equal("AI_OUTPUT_INVALID", error.ErrorCode);
+        Assert.Equal(1, model.Calls);
+    }
+
+    [Theory]
+    [InlineData("Checkpoint", 7)]            // Điểm dừng nghĩa đen là của tuổi 6
+    [InlineData("PicturePrediction", 7)]
+    [InlineData("RolePlay", 7)]
+    [InlineData("PictureSearch", 6)]         // Bốn loại mới chỉ của tuổi 7
+    [InlineData("TrueFalse", 6)]
+    [InlineData("FollowAction", 6)]
+    [InlineData("SentenceBuilder", 6)]
+    [InlineData("PictureSearch", 8)]         // Tuổi 8 chưa có bộ
+    [InlineData("PictureSearch", 10)]
+    public async Task Age_specific_types_are_rejected_for_the_wrong_age_without_calling_the_model(string type, int targetAge)
+    {
+        var model = new Model(Output("RolePlay"));
+        using var server = Server(model);
+        var error = await Assert.ThrowsAsync<AIServiceRequestException>(() => Client(server).GenerateListeningInteractionAsync(
+            Request(type, "6-8") with { TargetAge = targetAge, CheckpointKind = "Literal" }));
+        Assert.Equal(400, error.StatusCode);
+        Assert.Equal(0, model.Calls);
+    }
+
+    [Theory]
+    [InlineData("PictureSearch")]
+    [InlineData("TrueFalse")]
+    [InlineData("FollowAction")]
+    [InlineData("SentenceBuilder")]
+    [InlineData("EventOrdering")]
+    public async Task Age7_types_are_rejected_for_the_older_band(string type)
+    {
+        var model = new Model(Output("RolePlay"));
+        using var server = Server(model);
+        var error = await Assert.ThrowsAsync<AIServiceRequestException>(() => Client(server).GenerateListeningInteractionAsync(
+            Request(type, "9-10") with { TargetAge = 7 }));
+        Assert.Equal(400, error.StatusCode);
+        Assert.Equal(0, model.Calls);
+    }
+
+    [Fact]
+    public async Task Age7_EventOrdering_needs_anchor_zones_but_legacy_EventOrdering_does_not()
+    {
+        var model = new Model(Output("EventOrdering"));
+        using var server = Server(model);
+        var missingZone = await Assert.ThrowsAsync<AIServiceRequestException>(() => Client(server).GenerateListeningInteractionAsync(
+            Request("EventOrdering", "6-8") with { TargetAge = 7, AllowedBlockIds = [] }));
+        Assert.Equal(400, missingZone.StatusCode);
+        Assert.Equal(0, model.Calls);
+        await Client(server).GenerateListeningInteractionAsync(Request("EventOrdering", "6-8"));     // bộ cũ: neo ở cuối, không cần vùng
+        Assert.Equal(1, model.Calls);
+    }
+
+    [Theory]
+    [InlineData("PictureSearch", "ListeningPictureSearch")]
+    [InlineData("TrueFalse", "ListeningTrueFalse")]
+    [InlineData("FollowAction", "ListeningFollowAction")]
+    [InlineData("SentenceBuilder", "ListeningSentenceBuilder")]
+    [InlineData("EventOrdering:Age7", "ListeningEventOrderingAge7")]
+    public async Task Age7_snapshot_selects_the_age_specific_template(string type, string promptType)
+    {
+        using var server = Server(new Model(Output("RolePlay")));
+        var snapshot = await Client(server).GetListeningPromptSnapshotAsync(type, "6-8", "vi");
+        Assert.Equal(promptType, snapshot.PromptType);
+        Assert.Contains("{{context}}", snapshot.Template);
+    }
+
+    [Theory]
+    [InlineData("PictureSearch")]
+    [InlineData("EventOrdering:Age7")]
+    public async Task Age7_snapshot_rejects_the_older_band(string type)
+    {
+        var model = new Model(Output("RolePlay"));
+        using var server = Server(model);
+        var error = await Assert.ThrowsAsync<AIServiceRequestException>(() => Client(server).GetListeningPromptSnapshotAsync(type, "9-10", "vi"));
+        Assert.Equal(400, error.StatusCode);
+        Assert.Equal(0, model.Calls);
+    }
+
+    [Theory]
+    [InlineData("""{"afterBlockId":"P1","sentenceQuote":"Thỏ hỏi","cards":["Thỏ","hỏi"],"acceptedOrders":[[1,2]],"matchFeedback":"Hay quá!","retryFeedback":"Thử lại nhé."}""")]
+    [InlineData("""{"afterBlockId":"P1","sentenceQuote":"Thỏ hỏi","cards":["a","b","c","d","e","f"],"acceptedOrders":[[1,2,3,4,5,6]],"matchFeedback":"Hay quá!","retryFeedback":"Thử lại nhé."}""")]
+    [InlineData("""{"afterBlockId":"P1","sentenceQuote":"Thỏ hỏi","cards":["Thỏ","đang","hỏi"],"acceptedOrders":[],"matchFeedback":"Hay quá!","retryFeedback":"Thử lại nhé."}""")]
+    [InlineData("""{"afterBlockId":"P1","sentenceQuote":"Thỏ hỏi","cards":["Thỏ","đang","hỏi"],"acceptedOrders":[[1,2,9]],"matchFeedback":"Hay quá!","retryFeedback":"Thử lại nhé."}""")]
+    public async Task Age7_SentenceBuilder_rejects_card_counts_and_orders_outside_the_schema(string item)
+    {
+        var model = new Model("{\"items\":[" + item + "]}");
+        using var server = Server(model);
+        var error = await Assert.ThrowsAsync<AIServiceRequestException>(() => Client(server).GenerateListeningInteractionAsync(
+            Request("SentenceBuilder", "6-8") with { TargetAge = 7, AllowedBlockIds = [["P1"]] }));
+        Assert.Equal("AI_OUTPUT_INVALID", error.ErrorCode);
+        Assert.Equal(1, model.Calls);
+    }
+
+    [Theory]
     [InlineData("CharacterLetter", "9-10", 6)]
     [InlineData("WhoSaidIt", "6-8", 7)]
     [InlineData("WhoSaidIt", "6-8", null)]
@@ -181,6 +324,131 @@ public sealed class ListeningHttpContractTests
         var denied = await Assert.ThrowsAsync<AIServiceRequestException>(() => unauthenticated.GetListeningPromptSnapshotAsync("Checkpoint", "6-8", "vi"));
         Assert.Equal(401, denied.StatusCode);
         Assert.Equal(0, model.Calls);
+    }
+
+    private static string Age8Item(string type) => type switch
+    {
+        "AlternateReading" => """{"afterBlockId":"P1","lines":[{"speaker":"Thỏ","text":"Có ai ở đó không?"},{"speaker":"Gấu","text":"Bác đây!"}],"praiseFeedback":"Con đọc cùng bạn giỏi quá!"}""",
+        "InferenceQuestion" => """{"afterBlockId":"P1","passage":"Thỏ run lẩy bẩy. Thỏ nghe tiếng sói hú.","question":"Vì sao Thỏ trốn?","answers":[{"text":"Vì Thỏ sợ","isCorrect":true},{"text":"Vì Thỏ buồn ngủ","isCorrect":false},{"text":"Vì Thỏ đang chơi","isCorrect":false}],"clues":["run lẩy bẩy","tiếng sói hú","Thỏ nghe"],"explanation":"Thỏ run và nghe tiếng sói hú.","matchFeedback":"Con suy luận giỏi quá!"}""",
+        "CauseEffect" => """{"afterBlockId":"P1","pairs":[{"effect":{"text":"Thỏ trốn","sourceQuote":"Thỏ trốn"},"cause":{"text":"Sói hú","sourceQuote":"Sói hú"}},{"effect":{"text":"Gấu giúp","sourceQuote":"Gấu giúp"},"cause":{"text":"Thỏ lạc","sourceQuote":"Thỏ lạc"}},{"effect":{"text":"Thỏ về","sourceQuote":"Thỏ về"},"cause":{"text":"Gấu dắt","sourceQuote":"Gấu dắt"}}],"matchFeedback":"Con nối giỏi quá!"}""",
+        "SceneTitle" => """{"afterBlockId":"P1","titles":[{"text":"Thỏ gặp Gấu","isCorrect":true,"feedback":"Tiêu đề này nói về cả cảnh."},{"text":"Thỏ hỏi","isCorrect":false,"feedback":"Tiêu đề này chỉ nói một chi tiết."},{"text":"Trời tối","isCorrect":false,"feedback":"Tiêu đề này chỉ nói một chi tiết."}],"explanation":"Cả cảnh là Thỏ gặp Gấu.","matchFeedback":"Con chọn hay quá!"}""",
+        _ => """{"afterBlockId":"P1","characterName":"Thỏ","question":"Thỏ đang nghĩ gì?","sourceQuote":"Thỏ hỏi","bubbles":[{"text":"Mình sợ quá","isCorrect":true,"emotion":"sợ"},{"text":"Mình vui quá","isCorrect":false,"emotion":"vui"},{"text":"Mình giận quá","isCorrect":false,"emotion":"giận"}],"matchFeedback":"Con đoán đúng rồi!"}"""
+    };
+
+    [Theory]
+    [InlineData("AlternateReading")]
+    [InlineData("InferenceQuestion")]
+    [InlineData("CauseEffect")]
+    [InlineData("SceneTitle")]
+    [InlineData("ThoughtBubble")]
+    public async Task Age8_contract_accepts_each_planned_type(string type)
+    {
+        var model = new Model("{\"items\":[" + Age8Item(type) + "]}");
+        using var server = Server(model);
+        var response = await Client(server).GenerateListeningInteractionAsync(
+            Request(type, "6-8") with { TargetAge = 8, AllowedBlockIds = [["P1"]] });
+        Assert.Equal(1, model.Calls);
+        switch (type)
+        {
+            case "AlternateReading": Assert.Equal(2, Assert.Single(response.AlternateReadings).Lines.Count); break;
+            case "InferenceQuestion":
+                var inference = Assert.Single(response.InferenceQuestions);
+                Assert.Equal(3, inference.Clues.Count);
+                Assert.Equal(3, inference.Answers.Count);
+                break;
+            case "CauseEffect": Assert.Equal(3, Assert.Single(response.CauseEffects).Pairs.Count); break;
+            case "SceneTitle": Assert.Equal(3, Assert.Single(response.SceneTitles).Titles.Count); break;
+            default: Assert.Equal("sợ", Assert.Single(response.ThoughtBubbles).Bubbles[0].Emotion); break;
+        }
+    }
+
+    [Fact]
+    public async Task Age8_InferenceQuestion_accepts_two_items_and_other_types_do_not()
+    {
+        var model = new Model("{\"items\":[" + Age8Item("InferenceQuestion") + "," + Age8Item("InferenceQuestion") + "]}");
+        using var server = Server(model);
+        var response = await Client(server).GenerateListeningInteractionAsync(
+            Request("InferenceQuestion", "6-8") with { TargetAge = 8, Count = 2, AllowedBlockIds = [["P1"], ["P2"]] });
+        Assert.Equal(2, response.InferenceQuestions.Count);
+
+        var error = await Assert.ThrowsAsync<AIServiceRequestException>(() => Client(server).GenerateListeningInteractionAsync(
+            Request("SceneTitle", "6-8") with { TargetAge = 8, Count = 2, AllowedBlockIds = [["P1"], ["P2"]] }));
+        Assert.Equal(400, error.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("AlternateReading", 6)]
+    [InlineData("InferenceQuestion", 7)]
+    [InlineData("CauseEffect", 6)]
+    [InlineData("SceneTitle", 7)]
+    [InlineData("ThoughtBubble", 10)]
+    [InlineData("Checkpoint", 8)]
+    [InlineData("TrueFalse", 8)]
+    [InlineData("EventOrdering", 8)]
+    public async Task Age8_types_and_other_ages_do_not_mix(string type, int targetAge)
+    {
+        var model = new Model(Output("RolePlay"));
+        using var server = Server(model);
+        var error = await Assert.ThrowsAsync<AIServiceRequestException>(() => Client(server).GenerateListeningInteractionAsync(
+            Request(type, "6-8") with { TargetAge = targetAge, CheckpointKind = "Literal" }));
+        Assert.Equal(400, error.StatusCode);
+        Assert.Equal(0, model.Calls);
+    }
+
+    [Theory]
+    [InlineData("AlternateReading")]
+    [InlineData("InferenceQuestion")]
+    [InlineData("CauseEffect")]
+    [InlineData("SceneTitle")]
+    [InlineData("ThoughtBubble")]
+    public async Task Age8_types_are_rejected_for_the_older_band(string type)
+    {
+        var model = new Model(Output("RolePlay"));
+        using var server = Server(model);
+        var error = await Assert.ThrowsAsync<AIServiceRequestException>(() => Client(server).GenerateListeningInteractionAsync(
+            Request(type, "9-10") with { TargetAge = 8 }));
+        Assert.Equal(400, error.StatusCode);
+        Assert.Equal(0, model.Calls);
+    }
+
+    [Theory]
+    [InlineData("AlternateReading", "ListeningAlternateReading")]
+    [InlineData("InferenceQuestion", "ListeningInferenceQuestion")]
+    [InlineData("CauseEffect", "ListeningCauseEffect")]
+    [InlineData("SceneTitle", "ListeningSceneTitle")]
+    [InlineData("ThoughtBubble", "ListeningThoughtBubble")]
+    public async Task Age8_snapshot_selects_the_age_specific_template(string type, string promptType)
+    {
+        using var server = Server(new Model(Output("RolePlay")));
+        var snapshot = await Client(server).GetListeningPromptSnapshotAsync(type, "6-8", "vi");
+        Assert.Equal(promptType, snapshot.PromptType);
+        Assert.Contains("{{context}}", snapshot.Template);
+    }
+
+    [Theory]
+    [InlineData("""{"afterBlockId":"P1","characterName":"Thỏ","question":"Thỏ đang nghĩ gì?","sourceQuote":"Thỏ hỏi","bubbles":[{"text":"a","isCorrect":true,"emotion":"giận dữ"},{"text":"b","isCorrect":false,"emotion":"vui"},{"text":"c","isCorrect":false,"emotion":"sợ"}],"matchFeedback":"Hay!"}""")]
+    [InlineData("""{"afterBlockId":"P1","characterName":"Thỏ","question":"Thỏ đang nghĩ gì?","sourceQuote":"Thỏ hỏi","bubbles":[{"text":"a","isCorrect":true,"emotion":"sợ"},{"text":"b","isCorrect":false,"emotion":"vui"}],"matchFeedback":"Hay!"}""")]
+    public async Task Age8_ThoughtBubble_rejects_unknown_emotions_and_wrong_bubble_counts(string item)
+    {
+        var model = new Model("{\"items\":[" + item + "]}");
+        using var server = Server(model);
+        var error = await Assert.ThrowsAsync<AIServiceRequestException>(() => Client(server).GenerateListeningInteractionAsync(
+            Request("ThoughtBubble", "6-8") with { TargetAge = 8, AllowedBlockIds = [["P1"]] }));
+        Assert.Equal("AI_OUTPUT_INVALID", error.ErrorCode);
+        Assert.Equal(1, model.Calls);
+    }
+
+    [Theory]
+    [InlineData("""{"afterBlockId":"P1","passage":"Thỏ run. Thỏ sợ.","question":"Vì sao?","answers":[{"text":"a","isCorrect":true},{"text":"b","isCorrect":false},{"text":"c","isCorrect":false}],"clues":["run","sợ"],"explanation":"x","matchFeedback":"Hay!"}""")]
+    [InlineData("""{"afterBlockId":"P1","pairs":[{"effect":{"text":"a","sourceQuote":"a"},"cause":{"text":"b","sourceQuote":"b"}}],"matchFeedback":"Hay!"}""")]
+    public async Task Age8_schema_rejects_missing_clues_and_missing_pairs(string item)
+    {
+        var type = item.Contains("\"pairs\"") ? "CauseEffect" : "InferenceQuestion";
+        var model = new Model("{\"items\":[" + item + "]}");
+        using var server = Server(model);
+        var error = await Assert.ThrowsAsync<AIServiceRequestException>(() => Client(server).GenerateListeningInteractionAsync(
+            Request(type, "6-8") with { TargetAge = 8, AllowedBlockIds = [["P1"]] }));
+        Assert.Equal("AI_OUTPUT_INVALID", error.ErrorCode);
     }
 
     private static AIStoryGenerationClient Client(IHost server) => new(server.GetTestClient(),

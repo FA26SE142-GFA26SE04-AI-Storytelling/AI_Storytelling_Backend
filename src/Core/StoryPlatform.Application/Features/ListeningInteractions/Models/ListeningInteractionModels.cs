@@ -36,6 +36,11 @@ public sealed record ListeningOptionDraft
     public int? SourceStart { get; init; }
     public int? SourceEnd { get; init; }
     public string? ImageDescription { get; init; }
+    public ListeningOptionRole Role { get; init; }
+    /// <summary>AlternateReading: người nói lượt này.</summary>
+    public string? Speaker { get; init; }
+    /// <summary>ThoughtBubble: cảm xúc của bong bóng.</summary>
+    public string? Emotion { get; init; }
 }
 
 /// <summary>
@@ -51,6 +56,8 @@ public sealed record ListeningInteractionDraft
     public CheckpointKind? Kind { get; init; }
     public string? Prompt { get; init; }
     public string? SourceQuote { get; init; }
+    public string? TargetLabel { get; init; }
+    public string? AcceptedOrdersJson { get; init; }
     public int? SourceStart { get; init; }
     public int? SourceEnd { get; init; }
     /// <summary>ReadAloud: block containing the passage, used to resolve its offsets.</summary>

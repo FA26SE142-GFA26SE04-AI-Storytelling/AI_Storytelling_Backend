@@ -95,7 +95,10 @@ public sealed class ListeningInteractionGenerator
             // Direct construction without a gate is retained for isolated unit fixtures. Production DI always supplies the shared gate.
             if (_gate is not null || durableState is not null)
             {
-                var snapshot = await _aiClient.GetListeningPromptSnapshotAsync(scope.TargetAge == 6 && type is ListeningInteractionType.Checkpoint or ListeningInteractionType.PicturePrediction ? $"{type}:Age6" : type.ToString(), context.AgeBand.ToString(), scope.Context.Language, ct);
+                var snapshotType = scope.TargetAge == 6 && type is ListeningInteractionType.Checkpoint or ListeningInteractionType.PicturePrediction
+                    ? $"{type}:Age6" : scope.TargetAge == 7 && type == ListeningInteractionType.EventOrdering
+                        ? "EventOrdering:Age7" : type.ToString();
+                var snapshot = await _aiClient.GetListeningPromptSnapshotAsync(snapshotType, context.AgeBand.ToString(), scope.Context.Language, ct);
                 if (snapshot is null || string.IsNullOrWhiteSpace(snapshot.Version) || string.IsNullOrWhiteSpace(snapshot.PromptType) ||
                     snapshot.Template?.Contains("{{context}}", StringComparison.Ordinal) != true)
                     throw new InvalidOperationException("LISTENING_SNAPSHOT_INVALID");
@@ -141,7 +144,8 @@ public sealed class ListeningInteractionGenerator
                 throw;
             }
             if (response is null) throw new InvalidOperationException("LISTENING_RESPONSE_INVALID");
-            var mapped = ListeningInteractionMapper.Resolve(ListeningInteractionAiMapper.ToDrafts(response, type), scope.Version.Content!, scope.Blocks);
+            var mapped = ListeningInteractionMapper.Resolve(ListeningInteractionAiMapper.ToDrafts(response, type)
+                .Select(draft => draft with { TargetAge = scope.TargetAge }).ToArray(), scope.Version.Content!, scope.Blocks);
             var errors = mapped.Errors.Concat(ListeningInteractionRules.Validate(mapped.Items, context)).Distinct().ToArray();
             if (errors.Length == 0) return new(mapped.Items.Select(d => d with { TargetAge = scope.TargetAge }).ToArray(), response.Metadata);
             state.ValidationFailures++;

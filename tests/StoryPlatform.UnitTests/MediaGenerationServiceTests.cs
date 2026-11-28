@@ -1067,7 +1067,8 @@ public sealed partial class MediaGenerationServiceTests
         IMediaReadinessService? readiness = null, IChildProfileAccessGuard? supervision = null,
         Microsoft.Extensions.Logging.ILogger<MediaGenerationService>? logger = null, MediaGenerationOptions? options = null,
         ISceneSegmentationProvider? segmenter = null,
-        StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? tokenQuota = null)
+        StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? tokenQuota = null,
+        IPictureObjectLocator? locator = null, IAudioWordAligner? aligner = null)
     {
         var evaluatorImpl = evaluator ?? new PassingEvaluator();
         var clock = new MediaTestPump.Clock();
@@ -1092,7 +1093,7 @@ public sealed partial class MediaGenerationServiceTests
             readiness ?? new MediaReadinessService(uow),
             options ?? new MediaGenerationOptions { AssetMaxAttempts = 3, JobLeaseMinutes = 5 },
             logger ?? NullLogger<MediaGenerationService>.Instance, supervision ?? new Mock<IChildProfileAccessGuard>().Object, clock, new CreatorMediaUploadValidator(),
-            tokenQuota: tokenQuota);
+            tokenQuota: tokenQuota, pictureObjectLocator: locator, audioWordAligner: aligner);
         MediaTestPump.Register(service, uow, clock);
         return service;
     }

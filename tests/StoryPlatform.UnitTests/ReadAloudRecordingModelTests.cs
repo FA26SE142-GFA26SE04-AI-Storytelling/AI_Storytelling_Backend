@@ -26,7 +26,8 @@ public sealed class ReadAloudRecordingModelTests
             .SequenceEqual(new[] { "ReadingSessionId", "StorySegmentId" }));
         Assert.Equal("\"StorySegmentId\" IS NOT NULL AND \"IsDeleted\" = false", segment.GetFilter());
         var practice = Assert.Single(unique, x => x.Properties.Select(p => p.Name)
-            .SequenceEqual(new[] { "ReadingSessionId", "ListeningInteractionId" }));
+            .SequenceEqual(new[] { "ReadingSessionId", "ListeningInteractionId", "ListeningInteractionOptionId" }));
+        Assert.Equal(false, practice.FindAnnotation("Npgsql:NullsDistinct")?.Value);   // đoạn luyện cũ (lượt = NULL) vẫn bị chặn trùng
         Assert.Equal("\"ListeningInteractionId\" IS NOT NULL AND \"IsDeleted\" = false", practice.GetFilter());
         Assert.Contains(entity.GetCheckConstraints(), c => c.Name == "CK_read_aloud_recordings_one_target");
     }

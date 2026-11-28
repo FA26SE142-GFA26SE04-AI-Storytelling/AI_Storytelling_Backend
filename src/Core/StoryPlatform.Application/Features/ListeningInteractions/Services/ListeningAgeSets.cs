@@ -1,11 +1,14 @@
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Contracts.AI.Models;
 
 namespace StoryPlatform.Application.Features.ListeningInteractions.Services;
 
 /// <summary>Independent interaction sets, served only to children of the exact target age.</summary>
 public static class ListeningAgeSets
 {
-    public static IReadOnlyList<int> Built { get; } = Array.AsReadOnly(new[] { 6 });
+    public static IReadOnlyList<int> Built => ListeningAgeCatalog.BuiltAges;
+
+    public static bool HasOwnSet(int? age) => age is int value && Built.Contains(value);
 
     public static IReadOnlyList<int> TargetAgesFor(AgeBand band) =>
         AgesIn(band).Where(Built.Contains).ToArray();

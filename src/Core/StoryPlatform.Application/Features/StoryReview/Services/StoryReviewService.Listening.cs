@@ -75,6 +75,8 @@ public sealed partial class StoryReviewService
             CharacterName = Edited(input.CharacterName) ?? current.CharacterName,
             SourceQuote = Edited(input.SourceQuote) ?? current.SourceQuote,
             Prompt = Edited(input.Prompt) ?? current.Prompt,
+            TargetLabel = Edited(input.TargetLabel) ?? current.TargetLabel,
+            AcceptedOrdersJson = input.AcceptedOrders is null ? current.AcceptedOrdersJson : JsonSerializer.Serialize(input.AcceptedOrders),
             Hint = Edited(input.Hint) ?? current.Hint,
             Explanation = Edited(input.Explanation) ?? current.Explanation,
             MatchFeedback = Edited(input.MatchFeedback) ?? current.MatchFeedback,
@@ -82,7 +84,8 @@ public sealed partial class StoryReviewService
             WaitFeedback = Edited(input.WaitFeedback) ?? current.WaitFeedback,
             Options = current.Options.Select((o, i) => byId.TryGetValue(options[i].Id, out var c)
                 ? o with { Text = Edited(c.Text) ?? o.Text, Feedback = Edited(c.Feedback) ?? o.Feedback,
-                    ImageDescription = Edited(c.ImageDescription) ?? o.ImageDescription, IsMatch = c.IsMatch ?? o.IsMatch }
+                    ImageDescription = Edited(c.ImageDescription) ?? o.ImageDescription, IsMatch = c.IsMatch ?? o.IsMatch,
+                    Role = c.Role ?? o.Role, Speaker = Edited(c.Speaker) ?? o.Speaker, Emotion = Edited(c.Emotion) ?? o.Emotion }
                 : o).ToArray()
         };
         var errors = new List<ListeningValidationError>(EmptyEdits(input));
@@ -96,6 +99,14 @@ public sealed partial class StoryReviewService
                 string.Join(';', errors.Distinct().Select(e => e.Field is null ? e.Code : $"{e.Code}@{e.Field}")));
 
         interaction.Prompt = draft.Prompt;
+        var targetLabelChanged = !string.Equals(interaction.TargetLabel, draft.TargetLabel, StringComparison.Ordinal);
+        var imageDescriptionChanged = options.Where((option, i) =>
+            !string.Equals(option.ImageDescription, draft.Options[i].ImageDescription, StringComparison.Ordinal)).Any();
+        // Đổi câu trích có thể đổi sang tranh khác của đoạn; khung cũ không còn đúng.
+        var sourceChanged = interaction.SourceStart != draft.SourceStart;
+        interaction.TargetLabel = draft.TargetLabel;
+        interaction.AcceptedOrdersJson = draft.AcceptedOrdersJson;
+        if (targetLabelChanged || imageDescriptionChanged || sourceChanged) interaction.HotspotJson = null;
         interaction.BlankIndex = draft.BlankIndex;
         interaction.CharacterName = draft.CharacterName;
         interaction.SourceQuote = draft.SourceQuote;
@@ -111,8 +122,14 @@ public sealed partial class StoryReviewService
         {
             options[i].Text = draft.Options[i].Text;
             options[i].Feedback = draft.Options[i].Feedback;
+            // Đúng/sai: ImageDescription là tên chi tiết làm bằng chứng trong tranh; đổi tên thì định vị lại.
+            if (!string.Equals(options[i].ImageDescription, draft.Options[i].ImageDescription, StringComparison.Ordinal))
+                options[i].HotspotJson = null;
             options[i].ImageDescription = draft.Options[i].ImageDescription;
             options[i].IsMatch = draft.Options[i].IsMatch;
+            options[i].Role = draft.Options[i].Role;
+            options[i].Speaker = draft.Options[i].Speaker;
+            options[i].Emotion = draft.Options[i].Emotion;
             optionRepo.Update(options[i]);
         }
         await _listening.RetireMediaAsync([interaction.Id], options.Select(x => x.Id).ToArray(), cancellationToken);
@@ -128,7 +145,7 @@ public sealed partial class StoryReviewService
     {
         (string Field, string? Value)[] fields =
         [
-            ("question", input.Prompt), ("hint", input.Hint), ("explanation", input.Explanation),
+            ("question", input.Prompt), ("targetLabel", input.TargetLabel), ("hint", input.Hint), ("explanation", input.Explanation),
             ("characterName", input.CharacterName), ("sourceQuote", input.SourceQuote),
             ("matchFeedback", input.MatchFeedback), ("noMatchFeedback", input.NoMatchFeedback), ("waitFeedback", input.WaitFeedback)
         ];
@@ -139,6 +156,8 @@ public sealed partial class StoryReviewService
             if (option.ImageDescription is not null && string.IsNullOrWhiteSpace(option.ImageDescription)) yield return new("FIELD_EMPTY", null, $"options[{option.Id}].imageDescription");
             if (option.Text is not null && string.IsNullOrWhiteSpace(option.Text)) yield return new("FIELD_EMPTY", null, $"options[{option.Id}].text");
             if (option.Feedback is not null && string.IsNullOrWhiteSpace(option.Feedback)) yield return new("FIELD_EMPTY", null, $"options[{option.Id}].feedback");
+            if (option.Speaker is not null && string.IsNullOrWhiteSpace(option.Speaker)) yield return new("FIELD_EMPTY", null, $"options[{option.Id}].speaker");
+            if (option.Emotion is not null && string.IsNullOrWhiteSpace(option.Emotion)) yield return new("FIELD_EMPTY", null, $"options[{option.Id}].emotion");
         }
     }
 
@@ -220,6 +239,10 @@ public sealed partial class StoryReviewService
         AnchorOffset = item.Interaction.AnchorOffset,
         Kind = item.Interaction.Kind?.ToString(),
         Prompt = item.Interaction.Prompt,
+        TargetLabel = item.Interaction.TargetLabel,
+        Hotspot = HotspotBox.TryParse(item.Interaction.HotspotJson),
+        HasValidHotspot = HotspotBox.TryParse(item.Interaction.HotspotJson) is not null,
+        AcceptedOrders = SentenceOrders.Parse(item.Interaction.AcceptedOrdersJson),
         SourceQuote = item.Interaction.SourceQuote,
         CharacterName = item.Interaction.CharacterName,
         HiddenWord = item.Interaction.HiddenWord,
@@ -241,6 +264,9 @@ public sealed partial class StoryReviewService
             BlockId = item.Draft.Options[i].BlockId,
             SourceQuote = o.SourceQuote,
             ImageDescription = o.ImageDescription
+            ,Role = o.Role,
+            Speaker = item.Options[i].Speaker,
+            Emotion = item.Options[i].Emotion
         }).ToList()
     };
     private const string ListeningArtifactPrefix = "listening:";

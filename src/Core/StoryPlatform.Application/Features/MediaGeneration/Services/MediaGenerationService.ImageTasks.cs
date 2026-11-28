@@ -312,6 +312,8 @@ public sealed partial class MediaGenerationService
             if (freshBranch?.ConcurrencyToken == token && freshBranch.Status == GenerationJobStatus.Processing)
                 await AggregateImageBranchAsync(freshBranch, ct);
             await _unitOfWork.CommitTransactionAsync(ct);
+            if (error is null && task.Kind == MediaTaskKind.GenerateImage)
+                await LocateListeningHotspotsAsync(task.StoryVersionId, null, ct);
         }
         catch { await RollbackMediaAsync(CancellationToken.None); throw; }
     }

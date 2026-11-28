@@ -23,7 +23,7 @@ public static class ListeningInteractionMapper
         {
             var item = items[i];
             // Backend tự đặt tương tác cuối truyện, AI chỉ chọn đoạn chứa câu trích.
-            if (ListeningInteractionRules.IsEndOfStory(item.Type)) item = item with { AnchorBlockId = blocks[^1].BlockId };
+            if (ListeningInteractionRules.IsEndOfStory(item.Type, item.TargetAge)) item = item with { AnchorBlockId = blocks[^1].BlockId };
             if (!byId.TryGetValue(item.AnchorBlockId, out var anchor))
             {
                 errors.Add(new("ANCHOR_INVALID", i, "afterBlockId"));
@@ -36,6 +36,10 @@ public static class ListeningInteractionMapper
                 case ListeningInteractionType.WhoSaidIt:
                 case ListeningInteractionType.Checkpoint:
                 case ListeningInteractionType.PicturePrediction:
+                case ListeningInteractionType.PictureSearch:
+                case ListeningInteractionType.SentenceBuilder:
+                case ListeningInteractionType.InferenceQuestion:
+                case ListeningInteractionType.ThoughtBubble:
                     item = LocateBeforeAnchor(item, i, content, anchor.EndOffset, errors);
                     if (item.Type == ListeningInteractionType.PicturePrediction && item.RevealBlockId is not null)
                     {
@@ -50,6 +54,9 @@ public static class ListeningInteractionMapper
                     var span = LocateIn(anchor, item.SourceQuote);
                     if (span is null) errors.Add(new("QUOTE_NOT_FOUND", i, field));
                     else item = item with { SourceStart = span.Value.Start, SourceEnd = span.Value.End };
+                    break;
+                case ListeningInteractionType.CauseEffect:
+                    item = item with { Options = item.Options.Select((option, j) => LocateCard(option, i, j, content, anchor.EndOffset, errors)).ToArray() };
                     break;
                 case ListeningInteractionType.EventOrdering:
                     item = item with { Options = item.Options.Select((option, j) => LocateEvent(option, i, j, byId, errors)).ToArray() };
@@ -79,6 +86,8 @@ public static class ListeningInteractionMapper
             AnchorOffset = draft.AnchorOffset ?? throw new InvalidOperationException("LISTENING_DRAFT_UNRESOLVED"),
             Kind = draft.Kind,
             Prompt = draft.Prompt,
+            TargetLabel = draft.TargetLabel,
+            AcceptedOrdersJson = draft.AcceptedOrdersJson,
             SourceQuote = draft.SourceQuote,
             SourceStart = draft.SourceStart,
             SourceEnd = draft.SourceEnd,
@@ -97,11 +106,14 @@ public static class ListeningInteractionMapper
             Text = o.Text,
             Feedback = o.Feedback,
             IsMatch = o.IsMatch,
+            Role = o.Role,
             CorrectOrder = o.CorrectOrder,
             SourceQuote = o.SourceQuote,
             SourceStart = o.SourceStart,
             SourceEnd = o.SourceEnd,
-            ImageDescription = o.ImageDescription
+            ImageDescription = o.ImageDescription,
+            Speaker = o.Speaker,
+            Emotion = o.Emotion
         }).ToArray();
         return (interaction, options);
     }
@@ -116,6 +128,8 @@ public static class ListeningInteractionMapper
         AnchorOffset = interaction.AnchorOffset,
         Kind = interaction.Kind,
         Prompt = interaction.Prompt,
+        TargetLabel = interaction.TargetLabel,
+        AcceptedOrdersJson = interaction.AcceptedOrdersJson,
         SourceQuote = interaction.SourceQuote,
         SourceStart = interaction.SourceStart,
         SourceEnd = interaction.SourceEnd,
@@ -133,12 +147,15 @@ public static class ListeningInteractionMapper
             Text = o.Text,
             Feedback = o.Feedback,
             IsMatch = o.IsMatch,
+            Role = o.Role,
             CorrectOrder = o.CorrectOrder,
             BlockId = o.SourceStart is { } start ? blocks.FirstOrDefault(b => b.StartOffset <= start && start < b.EndOffset)?.BlockId : null,
             SourceQuote = o.SourceQuote,
             SourceStart = o.SourceStart,
             SourceEnd = o.SourceEnd,
-            ImageDescription = o.ImageDescription
+            ImageDescription = o.ImageDescription,
+            Speaker = o.Speaker,
+            Emotion = o.Emotion
         }).ToArray()
     };
 
@@ -166,6 +183,19 @@ public static class ListeningInteractionMapper
         if (string.IsNullOrEmpty(quote)) return null;
         var at = block.Text.IndexOf(quote, StringComparison.Ordinal);
         return at < 0 ? null : (block.StartOffset + at, block.StartOffset + at + quote.Length);
+    }
+
+    // Thẻ nguyên nhân/kết quả: câu trích của mỗi thẻ phải nằm trong phần trẻ đã nghe.
+    private static ListeningOptionDraft LocateCard(ListeningOptionDraft option, int index, int cardIndex, string content, int anchorEnd,
+        List<ListeningValidationError> errors)
+    {
+        var start = string.IsNullOrEmpty(option.SourceQuote) ? -1 : content[..anchorEnd].IndexOf(option.SourceQuote, StringComparison.Ordinal);
+        if (start < 0)
+        {
+            errors.Add(new("QUOTE_NOT_FOUND", index, $"options[{cardIndex}].sourceQuote"));
+            return option;
+        }
+        return option with { SourceStart = start, SourceEnd = start + option.SourceQuote!.Length };
     }
 
     private static ListeningOptionDraft LocateEvent(ListeningOptionDraft option, int index, int eventIndex,

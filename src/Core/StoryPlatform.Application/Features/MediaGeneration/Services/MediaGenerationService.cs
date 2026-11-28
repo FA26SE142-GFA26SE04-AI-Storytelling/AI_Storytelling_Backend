@@ -38,6 +38,8 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
     private readonly ITtsProvider _ttsProvider;
     private readonly IMediaStorage _mediaStorage;
     private readonly IMediaAlignmentEvaluator _alignmentEvaluator;
+    private readonly IPictureObjectLocator? _pictureObjectLocator;
+    private readonly IAudioWordAligner? _audioWordAligner;
     private readonly IMediaSafetyEvaluator _safetyEvaluator;
     private readonly IAudioQualityGate _audioQualityGate;
     private readonly IStorySegmentService _segmentService;
@@ -76,8 +78,10 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         IMediaUploadValidator? uploadValidator = null, IProviderMediaContextProjector? contextProjector = null,
         IPlanSettingsProvider? planSettings = null,
         StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? tokenQuota = null,
-        StoryPlatform.Application.Abstractions.AI.IAccountAiActivityService? aiActivity = null)
+        StoryPlatform.Application.Abstractions.AI.IAccountAiActivityService? aiActivity = null,
+        IPictureObjectLocator? pictureObjectLocator = null, IAudioWordAligner? audioWordAligner = null)
     {
+        _audioWordAligner = audioWordAligner;
         _planSettings = planSettings;
         _tokenQuota = tokenQuota;
         _unitOfWork = unitOfWork;
@@ -95,6 +99,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         _ttsProvider = ttsProvider;
         _mediaStorage = mediaStorage;
         _alignmentEvaluator = alignmentEvaluator;
+        _pictureObjectLocator = pictureObjectLocator;
         _safetyEvaluator = safetyEvaluator;
         _audioQualityGate = audioQualityGate;
         _segmentService = segmentService;

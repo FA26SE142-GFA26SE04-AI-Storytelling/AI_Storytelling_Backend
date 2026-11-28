@@ -7,6 +7,30 @@ namespace StoryPlatform.UnitTests.Features.ListeningInteractions;
 
 public sealed class ListeningMediaRequirementsTests
 {
+    [Fact]
+    public void PictureSearch_RequiresCurrentIllustrationHotspot()
+    {
+        var interaction = new ListeningInteraction { Id = 7, Type = ListeningInteractionType.PictureSearch,
+            TargetAge = 7, HotspotJson = new HotspotBox(50, 0.4, 0.5, 0.2, 0.2).ToJson() };
+        Assert.Contains("7:i:hotspot", ListeningMediaRequirements.Missing(interaction, [], []));
+        var image = new MediaAsset { Id = 50, Type = MediaType.Illustration, IsCurrent = true,
+            Status = MediaStatus.Ready, ValidationStatus = ValidationStatus.Passed, Url = "picture.png" };
+        Assert.DoesNotContain("7:i:hotspot", ListeningMediaRequirements.Missing(interaction, [], [image]));
+        image.IsCurrent = false;
+        Assert.Contains("7:i:hotspot", ListeningMediaRequirements.Missing(interaction, [], [image]));
+    }
+
+    [Fact]
+    public void FollowAction_RequiresPicturesForItemsAndTarget()
+    {
+        var interaction = new ListeningInteraction { Id = 8, Type = ListeningInteractionType.FollowAction };
+        var options = new[] { new ListeningInteractionOption { Id = 80, ListeningInteractionId = 8, Text = "Gấu", Role = ListeningOptionRole.Item },
+            new ListeningInteractionOption { Id = 81, ListeningInteractionId = 8, Text = "hang", Role = ListeningOptionRole.Target } };
+        var missing = ListeningMediaRequirements.Missing(interaction, options, []);
+        Assert.Contains("8:o80:image", missing);
+        Assert.Contains("8:o81:image", missing);
+    }
+
     [Theory]
     [InlineData(ListeningInteractionType.WhoSaidIt)]
     [InlineData(ListeningInteractionType.CharacterLetter)]

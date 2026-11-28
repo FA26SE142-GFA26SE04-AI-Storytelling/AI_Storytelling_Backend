@@ -20,8 +20,8 @@ public static partial class ListeningInteractionRules
     public static int ReadAloudMaxWords(AgeBand ageBand) => ageBand == AgeBand.Age_6_8 ? 15 : 25;
 
     /// <summary>Loại đặt sau đoạn cuối, không chiếm chỗ dừng giữa truyện.</summary>
-    public static bool IsEndOfStory(ListeningInteractionType type) =>
-        type is ListeningInteractionType.EventOrdering or ListeningInteractionType.ReadAloud;
+    public static bool IsEndOfStory(ListeningInteractionType type, int? targetAge = null) =>
+        type == ListeningInteractionType.ReadAloud || type == ListeningInteractionType.EventOrdering && targetAge != 7;
 
     public static IReadOnlyList<ListeningValidationError> Validate(
         IReadOnlyList<ListeningInteractionDraft> items, ListeningRuleContext context)
@@ -40,7 +40,16 @@ public static partial class ListeningInteractionRules
                 case ListeningInteractionType.Checkpoint: ValidateCheckpoint(item, i, errors); break;
                 case ListeningInteractionType.RolePlay: ValidateRolePlay(item, i, context, errors); break;
                 case ListeningInteractionType.FillBlank: ValidateFillBlankStructure(item, i, errors); break;
-                case ListeningInteractionType.EventOrdering: ValidateOrdering(item, i, errors); break;
+                case ListeningInteractionType.EventOrdering: ValidateOrdering(item, i, errors); if (context.TargetAge == 7) ValidateEventOrderingAge7(item, i, errors); break;
+                case ListeningInteractionType.PictureSearch: ValidatePictureSearch(item, i, context, errors); break;
+                case ListeningInteractionType.TrueFalse: ValidateTrueFalse(item, i, context, errors); break;
+                case ListeningInteractionType.FollowAction: ValidateFollowAction(item, i, context, errors); break;
+                case ListeningInteractionType.SentenceBuilder: ValidateSentenceBuilder(item, i, context, errors); break;
+                case ListeningInteractionType.AlternateReading: ValidateAlternateReading(item, i, context, errors); break;
+                case ListeningInteractionType.InferenceQuestion: ValidateInferenceQuestion(item, i, context, errors); break;
+                case ListeningInteractionType.CauseEffect: ValidateCauseEffect(item, i, context, errors); break;
+                case ListeningInteractionType.SceneTitle: ValidateSceneTitle(item, i, context, errors); break;
+                case ListeningInteractionType.ThoughtBubble: ValidateThoughtBubble(item, i, context, errors); break;
                 case ListeningInteractionType.PicturePrediction when context.TargetAge == 6: ValidatePictureAge6(item, i, errors); break;
                 case ListeningInteractionType.CharacterLetter: ValidateCharacterLetter(item, i, context, errors); break;
                 case ListeningInteractionType.WhoSaidIt: ValidateWhoSaidIt(item, i, context, errors); break;
@@ -81,7 +90,9 @@ public static partial class ListeningInteractionRules
 
         // Chỉ xét câu hỏi: thẻ cảm xúc ("Thỏ đang sợ") hay hình đoán sai ("Một bạn sóc nhỏ") vốn không có trong truyện;
         // sự kiện đã được bám truyện bằng câu trích nguyên văn.
-        if (item.Prompt is not null && !LearningArtifactGrounding.HasRelevantTerm(item.Prompt, context.GroundingSource))
+        // Bong bóng suy nghĩ: câu hỏi chỉ là "{tên} đang nghĩ gì?"; căn cứ là tên nhân vật và câu trích tình huống (đã kiểm riêng).
+        if (item.Type is not (ListeningInteractionType.PictureSearch or ListeningInteractionType.ThoughtBubble) && item.Prompt is not null &&
+            !LearningArtifactGrounding.HasRelevantTerm(item.Prompt, context.GroundingSource))
             errors.Add(new("NOT_GROUNDED", index, "question"));
 
         if (item.Type == ListeningInteractionType.EventOrdering)
@@ -143,7 +154,7 @@ public static partial class ListeningInteractionRules
         if (item.AnchorOffset is not { } anchor) return; // mapper đã báo ANCHOR_INVALID
         var isBlockEnd = context.Blocks.Any(b => b.EndOffset == anchor);
         if (!isBlockEnd || !LastBlockRuleHolds(item, anchor, context.Blocks) ||
-            (!IsEndOfStory(item.Type) && context.OccupiedAnchorOffsets.Contains(anchor)) || !seen.Add(anchor))
+            (!IsEndOfStory(item.Type, context.TargetAge) && context.OccupiedAnchorOffsets.Contains(anchor)) || !seen.Add(anchor))
             errors.Add(new("ANCHOR_INVALID", index, "afterBlockId"));
         // Mỗi mục một lỗi neo: chỉ xét vùng khi neo đã hợp lệ theo luật chung.
         else if (index < context.Zones.Count && !context.Zones[index].Contains(item.AnchorBlockId))
@@ -152,7 +163,7 @@ public static partial class ListeningInteractionRules
 
     // Sắp xếp và Luyện đọc to phải đặt sau đoạn cuối (trẻ đã nghe hết truyện).
     private static bool LastBlockRuleHolds(ListeningInteractionDraft item, int anchor, IReadOnlyList<StoryTextBlock> blocks) =>
-        (anchor == blocks[^1].EndOffset) == IsEndOfStory(item.Type);
+        (anchor == blocks[^1].EndOffset) == IsEndOfStory(item.Type, item.TargetAge);
 
     private static void ValidateReadAloud(ListeningInteractionDraft item, int index, ListeningRuleContext context,
         List<ListeningValidationError> errors)
@@ -239,6 +250,7 @@ public static partial class ListeningInteractionRules
     private static IEnumerable<(string Field, string? Value)> TextFields(ListeningInteractionDraft item)
     {
         yield return ("question", item.Prompt);
+        yield return ("targetLabel", item.TargetLabel);
         yield return ("characterName", item.CharacterName);
         yield return ("hint", item.Hint);
         yield return ("explanation", item.Explanation);
@@ -262,6 +274,7 @@ public static partial class ListeningInteractionRules
                 for (var j = 0; j < item.Options.Count; j++) yield return ($"options[{j}].feedback", item.Options[j].Feedback);
                 break;
             case ListeningInteractionType.RolePlay:
+            case ListeningInteractionType.AlternateReading:
             case ListeningInteractionType.ReadAloud:
             case ListeningInteractionType.CharacterLetter:
                 yield return ("praiseFeedback", item.MatchFeedback);
@@ -272,8 +285,21 @@ public static partial class ListeningInteractionRules
                 break;
             case ListeningInteractionType.WhoSaidIt:
             case ListeningInteractionType.EventOrdering:
+            case ListeningInteractionType.PictureSearch:
+            case ListeningInteractionType.TrueFalse:
+            case ListeningInteractionType.FollowAction:
+            case ListeningInteractionType.SentenceBuilder:
                 yield return ("matchFeedback", item.MatchFeedback);
                 yield return ("retryFeedback", item.NoMatchFeedback);
+                break;
+            case ListeningInteractionType.InferenceQuestion:
+            case ListeningInteractionType.CauseEffect:
+            case ListeningInteractionType.ThoughtBubble:
+                yield return ("matchFeedback", item.MatchFeedback);
+                break;
+            case ListeningInteractionType.SceneTitle:
+                yield return ("matchFeedback", item.MatchFeedback);
+                for (var j = 0; j < item.Options.Count; j++) yield return ($"options[{j}].feedback", item.Options[j].Feedback);
                 break;
             case ListeningInteractionType.PicturePrediction:
                 yield return ("waitFeedback", item.WaitFeedback);
@@ -291,28 +317,33 @@ public static partial class ListeningInteractionRules
             if (present) errors.Add(new("SCHEMA_INVALID", index, field));
         }
         Forbid(item.Kind is not null && t != ListeningInteractionType.Checkpoint, "kind");
-        Forbid(item.Prompt is not null && t is not (ListeningInteractionType.Checkpoint or ListeningInteractionType.PicturePrediction), "question");
-        Forbid(item.SourceQuote is not null && t is ListeningInteractionType.EventOrdering or ListeningInteractionType.CharacterLetter, "sourceQuote");
-        Forbid(item.CharacterName is not null && t is not (ListeningInteractionType.RolePlay or ListeningInteractionType.CharacterLetter), "characterName");
+        Forbid(item.Prompt is not null && t is not (ListeningInteractionType.Checkpoint or ListeningInteractionType.PicturePrediction or ListeningInteractionType.PictureSearch or ListeningInteractionType.FollowAction or ListeningInteractionType.InferenceQuestion or ListeningInteractionType.SceneTitle or ListeningInteractionType.ThoughtBubble), "question");
+        Forbid(item.TargetLabel is not null && t != ListeningInteractionType.PictureSearch, "targetLabel");
+        Forbid(item.AcceptedOrdersJson is not null && t != ListeningInteractionType.SentenceBuilder, "acceptedOrders");
+        Forbid(item.SourceQuote is not null && t is ListeningInteractionType.EventOrdering or ListeningInteractionType.CharacterLetter or ListeningInteractionType.TrueFalse or ListeningInteractionType.FollowAction or ListeningInteractionType.AlternateReading or ListeningInteractionType.CauseEffect or ListeningInteractionType.SceneTitle, "sourceQuote");
+        Forbid(item.CharacterName is not null && t is not (ListeningInteractionType.RolePlay or ListeningInteractionType.CharacterLetter or ListeningInteractionType.FollowAction or ListeningInteractionType.ThoughtBubble), "characterName");
         Forbid(item.BlankIndex is not null && t != ListeningInteractionType.CharacterLetter, "blankIndex");
         Forbid(item.HiddenWord is not null && t != ListeningInteractionType.FillBlank, "hiddenWord");
         Forbid(item.Hint is not null && t != ListeningInteractionType.FillBlank, "hint");
         Forbid(item.RevealOffset is not null && t != ListeningInteractionType.PicturePrediction, "revealBlockId");
-        Forbid(item.Explanation is not null && t != ListeningInteractionType.Checkpoint, "explanation");
+        Forbid(item.Explanation is not null && t is not (ListeningInteractionType.Checkpoint or ListeningInteractionType.InferenceQuestion or ListeningInteractionType.SceneTitle), "explanation");
         Forbid(item.MatchFeedback is not null && t is ListeningInteractionType.Checkpoint or ListeningInteractionType.PicturePrediction, "matchFeedback");
-        Forbid(item.NoMatchFeedback is not null && t is ListeningInteractionType.RolePlay or ListeningInteractionType.PicturePrediction or ListeningInteractionType.ReadAloud or ListeningInteractionType.CharacterLetter, "noMatchFeedback");
+        Forbid(item.NoMatchFeedback is not null && t is ListeningInteractionType.RolePlay or ListeningInteractionType.PicturePrediction or ListeningInteractionType.ReadAloud or ListeningInteractionType.CharacterLetter or ListeningInteractionType.AlternateReading or ListeningInteractionType.InferenceQuestion or ListeningInteractionType.CauseEffect or ListeningInteractionType.SceneTitle or ListeningInteractionType.ThoughtBubble, "noMatchFeedback");
         Forbid(item.WaitFeedback is not null && t != ListeningInteractionType.PicturePrediction, "waitFeedback");
-        Forbid(item.Options.Count > 0 && t is ListeningInteractionType.RolePlay or ListeningInteractionType.ReadAloud, "options");
+        Forbid(item.Options.Count > 0 && t is ListeningInteractionType.RolePlay or ListeningInteractionType.ReadAloud or ListeningInteractionType.PictureSearch, "options");
         Forbid(t == ListeningInteractionType.Checkpoint && item.Kind is null, "kind");
-        Forbid(t is ListeningInteractionType.Checkpoint or ListeningInteractionType.PicturePrediction && string.IsNullOrWhiteSpace(item.Prompt), "question");
+        Forbid(t is ListeningInteractionType.Checkpoint or ListeningInteractionType.PicturePrediction or ListeningInteractionType.PictureSearch or ListeningInteractionType.FollowAction or ListeningInteractionType.InferenceQuestion or ListeningInteractionType.ThoughtBubble && string.IsNullOrWhiteSpace(item.Prompt), "question");
         for (var j = 0; j < item.Options.Count; j++)
         {
             var o = item.Options[j];
-            Forbid(o.Feedback is not null && t is ListeningInteractionType.FillBlank or ListeningInteractionType.EventOrdering or ListeningInteractionType.CharacterLetter or ListeningInteractionType.WhoSaidIt, OptionField(item, j, "feedback"));
-            Forbid(o.IsMatch && t is ListeningInteractionType.FillBlank or ListeningInteractionType.EventOrdering, OptionField(item, j, "isMatch"));
-            Forbid(o.CorrectOrder is not null && t != ListeningInteractionType.EventOrdering, OptionField(item, j, "order"));
-            Forbid(o.SourceQuote is not null && t != ListeningInteractionType.EventOrdering, OptionField(item, j, "sourceQuote"));
-            var optionHasPicture = t is ListeningInteractionType.PicturePrediction or ListeningInteractionType.WhoSaidIt or ListeningInteractionType.CharacterLetter ||
+            Forbid(o.Feedback is not null && t is ListeningInteractionType.FillBlank or ListeningInteractionType.EventOrdering or ListeningInteractionType.CharacterLetter or ListeningInteractionType.WhoSaidIt or ListeningInteractionType.TrueFalse or ListeningInteractionType.FollowAction or ListeningInteractionType.SentenceBuilder or ListeningInteractionType.AlternateReading or ListeningInteractionType.InferenceQuestion or ListeningInteractionType.CauseEffect or ListeningInteractionType.ThoughtBubble, OptionField(item, j, "feedback"));
+            Forbid(o.IsMatch && t is ListeningInteractionType.FillBlank or ListeningInteractionType.EventOrdering or ListeningInteractionType.AlternateReading or ListeningInteractionType.CauseEffect, OptionField(item, j, "isMatch"));
+            Forbid(o.CorrectOrder is not null && t is not (ListeningInteractionType.EventOrdering or ListeningInteractionType.SentenceBuilder or ListeningInteractionType.AlternateReading or ListeningInteractionType.CauseEffect), OptionField(item, j, "order"));
+            Forbid(o.Role != ListeningOptionRole.None && t is not (ListeningInteractionType.FollowAction or ListeningInteractionType.CauseEffect or ListeningInteractionType.InferenceQuestion), OptionField(item, j, "role"));
+            Forbid(o.Speaker is not null && t != ListeningInteractionType.AlternateReading, OptionField(item, j, "speaker"));
+            Forbid(o.Emotion is not null && t != ListeningInteractionType.ThoughtBubble, OptionField(item, j, "emotion"));
+            Forbid(o.SourceQuote is not null && t is not (ListeningInteractionType.EventOrdering or ListeningInteractionType.CauseEffect), OptionField(item, j, "sourceQuote"));
+            var optionHasPicture = t is ListeningInteractionType.PicturePrediction or ListeningInteractionType.WhoSaidIt or ListeningInteractionType.CharacterLetter or ListeningInteractionType.FollowAction or ListeningInteractionType.TrueFalse ||
                 t == ListeningInteractionType.Checkpoint && item.Kind == CheckpointKind.Literal;
             Forbid(o.ImageDescription is not null && !optionHasPicture, OptionField(item, j, "imageDescription"));
             Forbid(string.IsNullOrWhiteSpace(o.Text), OptionField(item, j, "text"));

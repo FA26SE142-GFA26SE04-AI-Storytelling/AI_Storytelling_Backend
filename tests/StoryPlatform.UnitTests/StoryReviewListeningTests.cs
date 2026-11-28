@@ -32,7 +32,7 @@ public sealed class StoryReviewListeningTests
         Assert.True(dto.Required);
         Assert.Empty(dto.Items);
         Assert.Empty(dto.AgeSets);
-        Assert.All(dto.Plan, x => Assert.Equal(6, x.TargetAge));
+        Assert.Equal([6, 7, 8], dto.Plan.Select(x => x.TargetAge).Distinct().Order());
         Assert.Contains(dto.Issues, x => x.Code == "LISTENING_MISSING");
     }
 
@@ -105,14 +105,12 @@ public sealed class StoryReviewListeningTests
     {
         var uow = ListeningTestStory.SeedReviewStory();
         await ListeningTestStory.SeedPackageAsync(uow);
-        uow.Seed(new ListeningInteraction { Id = 900, StoryVersionId = 1, TargetAge = 7,
-            Type = ListeningInteractionType.Checkpoint, AnchorOffset = ListeningTestStory.Block("P1").EndOffset });
         uow.Seed(new ListeningInteraction { Id = 901, StoryVersionId = 1,
             Type = ListeningInteractionType.Checkpoint, AnchorOffset = ListeningTestStory.Block("P1").EndOffset });
 
         var dto = await Build(uow).Service.GetListeningForReviewAsync(1, 1);
 
-        Assert.Equal(new[] { 6, 7 }, dto.AgeSets.Select(x => x.TargetAge));
+        Assert.Equal(new[] { 6, 7, 8 }, dto.AgeSets.Select(x => x.TargetAge));
         Assert.DoesNotContain(dto.Items, x => x.Id == 901);
         Assert.Empty(dto.Issues);
     }
@@ -257,7 +255,7 @@ public sealed class StoryReviewListeningTests
         Assert.Equal(dto.Plan.Sum(p => p.Count), dto.Items.Count);
         Assert.Contains(dto.Plan, p => p.Type == "CharacterLetter");
         Assert.Contains(dto.Plan, p => p.Type == "WhoSaidIt" && p.Count == 1);
-        Assert.Equal(6, Assert.Single(dto.AgeSets).TargetAge);
+        Assert.Equal([6, 7, 8], dto.AgeSets.Select(x => x.TargetAge));
     }
 
     [Fact]

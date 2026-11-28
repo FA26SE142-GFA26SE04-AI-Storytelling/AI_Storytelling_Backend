@@ -47,6 +47,12 @@ public sealed class MediaGenerationWorker : BackgroundService
                     // Rảnh thì tạo bù audio câu hướng dẫn cho truyện cũ, mỗi vòng một câu.
                     if (!result.JobFound)
                         backfilled = await processor.BackfillListeningInstructionAudioAsync(stoppingToken);
+                    // Rảnh nữa thì định vị bù khung đồ vật (sửa tên, lần lỗi trước, truyện cũ).
+                    if (!result.JobFound && !backfilled)
+                        backfilled = await processor.BackfillListeningHotspotsAsync(stoppingToken);
+                    // Cuối cùng: bù mốc từng chữ cho audio Gemini cũ (chỉ khi bật căn mốc bằng STT).
+                    if (!result.JobFound && !backfilled)
+                        backfilled = await processor.BackfillWordTimingsAsync(stoppingToken);
                 }
                 if (!result.JobFound && !backfilled)
                 {

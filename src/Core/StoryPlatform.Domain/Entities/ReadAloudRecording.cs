@@ -19,6 +19,9 @@ public class ReadAloudRecording : BaseEntity
     public int? ListeningInteractionId { get; set; }
     public virtual ListeningInteraction? ListeningInteraction { get; set; }
 
+    /// <summary>AlternateReading: lượt thoại (option) bé đã đọc; null với các đoạn luyện khác.</summary>
+    public int? ListeningInteractionOptionId { get; set; }
+
     public string AudioStoragePath { get; set; } = string.Empty;
     public string AudioContentType { get; set; } = string.Empty;
     public int AudioBytes { get; set; }

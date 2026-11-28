@@ -152,7 +152,8 @@ public partial class ParentReadingFeedbackService : IParentReadingFeedbackServic
         if (ids.Count == 0) return new();
         var interactions = (await _unitOfWork.Repository<ListeningInteraction>().FindAsync(
             x => ids.Contains(x.Id) && x.TargetAge != null, cancellationToken: ct)).ToDictionary(x => x.Id);
-        var optionIds = attempts.Where(x => x.SelectedOptionId.HasValue).Select(x => x.SelectedOptionId!.Value).Distinct().ToList();
+        var optionIds = attempts.Where(x => x.SelectedOptionId.HasValue).Select(x => x.SelectedOptionId!.Value)
+            .Concat(recordings.Where(x => x.ListeningInteractionOptionId.HasValue).Select(x => x.ListeningInteractionOptionId!.Value)).Distinct().ToList();
         var options = (await _unitOfWork.Repository<ListeningInteractionOption>().FindAsync(
             x => optionIds.Contains(x.Id), cancellationToken: ct)).ToDictionary(x => x.Id);
         var result = new Dictionary<int, IReadOnlyList<ParentListeningFeedbackDto>>();
@@ -167,7 +168,10 @@ public partial class ParentReadingFeedbackService : IParentReadingFeedbackServic
             {
                 if (!interactions.TryGetValue(interactionId, out var interaction)) continue;
                 var choices = sessionAttempts.Where(x => x.ListeningInteractionId == interactionId).OrderBy(x => x.AttemptedAt).ThenBy(x => x.Id).ToArray();
-                var recording = sessionRecordings.Where(x => x.ListeningInteractionId == interactionId).OrderByDescending(x => x.RecordedAt).FirstOrDefault();
+                var recording = sessionRecordings.Where(x => x.ListeningInteractionId == interactionId && x.ListeningInteractionOptionId == null)
+                    .OrderByDescending(x => x.RecordedAt).FirstOrDefault();
+                var lineRecordings = sessionRecordings.Where(x => x.ListeningInteractionId == interactionId && x.ListeningInteractionOptionId != null)
+                    .OrderBy(x => options.TryGetValue(x.ListeningInteractionOptionId!.Value, out var line) ? line.SortOrder : int.MaxValue).ToArray();
                 var statuses = ReadJson<string[]>(recording?.WordStatusesJson) ?? [];
                 var words = Regex.Matches((interaction.SourceQuote ?? string.Empty).Normalize(), @"[\p{L}\p{N}]+")
                     .Select(match => match.Value).ToArray();
@@ -177,10 +181,31 @@ public partial class ParentReadingFeedbackService : IParentReadingFeedbackServic
                     ChoiceCount = choices.Length, Graded = choices.Any(x => x.IsMatch.HasValue),
                     Choices = choices.Select(x => new ParentListeningChoiceDto(x.SelectedOptionId,
                         x.SelectedOptionId is int optionId && options.TryGetValue(optionId, out var option) ? option.Text : x.AnswerText,
-                        x.IsMatch, x.AttemptedAt)).ToArray(),
+                        x.IsMatch, x.AttemptedAt)
+                    {
+                        Truth = interaction.Type == ListeningInteractionType.TrueFalse && bool.TryParse(x.AnswerText, out var truth) ? truth : null,
+                        ActionTargetOptionId = interaction.Type is ListeningInteractionType.FollowAction or ListeningInteractionType.CauseEffect
+                            ? ReadJson<Dictionary<string, int>>(x.AnswerText)?.GetValueOrDefault("target") : null,
+                        OrderedOptionIds = interaction.Type is ListeningInteractionType.EventOrdering or ListeningInteractionType.SentenceBuilder
+                            ? ReadJson<int[]>(x.OrderedOptionIdsJson) : null
+                    }).ToArray(),
+                    Taps = interaction.Type == ListeningInteractionType.PictureSearch
+                        ? choices.Select(x => (Attempt: x, Coordinates: ReadJson<Dictionary<string, double>>(x.AnswerText)))
+                            .Where(x => x.Coordinates is not null && x.Coordinates.ContainsKey("x") && x.Coordinates.ContainsKey("y"))
+                            .Select(x => new ParentListeningTapDto(x.Coordinates!["x"], x.Coordinates["y"], x.Attempt.IsMatch, x.Attempt.AttemptedAt)).ToArray()
+                        : [],
                     Steps = ReadJson<Dictionary<string, string>>(choices.LastOrDefault()?.StepResultsJson) ?? new(),
                     WordStatuses = statuses,
-                    UnclearWords = words.Where((_, i) => i < statuses.Length && statuses[i] == "Retry").ToArray()
+                    UnclearWords = words.Where((_, i) => i < statuses.Length && statuses[i] == "Retry").ToArray(),
+                    Speaker = interaction.Type == ListeningInteractionType.AlternateReading ? choices.FirstOrDefault()?.AnswerText : null,
+                    Lines = lineRecordings.Where(x => options.ContainsKey(x.ListeningInteractionOptionId!.Value)).Select(x =>
+                    {
+                        var text = options[x.ListeningInteractionOptionId!.Value].Text;
+                        var lineStatuses = ReadJson<string[]>(x.WordStatusesJson) ?? [];
+                        var lineWords = Regex.Matches(text.Normalize(), @"[\p{L}\p{N}]+").Select(match => match.Value).ToArray();
+                        return new ParentListeningLineDto(x.ListeningInteractionOptionId!.Value, text, lineStatuses,
+                            lineWords.Where((_, i) => i < lineStatuses.Length && lineStatuses[i] == "Retry").ToArray(), x.RecordedAt);
+                    }).ToArray()
                 });
             }
             result[sessionId] = feedback;

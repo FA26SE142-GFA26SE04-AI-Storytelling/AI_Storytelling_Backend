@@ -241,11 +241,11 @@ public sealed class ContentGenerationServiceTests
     }
 
     [Fact]
-    public async Task Last_listening_type_cannot_complete_an_incomplete_package()
+    public async Task Age6LastType_HandsOffToAge7Set()
     {
         var store = SeedListening(ListeningInteractionType.WhoSaidIt);
         Assert.True(await Service(store, new FakeAIClient()).ProcessNextAsync());
-        Assert.Equal("LISTENING_PACKAGE_INVALID", store.Items<StoryGenerationJob>().Single().ErrorCode);
+        Assert.Equal(ListeningInteractionType.PictureSearch, PendingJob(store).ListeningInteractionType);
         Assert.NotEqual(StoryStatus.ContentReview, store.Items<Story>().Single().Status);
     }
 
@@ -478,9 +478,22 @@ public sealed class ContentGenerationServiceTests
     public async Task Quiz_hands_off_to_first_listening_type_and_story_waits_for_review_after_the_last()
     {
         var store = Seed();
-        var ai = new FakeAIClient(storyText: "Lan và Minh cùng chia sẻ một quyển sách.\n\nHai bạn đọc sách dưới gốc cây.")
+        var ai = new FakeAIClient(storyText: "Lan và Minh cùng chia sẻ một quyển sách. Hai bạn rất vui.\n\nHai bạn đọc sách dưới gốc cây.")
         {
-            Listening = request => new GenerateListeningInteractionResponse
+            Listening = request => request.TargetAge == 8 ? new GenerateListeningInteractionResponse
+            {
+                InferenceQuestions = [new InferenceQuestionItemDto
+                { AfterBlockId = "P1", Question = "Vì sao Lan và Minh chia sẻ sách?",
+                    Passage = "Lan và Minh cùng chia sẻ một quyển sách. Hai bạn rất vui.",
+                    Clues = ["Lan và Minh", "chia sẻ một quyển sách", "Hai bạn rất vui"], Explanation = "Hai bạn chia sẻ sách nên rất vui.",
+                    MatchFeedback = "Con suy luận giỏi quá!",
+                    Answers = [new("Vì hai bạn yêu quý nhau", true), new("Vì hai bạn muốn đi ngủ", false), new("Vì hai bạn đang đói", false)] }]
+            } : request.TargetAge == 7 ? new GenerateListeningInteractionResponse
+            {
+                PictureSearches = [new PictureSearchItemDto
+                { AfterBlockId = "P1", SourceQuote = "Lan và Minh cùng chia sẻ một quyển sách.", TargetLabel = "quyển sách",
+                    Question = "Tìm quyển sách trong tranh", MatchFeedback = "Con tìm giỏi quá!", RetryFeedback = "Nhìn kỹ lại nhé." }]
+            } : new GenerateListeningInteractionResponse
             {
                 Checkpoints =
                 [
@@ -507,11 +520,13 @@ public sealed class ContentGenerationServiceTests
         Assert.NotEqual(StoryStatus.ContentReview, story.Status);
 
         Assert.True(await service.ProcessNextAsync());
+        Assert.True(await service.ProcessNextAsync());
+        Assert.True(await service.ProcessNextAsync());
         Assert.False(await service.ProcessNextAsync());
         Assert.Equal(StoryStatus.ContentReview, story.Status);
-        Assert.Equal(new[] { "content", "safety", "vocabulary", "quiz", "listening:Checkpoint" }, ai.Calls);
-        Assert.Single(store.Items<ListeningInteraction>());
-        Assert.Equal(2, store.Items<ListeningInteractionOption>().Count);
+        Assert.Equal(new[] { "content", "safety", "vocabulary", "quiz", "listening:Checkpoint", "listening:PictureSearch", "listening:InferenceQuestion" }, ai.Calls);
+        Assert.Equal(3, store.Items<ListeningInteraction>().Count);
+        Assert.Equal(8, store.Items<ListeningInteractionOption>().Count);   // 2 thẻ điểm dừng + 3 đáp án + 3 manh mối
     }
 
     [Fact]
@@ -521,29 +536,36 @@ public sealed class ContentGenerationServiceTests
         var ai = new FakeAIClient();
         var service = Service(store, ai);
 
-        for (var i = 0; i < 5; i++) Assert.True(await service.ProcessNextAsync());
+        for (var i = 0; i < 15; i++) Assert.True(await service.ProcessNextAsync());
         Assert.False(await service.ProcessNextAsync());
 
-        Assert.Equal(new[] { "listening:Checkpoint", "listening:RolePlay", "listening:CharacterLetter", "listening:PicturePrediction", "listening:WhoSaidIt" }, ai.Calls);
+        Assert.Equal(new[] { "listening:Checkpoint", "listening:RolePlay", "listening:CharacterLetter", "listening:PicturePrediction", "listening:WhoSaidIt",
+            "listening:PictureSearch", "listening:TrueFalse", "listening:SentenceBuilder", "listening:FollowAction", "listening:EventOrdering",
+            "listening:AlternateReading", "listening:InferenceQuestion", "listening:SceneTitle", "listening:ThoughtBubble", "listening:CauseEffect" }, ai.Calls);
         Assert.Equal(new[] { "", "P1", "P1,P2", "P1,P2,P4", "P1,P2,P4,P5" },
-            ai.ListeningRequests.Select(r => string.Join(",", r.OccupiedBlockIds)));
+            ai.ListeningRequests.Take(5).Select(r => string.Join(",", r.OccupiedBlockIds)));
         Assert.Equal(["P2"], ai.ListeningRequests[1].DialogueBlockIds);
         Assert.Empty(ai.ListeningRequests[0].DialogueBlockIds);
         // Vùng theo spec mục 4.1 cho truyện 6 đoạn: P1 | P2 | P3 | P4-P5; RolePlay lấy vùng có thoại (P2).
         Assert.Equal(new[] { "P1", "P2", "P4", "P5", "P3" },
-            ai.ListeningRequests.Select(r => string.Join("|", r.AllowedBlockIds.Select(z => string.Join(",", z)))));
-        Assert.Equal(new[] { 1, 1, 1, 1, 1 }, ai.ListeningRequests.Select(r => r.Count));
+            ai.ListeningRequests.Take(5).Select(r => string.Join("|", r.AllowedBlockIds.Select(z => string.Join(",", z)))));
+        Assert.All(ai.ListeningRequests, r => Assert.Equal(1, r.Count));
+        Assert.All(ai.ListeningRequests.Skip(5).Take(5), r => Assert.Equal(7, r.TargetAge));
+        Assert.All(ai.ListeningRequests.Skip(10), r => Assert.Equal(8, r.TargetAge));
+        Assert.Equal(["P2"], ai.ListeningRequests[10].DialogueBlockIds);
         Assert.All(ai.ListeningRequests, r => Assert.EndsWith("-attempt-1", r.RequestId));
 
         var saved = store.Items<ListeningInteraction>();
-        Assert.Equal(5, saved.Count);
-        Assert.All(saved, x => Assert.Equal(6, x.TargetAge));
-        Assert.DoesNotContain(saved, x => x.Type is ListeningInteractionType.ReadAloud or ListeningInteractionType.EventOrdering);
+        Assert.Equal(15, saved.Count);
+        Assert.Equal(5, saved.Count(x => x.TargetAge == 6));
+        Assert.Equal(5, saved.Count(x => x.TargetAge == 7));
+        Assert.Equal(5, saved.Count(x => x.TargetAge == 8));
+        Assert.DoesNotContain(saved.Where(x => x.TargetAge == 6), x => x.Type is ListeningInteractionType.ReadAloud or ListeningInteractionType.EventOrdering);
 
         var jobs = store.Items<StoryGenerationJob>().Where(x => x.Operation == GenerationJobOperation.GenerateListeningInteraction).ToArray();
-        Assert.Equal(5, jobs.Length);
+        Assert.Equal(15, jobs.Length);
         Assert.All(jobs, x => Assert.Equal(GenerationJobStatus.Completed, x.Status));
-        Assert.Equal(5, jobs.Select(x => x.OperationKey).Distinct().Count());
+        Assert.Equal(15, jobs.Select(x => x.OperationKey).Distinct().Count());
         Assert.Equal(StoryStatus.ContentReview, store.Items<Story>().Single().Status);
     }
 
@@ -661,7 +683,7 @@ public sealed class ContentGenerationServiceTests
         Assert.Equal("pending_listening", midway.CurrentStep);
         Assert.Equal("pending", midway.Listening);
 
-        for (var i = 0; i < 4; i++) Assert.True(await service.ProcessNextAsync());
+        for (var i = 0; i < 14; i++) Assert.True(await service.ProcessNextAsync());
         var done = await service.GetProgressAsync(1, 1);
         Assert.True(done.IsComplete);
         Assert.Equal("complete", done.CurrentStep);
@@ -1339,7 +1361,11 @@ public sealed class ContentGenerationServiceTests
             Calls.Add($"listening:{request.InteractionType}");
             ListeningRequests.Add(request);
             return Task.FromResult(Listening?.Invoke(request) ??
-                ListeningTestStory.Age6AiResponse(Enum.Parse<ListeningInteractionType>(request.InteractionType)));
+                (request.TargetAge == 8
+                    ? ListeningTestStory.Age8AiResponse(Enum.Parse<ListeningInteractionType>(request.InteractionType))
+                    : request.TargetAge == 7
+                    ? ListeningTestStory.Age7AiResponse(Enum.Parse<ListeningInteractionType>(request.InteractionType))
+                    : ListeningTestStory.Age6AiResponse(Enum.Parse<ListeningInteractionType>(request.InteractionType))));
         }
         public Task<EvaluateContentSafetyResponse> EvaluateContentSafetyAsync(EvaluateContentSafetyRequest request, CancellationToken cancellationToken = default)
         {

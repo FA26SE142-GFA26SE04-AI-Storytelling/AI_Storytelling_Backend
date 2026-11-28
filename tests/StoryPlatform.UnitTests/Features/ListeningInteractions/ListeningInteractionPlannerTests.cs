@@ -44,8 +44,60 @@ public sealed class ListeningInteractionPlannerTests
         Assert.Equal(6, ListeningInteractionPlanner.Create(6, Story(6)).TargetAge);
 
     [Theory]
-    [InlineData(7)]
     [InlineData(9)]
+    [InlineData(10)]
     public void UnbuiltAge_HasEmptyPlan(int age) =>
         Assert.Empty(ListeningInteractionPlanner.Create(age, Story(6)).Items);
+
+    private static string DescribeAge8(int blocks, bool dialogue = true) =>
+        string.Join(",", ListeningInteractionPlanner.Create(8, Story(blocks, dialogue)).Items.Select(x => $"{x.Type}x{x.Count}"));
+
+    [Theory]
+    [InlineData(1, "")]
+    [InlineData(2, "AlternateReadingx1")]
+    [InlineData(3, "AlternateReadingx1,InferenceQuestionx1")]
+    [InlineData(5, "AlternateReadingx1,InferenceQuestionx1,SceneTitlex1,ThoughtBubblex1")]
+    [InlineData(6, "AlternateReadingx1,InferenceQuestionx1,SceneTitlex1,ThoughtBubblex1,CauseEffectx1")]
+    [InlineData(12, "AlternateReadingx1,InferenceQuestionx1,SceneTitlex1,ThoughtBubblex1,CauseEffectx1")]
+    public void Age8_PrioritizesFiveTypes(int blocks, string expected) => Assert.Equal(expected, DescribeAge8(blocks));
+
+    [Fact]
+    public void Age8_WithoutDialogue_AndOneSlot_AsksOneInferenceQuestion() =>
+        Assert.Equal("InferenceQuestionx1", DescribeAge8(2, dialogue: false));
+
+    [Fact]
+    public void Age8_WithoutDialogue_AsksTwoInferenceQuestionsInsteadOfReadingAlong() =>
+        Assert.Equal("InferenceQuestionx2,SceneTitlex1,ThoughtBubblex1,CauseEffectx1", DescribeAge8(6, dialogue: false));
+
+    [Fact]
+    public void Age8_UsesDistinctZones_ReadingAlongOnDialogue_ThoughtBubbleLatest()
+    {
+        var plan = ListeningInteractionPlanner.Create(8, Story(6));
+        Assert.Equal(8, plan.TargetAge);
+        var zones = plan.Items.SelectMany(x => x.Zones).ToList();
+        Assert.Equal(5, zones.Count);
+        Assert.Equal(5, zones.SelectMany(z => z).Distinct().Count());   // mỗi tương tác một vùng riêng
+        var reading = plan.Items.Single(x => x.Type == T.AlternateReading).Zones.Single();
+        Assert.Contains(reading[0], plan.DialogueBlockIds);
+        var bubbleZone = plan.Items.Single(x => x.Type == T.ThoughtBubble).Zones.Single();
+        Assert.Equal(zones.Max(z => z.Max(id => Story(6).First(b => b.BlockId == id).EndOffset)),
+            bubbleZone.Max(id => Story(6).First(b => b.BlockId == id).EndOffset));
+        Assert.DoesNotContain(plan.Items, x => ListeningInteractionRules.IsEndOfStory(x.Type, 8));
+    }
+
+    [Theory]
+    [InlineData(2, "PictureSearchx1")]
+    [InlineData(3, "PictureSearchx1,TrueFalsex1")]
+    [InlineData(4, "PictureSearchx1,TrueFalsex1,SentenceBuilderx1")]
+    [InlineData(5, "PictureSearchx1,TrueFalsex1,SentenceBuilderx1,FollowActionx1")]
+    [InlineData(6, "PictureSearchx1,TrueFalsex1,SentenceBuilderx1,FollowActionx1,EventOrderingx1")]
+    public void Age7_PrioritizesFiveTypes(int blocks, string expected)
+    {
+        var plan = ListeningInteractionPlanner.Create(7, Story(blocks));
+        Assert.Equal(expected, string.Join(',', plan.Items.Select(item => $"{item.Type}x{item.Count}")));
+        Assert.Equal(7, plan.TargetAge);
+        Assert.All(plan.Items, item => Assert.Single(item.Zones));
+        Assert.DoesNotContain(plan.Items.SelectMany(item => item.Zones).SelectMany(zone => zone),
+            id => id == Story(blocks)[^1].BlockId);
+    }
 }

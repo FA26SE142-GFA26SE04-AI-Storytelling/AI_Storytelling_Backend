@@ -33,7 +33,7 @@ public static class ListeningInteractionAiMapper
         OccupiedBlockIds = blocks.Where(b => occupiedAnchorOffsets.Contains(b.EndOffset)).Select(b => b.BlockId).ToArray(),
         // Từ vựng gợi ý chọn câu cho FillBlank và ReadAloud, đoạn có thoại cho RolePlay.
         VocabularyTerms = type is ListeningInteractionType.FillBlank or ListeningInteractionType.ReadAloud ? vocabularyTerms.ToArray() : [],
-        DialogueBlockIds = type is ListeningInteractionType.RolePlay or ListeningInteractionType.WhoSaidIt ? dialogueBlockIds.ToArray() : [],
+        DialogueBlockIds = type is ListeningInteractionType.RolePlay or ListeningInteractionType.WhoSaidIt or ListeningInteractionType.AlternateReading ? dialogueBlockIds.ToArray() : [],
         AllowedBlockIds = allowedBlockIds,
         PreviousErrors = previousErrors.Select(e => new ListeningPreviousErrorDto(e.Code, e.ItemIndex, e.Field)).ToArray()
     };
@@ -76,7 +76,7 @@ public static class ListeningInteractionAiMapper
         }).ToArray(),
         ListeningInteractionType.EventOrdering => (response.EventOrderings ?? []).Select(x => new ListeningInteractionDraft
         {
-            Type = type, // AnchorBlockId để trống: mapper P1 gán đoạn cuối
+            Type = type, AnchorBlockId = x.AfterBlockId ?? string.Empty,
             MatchFeedback = x.MatchFeedback,
             NoMatchFeedback = x.RetryFeedback,
             Options = (x.Events ?? []).Select(e => new ListeningOptionDraft
@@ -115,6 +115,68 @@ public static class ListeningInteractionAiMapper
             Type = type, AnchorBlockId = x.AfterBlockId ?? string.Empty, SourceQuote = x.SourceQuote ?? x.LineQuote,
             MatchFeedback = x.MatchFeedback, NoMatchFeedback = x.RetryFeedback,
             Options = (x.Speakers ?? []).Select(o => new ListeningOptionDraft { Text = o.Name, IsMatch = o.IsMatch, ImageDescription = o.ImageDescription }).ToArray()
+        }).ToArray(),
+        ListeningInteractionType.PictureSearch => (response.PictureSearches ?? []).Select(x => new ListeningInteractionDraft
+        {
+            Type = type, AnchorBlockId = x.AfterBlockId ?? string.Empty, SourceQuote = x.SourceQuote,
+            TargetLabel = x.TargetLabel, Prompt = x.Question, MatchFeedback = x.MatchFeedback,
+            NoMatchFeedback = x.RetryFeedback
+        }).ToArray(),
+        ListeningInteractionType.TrueFalse => (response.TrueFalses ?? []).Select(x => new ListeningInteractionDraft
+        {
+            Type = type, AnchorBlockId = x.AfterBlockId ?? string.Empty,
+            MatchFeedback = x.MatchFeedback, NoMatchFeedback = x.RetryFeedback,
+            Options = (x.Statements ?? []).Select(s => new ListeningOptionDraft
+            { Text = s.Text, IsMatch = s.IsTrue, ImageDescription = s.EvidenceLabel }).ToArray()
+        }).ToArray(),
+        ListeningInteractionType.FollowAction => (response.FollowActions ?? []).Select(x => new ListeningInteractionDraft
+        {
+            Type = type, AnchorBlockId = x.AfterBlockId ?? string.Empty, CharacterName = x.CharacterName,
+            Prompt = x.Question, MatchFeedback = x.MatchFeedback, NoMatchFeedback = x.RetryFeedback,
+            Options = (x.Items ?? []).Select(s => new ListeningOptionDraft
+            { Text = s.Name, IsMatch = s.IsCorrect, ImageDescription = s.ImageDescription, Role = ListeningOptionRole.Item })
+                .Concat(x.Target is null ? [] : [new ListeningOptionDraft
+                { Text = x.Target.Name, ImageDescription = x.Target.ImageDescription, Role = ListeningOptionRole.Target }]).ToArray()
+        }).ToArray(),
+        ListeningInteractionType.SentenceBuilder => (response.SentenceBuilders ?? []).Select(x => new ListeningInteractionDraft
+        {
+            Type = type, AnchorBlockId = x.AfterBlockId ?? string.Empty, SourceQuote = x.SentenceQuote,
+            AcceptedOrdersJson = System.Text.Json.JsonSerializer.Serialize(x.AcceptedOrders),
+            MatchFeedback = x.MatchFeedback, NoMatchFeedback = x.RetryFeedback,
+            Options = (x.Cards ?? []).Select((card, index) => new ListeningOptionDraft
+            { Text = card, CorrectOrder = index + 1 }).ToArray()
+        }).ToArray(),
+        ListeningInteractionType.AlternateReading => (response.AlternateReadings ?? []).Select(x => new ListeningInteractionDraft
+        {
+            Type = type, AnchorBlockId = x.AfterBlockId ?? string.Empty, MatchFeedback = x.PraiseFeedback,
+            Options = (x.Lines ?? []).Select((line, index) => new ListeningOptionDraft
+            { Text = line.Text ?? string.Empty, Speaker = line.Speaker, CorrectOrder = index + 1 }).ToArray()
+        }).ToArray(),
+        ListeningInteractionType.InferenceQuestion => (response.InferenceQuestions ?? []).Select(x => new ListeningInteractionDraft
+        {
+            Type = type, AnchorBlockId = x.AfterBlockId ?? string.Empty, SourceQuote = x.Passage, Prompt = x.Question,
+            Explanation = x.Explanation, MatchFeedback = x.MatchFeedback,
+            Options = (x.Answers ?? []).Select(a => new ListeningOptionDraft { Text = a.Text ?? string.Empty, IsMatch = a.IsCorrect })
+                .Concat((x.Clues ?? []).Select(c => new ListeningOptionDraft { Text = c ?? string.Empty, Role = ListeningOptionRole.Clue })).ToArray()
+        }).ToArray(),
+        ListeningInteractionType.CauseEffect => (response.CauseEffects ?? []).Select(x => new ListeningInteractionDraft
+        {
+            Type = type, AnchorBlockId = x.AfterBlockId ?? string.Empty, MatchFeedback = x.MatchFeedback,
+            Options = (x.Pairs ?? []).Select((p, index) => new ListeningOptionDraft
+                { Text = p.Effect?.Text ?? string.Empty, SourceQuote = p.Effect?.SourceQuote, Role = ListeningOptionRole.Item, CorrectOrder = index + 1 })
+                .Concat((x.Pairs ?? []).Select((p, index) => new ListeningOptionDraft
+                { Text = p.Cause?.Text ?? string.Empty, SourceQuote = p.Cause?.SourceQuote, Role = ListeningOptionRole.Target, CorrectOrder = index + 1 })).ToArray()
+        }).ToArray(),
+        ListeningInteractionType.SceneTitle => (response.SceneTitles ?? []).Select(x => new ListeningInteractionDraft
+        {
+            Type = type, AnchorBlockId = x.AfterBlockId ?? string.Empty, Explanation = x.Explanation, MatchFeedback = x.MatchFeedback,
+            Options = (x.Titles ?? []).Select(t => new ListeningOptionDraft { Text = t.Text ?? string.Empty, IsMatch = t.IsCorrect, Feedback = t.Feedback }).ToArray()
+        }).ToArray(),
+        ListeningInteractionType.ThoughtBubble => (response.ThoughtBubbles ?? []).Select(x => new ListeningInteractionDraft
+        {
+            Type = type, AnchorBlockId = x.AfterBlockId ?? string.Empty, CharacterName = x.CharacterName, Prompt = x.Question,
+            SourceQuote = x.SourceQuote, MatchFeedback = x.MatchFeedback,
+            Options = (x.Bubbles ?? []).Select(b => new ListeningOptionDraft { Text = b.Text ?? string.Empty, IsMatch = b.IsCorrect, Emotion = b.Emotion }).ToArray()
         }).ToArray(),
         _ => []
     };

@@ -97,7 +97,7 @@ public sealed partial class MediaGenerationService
             asset.MimeType = audio.MimeType;
             // Chỉ phần cấp tương tác mà bé nhìn chữ theo giọng đọc mới cần mốc từng chữ (không phải audio đáp án);
             // nhà cung cấp không có mốc thì để trống.
-            asset.WordTimings = part.OptionId is null && ListeningAudioParts.HighlightKeys.Contains(part.PartKey)
+            asset.WordTimings = ListeningAudioParts.NeedsWordTimings(interaction.Type, part.OptionId, part.PartKey)
                 ? audio.GetMetadata("wordTimingsJson") : null;
             asset.Provider = audio.GetMetadata("provider") ?? "GoogleCloud";
             asset.Model = audio.GetMetadata("model") ?? "unknown";

@@ -303,11 +303,17 @@ Một phiên đọc được tính là lượt đọc hợp lệ khi thoả tấ
 1. Phiên đã `Completed`, thời điểm hoàn thành nằm trong kỳ.
 2. Truyện là truyện Creator và đang Published lúc đọc.
 3. Tài khoản của trẻ có gói trả phí đang hiệu lực lúc đọc.
-4. Thời gian đọc từ 60 giây trở lên (Admin đổi được, mục 10.2).
+4. Thời gian đọc đạt `minimumReadSeconds` (mặc định 60 giây, Admin đổi được ở mục 10.2). Hệ thống lấy số giây
+   nhỏ hơn giữa thời gian ứng dụng gửi và thời gian từ lúc mở đến lúc hoàn thành phiên. Thời gian thực tế được
+   làm tròn xuống và tính là 0 nếu phiên hoàn thành trước lúc bắt đầu.
 5. Trẻ không phải con của chính Creator.
 6. Mỗi trẻ tối đa 1 lượt cho mỗi truyện mỗi ngày, và tối đa 10 lượt mỗi ngày trên mọi truyện. "Ngày" ở đây tính theo
    giờ Việt Nam.
 7. Truyện bị gỡ vì vi phạm trong kỳ mất toàn bộ lượt đọc hợp lệ của kỳ đó; truyện bị gỡ sau kỳ vẫn giữ lượt của kỳ.
+8. Sau giới hạn theo trẻ ở điều 6, mỗi tài khoản phụ huynh được tính tối đa 60 lượt mỗi tháng dương lịch theo
+   giờ Việt Nam, gộp mọi hồ sơ trẻ và mọi truyện. Giữ các lượt hoàn thành sớm nhất. Nếu trùng thời điểm, ưu tiên
+   mã truyện nhỏ hơn rồi mã hồ sơ trẻ nhỏ hơn. Khi chốt giữa tháng, các lượt đã dùng từ đầu tháng vẫn trừ vào
+   hạn mức và chỉ các lượt hoàn thành trong kỳ mới được tính vào kỳ đó.
 
 ## 8. Gói Creator, hạn mức tháng và lượt gửi duyệt của Content Creator (Luồng 2, 2f, bổ sung 11/11/2026)
 

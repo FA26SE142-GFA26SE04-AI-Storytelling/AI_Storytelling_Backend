@@ -82,8 +82,8 @@ public sealed class LearningArtifactService : ILearningArtifactService
         }
 
         var listeningCount = 0;
-        if ((request?.IncludeListening ?? true) && story.Source == StorySource.Ai && ListeningInteractionGenerator.HasPlan(version.Content))
-            listeningCount = await GenerateListeningInternalAsync(story, version, cancellationToken);
+        if ((request?.IncludeListening ?? true) && story.Source == StorySource.Ai && ListeningInteractionGenerator.HasPlan(version.Content, ListeningInteractionGenerator.ToAgeBand(story.AgeBand)))
+            listeningCount = await GenerateListeningInternalAsync(story, version, cancellationToken, request?.TargetAge);
 
         return new ArtifactGenerationResultDto
         {
@@ -298,12 +298,16 @@ public sealed class LearningArtifactService : ILearningArtifactService
             sp => sp.ChildProfileId == childProfileId, cancellationToken: cancellationToken);
     }
     /// <summary>Sinh lại cả gói theo kế hoạch, từng loại một; loại nào xong thì thay luôn. Loại ngoài kế hoạch bị dọn.</summary>
-    private async Task<int> GenerateListeningInternalAsync(Story story, StoryVersion version, CancellationToken cancellationToken)
+    private async Task<int> GenerateListeningInternalAsync(Story story, StoryVersion version, CancellationToken cancellationToken, int? targetAge = null)
     {
         // Gói sắp đổi: bỏ xác nhận cũ ngay từ đầu, kể cả khi giữa chừng có loại hỏng.
         _reviewCompletionStore?.ClearListeningReviewed(story.Id, version.Id);
-        var scope = await _listening.LoadScopeAsync(story, version, cancellationToken);
+        var ages = ListeningAgeSets.TargetAgesFor(ListeningInteractionGenerator.ToAgeBand(story.AgeBand));
+        if (targetAge is { } requested && !ages.Contains(requested)) throw new ConflictException("LISTENING_TARGET_AGE_INVALID");
         var count = 0;
+        foreach (var age in ages.Where(a => targetAge is null || a == targetAge))
+        {
+        var scope = await _listening.LoadScopeAsync(story, version, cancellationToken, age);
         foreach (var item in scope.Plan.Items)
         {
             IReadOnlyList<ListeningInteractionDraft> drafts;
@@ -316,24 +320,25 @@ public sealed class LearningArtifactService : ILearningArtifactService
             {
                 throw new ConflictException(ex.Message);
             }
-            count += await ReplaceListeningAsync(story.Id, version.Id, item.Type, drafts, cancellationToken);
+            count += await ReplaceListeningAsync(story.Id, version.Id, item.Type, drafts, cancellationToken, age);
         }
-        var outsidePlan = (await _listening.LoadSavedAsync(version.Id, cancellationToken))
+        var outsidePlan = (await _listening.LoadSavedAsync(version.Id, cancellationToken, targetAge: age))
             .Select(x => x.Type).Distinct().Where(t => scope.Plan.Items.All(p => p.Type != t)).ToArray();
         foreach (var type in outsidePlan)
-            await ReplaceListeningAsync(story.Id, version.Id, type, [], cancellationToken);
+            await ReplaceListeningAsync(story.Id, version.Id, type, [], cancellationToken, age);
+        }
         return count;
     }
 
     private async Task<int> ReplaceListeningAsync(
-        int storyId, int versionId, ListeningInteractionType type, IReadOnlyList<ListeningInteractionDraft> drafts, CancellationToken cancellationToken)
+        int storyId, int versionId, ListeningInteractionType type, IReadOnlyList<ListeningInteractionDraft> drafts, CancellationToken cancellationToken, int targetAge)
     {
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
             await _unitOfWork.AcquireTransactionLockAsync(storyId, cancellationToken);
             await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, storyId, versionId, cancellationToken, contentMutation: true);
-            var count = await _listening.ReplaceAsync(versionId, type, drafts, cancellationToken);
+            var count = await _listening.ReplaceAsync(versionId, type, drafts, cancellationToken, targetAge: targetAge);
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
             return count;
         }

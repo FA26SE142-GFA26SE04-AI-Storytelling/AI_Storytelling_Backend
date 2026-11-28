@@ -17,6 +17,7 @@ public sealed partial class StoryReviewService
     private sealed record ListeningReviewState(bool Required, ListeningScope? Scope, ListeningInspection? Inspection, string? Error)
     {
         public bool Valid => !Required || Inspection is { Valid: true };
+        public IReadOnlyList<ListeningScope> Scopes { get; init; } = [];
     }
 
     public async Task<ListeningReviewDto> GetListeningForReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default)
@@ -53,7 +54,7 @@ public sealed partial class StoryReviewService
         var interactionRepo = _unitOfWork.Repository<ListeningInteraction>();
         var optionRepo = _unitOfWork.Repository<ListeningInteractionOption>();
         var interaction = await interactionRepo.FirstOrDefaultAsync(
-                x => x.Id == interactionId && x.StoryVersionId == version.Id && !x.IsDeleted, cancellationToken: cancellationToken)
+                x => x.Id == interactionId && x.StoryVersionId == version.Id && x.ParentStoryPackageId == null && x.TargetAge != null && !x.IsDeleted, cancellationToken: cancellationToken)
             ?? throw new NotFoundException("ListeningInteraction", interactionId);
         var options = (await optionRepo.FindAsync(
                 x => x.ListeningInteractionId == interaction.Id && !x.IsDeleted, cancellationToken: cancellationToken))
@@ -62,7 +63,7 @@ public sealed partial class StoryReviewService
         if (changes.Select(x => x.Id).Distinct().Count() != changes.Count || changes.Any(c => options.All(o => o.Id != c.Id)))
             throw new BadRequestException("LISTENING_OPTION_NOT_FOUND");
 
-        var scope = await _listening.LoadScopeAsync(story, version, cancellationToken);
+        var scope = await _listening.LoadScopeAsync(story, version, cancellationToken, interaction.TargetAge!.Value);
         var planItem = scope.Plan.Items.FirstOrDefault(p => p.Type == interaction.Type)
             ?? throw new ConflictException("LISTENING_TYPE_NOT_IN_PLAN");
         var current = ListeningInteractionMapper.ToDraft(interaction, options, scope.Blocks);
@@ -70,23 +71,47 @@ public sealed partial class StoryReviewService
         // Áp lên draft để chạy luật trước; không đạt thì không ghi gì vào entity.
         var draft = current with
         {
+            BlankIndex = input.BlankIndex ?? current.BlankIndex,
+            CharacterName = Edited(input.CharacterName) ?? current.CharacterName,
+            SourceQuote = Edited(input.SourceQuote) ?? current.SourceQuote,
             Prompt = Edited(input.Prompt) ?? current.Prompt,
+            TargetLabel = Edited(input.TargetLabel) ?? current.TargetLabel,
+            AcceptedOrdersJson = input.AcceptedOrders is null ? current.AcceptedOrdersJson : JsonSerializer.Serialize(input.AcceptedOrders),
             Hint = Edited(input.Hint) ?? current.Hint,
             Explanation = Edited(input.Explanation) ?? current.Explanation,
             MatchFeedback = Edited(input.MatchFeedback) ?? current.MatchFeedback,
             NoMatchFeedback = Edited(input.NoMatchFeedback) ?? current.NoMatchFeedback,
             WaitFeedback = Edited(input.WaitFeedback) ?? current.WaitFeedback,
             Options = current.Options.Select((o, i) => byId.TryGetValue(options[i].Id, out var c)
-                ? o with { Text = Edited(c.Text) ?? o.Text, Feedback = Edited(c.Feedback) ?? o.Feedback }
+                ? o with { Text = Edited(c.Text) ?? o.Text, Feedback = Edited(c.Feedback) ?? o.Feedback,
+                    ImageDescription = Edited(c.ImageDescription) ?? o.ImageDescription, IsMatch = c.IsMatch ?? o.IsMatch,
+                    Role = c.Role ?? o.Role, Speaker = Edited(c.Speaker) ?? o.Speaker, Emotion = Edited(c.Emotion) ?? o.Emotion }
                 : o).ToArray()
         };
         var errors = new List<ListeningValidationError>(EmptyEdits(input));
-        errors.AddRange(ListeningInteractionRules.ValidateText(draft, 0, _listening.RuleContext(scope, planItem, [])));
+        var resolved = ListeningInteractionMapper.Resolve([draft], version.Content!, scope.Blocks);
+        errors.AddRange(resolved.Errors);
+        draft = resolved.Items[0];
+        var context = _listening.RuleContext(scope, planItem, []) with { TargetAge = interaction.TargetAge!.Value, Count = 1, Zones = [] };
+        errors.AddRange(ListeningInteractionRules.Validate([draft], context));
         if (errors.Count > 0)
             throw new BadRequestException("LISTENING_TEXT_INVALID:" +
                 string.Join(';', errors.Distinct().Select(e => e.Field is null ? e.Code : $"{e.Code}@{e.Field}")));
 
         interaction.Prompt = draft.Prompt;
+        var targetLabelChanged = !string.Equals(interaction.TargetLabel, draft.TargetLabel, StringComparison.Ordinal);
+        var imageDescriptionChanged = options.Where((option, i) =>
+            !string.Equals(option.ImageDescription, draft.Options[i].ImageDescription, StringComparison.Ordinal)).Any();
+        // Đổi câu trích có thể đổi sang tranh khác của đoạn; khung cũ không còn đúng.
+        var sourceChanged = interaction.SourceStart != draft.SourceStart;
+        interaction.TargetLabel = draft.TargetLabel;
+        interaction.AcceptedOrdersJson = draft.AcceptedOrdersJson;
+        if (targetLabelChanged || imageDescriptionChanged || sourceChanged) interaction.HotspotJson = null;
+        interaction.BlankIndex = draft.BlankIndex;
+        interaction.CharacterName = draft.CharacterName;
+        interaction.SourceQuote = draft.SourceQuote;
+        interaction.SourceStart = draft.SourceStart;
+        interaction.SourceEnd = draft.SourceEnd;
         interaction.Hint = draft.Hint;
         interaction.Explanation = draft.Explanation;
         interaction.MatchFeedback = draft.MatchFeedback;
@@ -97,6 +122,14 @@ public sealed partial class StoryReviewService
         {
             options[i].Text = draft.Options[i].Text;
             options[i].Feedback = draft.Options[i].Feedback;
+            // Đúng/sai: ImageDescription là tên chi tiết làm bằng chứng trong tranh; đổi tên thì định vị lại.
+            if (!string.Equals(options[i].ImageDescription, draft.Options[i].ImageDescription, StringComparison.Ordinal))
+                options[i].HotspotJson = null;
+            options[i].ImageDescription = draft.Options[i].ImageDescription;
+            options[i].IsMatch = draft.Options[i].IsMatch;
+            options[i].Role = draft.Options[i].Role;
+            options[i].Speaker = draft.Options[i].Speaker;
+            options[i].Emotion = draft.Options[i].Emotion;
             optionRepo.Update(options[i]);
         }
         await _listening.RetireMediaAsync([interaction.Id], options.Select(x => x.Id).ToArray(), cancellationToken);
@@ -112,15 +145,19 @@ public sealed partial class StoryReviewService
     {
         (string Field, string? Value)[] fields =
         [
-            ("question", input.Prompt), ("hint", input.Hint), ("explanation", input.Explanation),
+            ("question", input.Prompt), ("targetLabel", input.TargetLabel), ("hint", input.Hint), ("explanation", input.Explanation),
+            ("characterName", input.CharacterName), ("sourceQuote", input.SourceQuote),
             ("matchFeedback", input.MatchFeedback), ("noMatchFeedback", input.NoMatchFeedback), ("waitFeedback", input.WaitFeedback)
         ];
         foreach (var (field, value) in fields)
             if (value is not null && string.IsNullOrWhiteSpace(value)) yield return new("FIELD_EMPTY", null, field);
         foreach (var option in input.Options ?? [])
         {
+            if (option.ImageDescription is not null && string.IsNullOrWhiteSpace(option.ImageDescription)) yield return new("FIELD_EMPTY", null, $"options[{option.Id}].imageDescription");
             if (option.Text is not null && string.IsNullOrWhiteSpace(option.Text)) yield return new("FIELD_EMPTY", null, $"options[{option.Id}].text");
             if (option.Feedback is not null && string.IsNullOrWhiteSpace(option.Feedback)) yield return new("FIELD_EMPTY", null, $"options[{option.Id}].feedback");
+            if (option.Speaker is not null && string.IsNullOrWhiteSpace(option.Speaker)) yield return new("FIELD_EMPTY", null, $"options[{option.Id}].speaker");
+            if (option.Emotion is not null && string.IsNullOrWhiteSpace(option.Emotion)) yield return new("FIELD_EMPTY", null, $"options[{option.Id}].emotion");
         }
     }
 
@@ -138,12 +175,39 @@ public sealed partial class StoryReviewService
     {
         // Truyện có sẵn (luồng 2) và ReadingMediaOnly không có tương tác; truyện 1 đoạn có kế hoạch rỗng.
         if (story.Source != StorySource.Ai || story.OutputMode != StoryOutputMode.Learning ||
-            !ListeningInteractionGenerator.HasPlan(version.Content))
+            !ListeningInteractionGenerator.HasPlan(version.Content, ListeningInteractionGenerator.ToAgeBand(story.AgeBand)))
             return new(false, null, null, null);
-        ListeningScope scope;
-        try { scope = await _listening.LoadScopeAsync(story, version, ct); }
-        catch (ConflictException ex) { return new(true, null, null, ex.Message); }
-        return new(true, scope, await _listening.InspectAsync(scope, ct), null);
+        var ages = ListeningAgeSets.TargetAgesFor(ListeningInteractionGenerator.ToAgeBand(story.AgeBand));
+        var scopes = new List<ListeningScope>();
+        var items = new List<ListeningSavedItem>();
+        var issues = new List<ListeningIssue>();
+        foreach (var age in ages)
+        {
+            ListeningScope scope;
+            try { scope = await _listening.LoadScopeAsync(story, version, ct, age); }
+            catch (ConflictException ex) { return new(true, null, null, ex.Message); }
+            scopes.Add(scope);
+            var inspection = await _listening.InspectAsync(scope, ct);
+            items.AddRange(inspection.Items.Where(x => x.Interaction.TargetAge == age));
+            issues.AddRange(inspection.Issues);
+        }
+        // Keep tagged future-age content visible to reviewers without making unbuilt ages a publication requirement.
+        var extraRows = await _unitOfWork.Repository<ListeningInteraction>().FindAsync(
+            x => x.StoryVersionId == version.Id && x.ParentStoryPackageId == null && x.TargetAge != null && !x.IsDeleted, cancellationToken: ct);
+        var extra = extraRows.Where(x => x.TargetAge.HasValue && !ages.Contains(x.TargetAge.Value)).ToArray();
+        if (extra.Length > 0)
+        {
+            var extraIds = extra.Select(x => x.Id).ToList();
+            var options = await _unitOfWork.Repository<ListeningInteractionOption>().FindAsync(
+                x => extraIds.Contains(x.ListeningInteractionId) && !x.IsDeleted, cancellationToken: ct);
+            foreach (var row in extra)
+            {
+                var rowOptions = options.Where(x => x.ListeningInteractionId == row.Id).OrderBy(x => x.SortOrder).ToArray();
+                var draft = ListeningInteractionMapper.ToDraft(row, rowOptions, scopes[0].Blocks);
+                items.Add(new(row, rowOptions, draft, ListeningInteractionRules.CheckStale(draft, 0, version.Content!, scopes[0].Blocks).Count > 0));
+            }
+        }
+        return new(true, scopes.FirstOrDefault(), new(items, issues), null) { Scopes = scopes };
     }
 
     private ListeningReviewDto ToListeningReviewDto(int storyId, int versionId, ListeningReviewState state) => new()
@@ -152,8 +216,10 @@ public sealed partial class StoryReviewService
         VersionId = versionId,
         Required = state.Required,
         Reviewed = _reviewCompletionStore?.IsListeningReviewed(storyId, versionId) ?? false,
-        Plan = state.Scope?.Plan.Items.Select(p => new ListeningPlanItemDto { Type = p.Type.ToString(), Count = p.Count, Zones = p.Zones }).ToList() ?? [],
-        Items = state.Inspection?.Items.Select(ToListeningItemDto).ToList() ?? [],
+        Plan = state.Scopes.SelectMany(s => s.Plan.Items.Select(p => new ListeningPlanItemDto { TargetAge = s.TargetAge, Type = p.Type.ToString(), Count = p.Count, Zones = p.Zones })).ToList(),
+        Items = state.Inspection?.Items.OrderBy(x => x.Interaction.TargetAge).Select(ToListeningItemDto).ToList() ?? [],
+        AgeSets = state.Inspection?.Items.Where(x => x.Interaction.TargetAge.HasValue).GroupBy(x => x.Interaction.TargetAge!.Value)
+            .OrderBy(x => x.Key).Select(g => new ListeningAgeSetReviewDto(g.Key, g.Select(ToListeningItemDto).ToList())).ToList() ?? [],
         Issues = ListeningIssues(state).ToList()
     };
 
@@ -166,11 +232,17 @@ public sealed partial class StoryReviewService
     private static ListeningInteractionReviewDto ToListeningItemDto(ListeningSavedItem item) => new()
     {
         Id = item.Interaction.Id,
+        TargetAge = item.Interaction.TargetAge,
+        BlankIndex = item.Interaction.BlankIndex,
         Type = item.Interaction.Type.ToString(),
         AnchorBlockId = item.Draft.AnchorBlockId,
         AnchorOffset = item.Interaction.AnchorOffset,
         Kind = item.Interaction.Kind?.ToString(),
         Prompt = item.Interaction.Prompt,
+        TargetLabel = item.Interaction.TargetLabel,
+        Hotspot = HotspotBox.TryParse(item.Interaction.HotspotJson),
+        HasValidHotspot = HotspotBox.TryParse(item.Interaction.HotspotJson) is not null,
+        AcceptedOrders = SentenceOrders.Parse(item.Interaction.AcceptedOrdersJson),
         SourceQuote = item.Interaction.SourceQuote,
         CharacterName = item.Interaction.CharacterName,
         HiddenWord = item.Interaction.HiddenWord,
@@ -192,6 +264,9 @@ public sealed partial class StoryReviewService
             BlockId = item.Draft.Options[i].BlockId,
             SourceQuote = o.SourceQuote,
             ImageDescription = o.ImageDescription
+            ,Role = o.Role,
+            Speaker = item.Options[i].Speaker,
+            Emotion = item.Options[i].Emotion
         }).ToList()
     };
     private const string ListeningArtifactPrefix = "listening:";
@@ -200,11 +275,13 @@ public sealed partial class StoryReviewService
         new(JsonSerializerDefaults.Web) { Converters = { new JsonStringEnumConverter() } };
 
     public async Task<CreateProposalResponseDto> CreateListeningProposalAsync(
-        int userId, int storyId, ListeningInteractionType type, CancellationToken cancellationToken = default)
+        int userId, int storyId, ListeningInteractionType type, CancellationToken cancellationToken = default, int? targetAge = null)
     {
         var (story, version) = await LoadListeningTargetAsync(userId, storyId, cancellationToken);
         if (story.Source != StorySource.Ai) throw new ConflictException("LISTENING_NOT_SUPPORTED");
-        var scope = await _listening.LoadScopeAsync(story, version, cancellationToken);
+        var ages = ListeningAgeSets.TargetAgesFor(ListeningInteractionGenerator.ToAgeBand(story.AgeBand));
+        if (ages.Count == 0 || targetAge.HasValue && !ages.Contains(targetAge.Value)) throw new ConflictException("LISTENING_TYPE_NOT_IN_PLAN");
+        var scope = await _listening.LoadScopeAsync(story, version, cancellationToken, targetAge ?? ages[0]);
         IReadOnlyList<ListeningInteractionDraft> drafts;
         try
         {
@@ -249,15 +326,18 @@ public sealed partial class StoryReviewService
         var drafts = proposal.SuggestedContent is JsonElement element && element.TryGetProperty("items", out var items)
             ? items.Deserialize<ListeningInteractionDraft[]>(ListeningProposalJsonOptions) ?? []
             : [];
-        var scope = await _listening.LoadScopeAsync(story, version, cancellationToken);
+        var age = drafts.FirstOrDefault()?.TargetAge;
+        if (age is null || drafts.Any(x => x.TargetAge != age) || !ListeningAgeSets.TargetAgesFor(ListeningInteractionGenerator.ToAgeBand(story.AgeBand)).Contains(age.Value))
+            throw new ConflictException("LISTENING_PROPOSAL_INVALID");
+        var scope = await _listening.LoadScopeAsync(story, version, cancellationToken, age.Value);
         var planItem = scope.Plan.Items.FirstOrDefault(p => p.Type == type) ?? throw new ConflictException("LISTENING_TYPE_NOT_IN_PLAN");
         // Gói có thể đã đổi từ lúc tạo đề xuất (loại khác vừa được thay): kiểm lại với neo đang chiếm hiện tại.
-        var occupied = (await _listening.LoadSavedAsync(version.Id, cancellationToken))
-            .Where(x => x.Type != type).Select(x => x.AnchorOffset).ToArray();
+        var occupied = (await _listening.LoadSavedAsync(version.Id, cancellationToken, targetAge: age))
+            .Where(x => x.TargetAge == age && x.Type != type).Select(x => x.AnchorOffset).ToArray();
         var invalid = drafts.SelectMany((d, i) => ListeningInteractionRules.CheckStale(d, i, version.Content!, scope.Blocks)).Any() ||
                       ListeningInteractionRules.Validate(drafts, _listening.RuleContext(scope, planItem, occupied)).Count > 0;
         if (invalid) throw new ConflictException("LISTENING_PROPOSAL_INVALID");
-        await _listening.ReplaceAsync(version.Id, type, drafts, cancellationToken);
+        await _listening.ReplaceAsync(version.Id, type, drafts, cancellationToken, targetAge: age);
         _reviewCompletionStore?.ClearListeningReviewed(proposal.StoryId, version.Id);
     }
 }

@@ -8,12 +8,107 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using StoryPlatform.Infrastructure.Persistence;
+using StoryPlatform.Application.Features.ListeningInteractions.Models;
+using StoryPlatform.Application.Features.ListeningInteractions.Services;
+using StoryPlatform.Domain.Enums;
+using StoryPlatform.UnitTests.Features.ListeningInteractions;
 using Xunit;
 
 namespace StoryPlatform.UnitTests;
 
 public sealed class SeedDataAlignmentTests
 {
+    // Seed của truyện 900 phải qua đúng luật mà bộ sinh dùng (cùng văn bản truyện với ListeningTestStory).
+    [Theory]
+    [InlineData(6)]
+    [InlineData(7)]
+    [InlineData(8)]
+    public void ListeningSeed_PassesTheRulesOfItsAge(int age)
+    {
+        Assert.Equal([44, 148, 197, 231, 256, 296], ListeningTestStory.Blocks.Select(b => b.EndOffset));   // neo trong seed tính theo văn bản này
+        var inserts = ReadInserts();
+        var optionRows = Rows(inserts, "listening_interaction_options");
+        string? Text(Dictionary<string, string> row, string column) => row.TryGetValue(column, out var raw) ? StringLiteral(raw) : null;
+        int? Number(Dictionary<string, string> row, string column) =>
+            row.TryGetValue(column, out var raw) && int.TryParse(raw, out var value) ? value : null;
+        var interactions = Rows(inserts, "listening_interactions")
+            .Where(row => row.TryGetValue("TargetAge", out var value) && value == age.ToString()).ToArray();
+        Assert.Equal(5, interactions.Length);
+        foreach (var row in interactions)
+        {
+            var id = int.Parse(row["Id"]);
+            var type = Enum.Parse<ListeningInteractionType>(Text(row, "Type")!);
+            var anchor = Number(row, "AnchorOffset")!.Value;
+            var options = optionRows.Where(option => int.Parse(option["ListeningInteractionId"]) == id)
+                .OrderBy(option => int.Parse(option["SortOrder"])).Select(option => new ListeningOptionDraft
+                {
+                    Text = Text(option, "Text")!, Feedback = Text(option, "Feedback"), IsMatch = option["IsMatch"] == "true",
+                    CorrectOrder = Number(option, "CorrectOrder"), SourceQuote = Text(option, "SourceQuote"),
+                    SourceStart = Number(option, "SourceStart"), SourceEnd = Number(option, "SourceEnd"),
+                    ImageDescription = Text(option, "ImageDescription"),
+                    Speaker = Text(option, "Speaker"), Emotion = Text(option, "Emotion"),
+                    Role = option.TryGetValue("Role", out var role) ? Enum.Parse<ListeningOptionRole>(StringLiteral(role)!) : ListeningOptionRole.None,
+                    BlockId = Number(option, "SourceStart") is { } start
+                        ? ListeningTestStory.Blocks.Last(block => block.EndOffset - block.Text.Length <= start).BlockId : null
+                }).ToArray();
+            var draft = new ListeningInteractionDraft
+            {
+                Type = type, TargetAge = age, AnchorBlockId = ListeningTestStory.Blocks.Single(b => b.EndOffset == anchor).BlockId,
+                Kind = Text(row, "Kind") is { } kind ? Enum.Parse<CheckpointKind>(kind) : null,
+                Prompt = Text(row, "Prompt"), SourceQuote = Text(row, "SourceQuote"), CharacterName = Text(row, "CharacterName"),
+                Explanation = Text(row, "Explanation"),
+                BlankIndex = Number(row, "BlankIndex"), TargetLabel = Text(row, "TargetLabel"),
+                AcceptedOrdersJson = Text(row, "AcceptedOrdersJson"), MatchFeedback = Text(row, "MatchFeedback"),
+                NoMatchFeedback = Text(row, "NoMatchFeedback"), WaitFeedback = Text(row, "WaitFeedback"), Options = options
+            };
+            var mapped = ListeningInteractionMapper.Resolve([draft], ListeningTestStory.Content, ListeningTestStory.Blocks);
+            var context = ListeningTestStory.Context(type, 1) with { TargetAge = age, Zones = [] };
+            var errors = mapped.Errors.Concat(ListeningInteractionRules.Validate(mapped.Items, context)).Select(e => $"{e.Code}@{e.Field}").ToArray();
+            Assert.True(errors.Length == 0, $"seed interaction {id} ({type}, age {age}) violates: {string.Join(", ", errors)}");
+        }
+    }
+
+    [Fact]
+    public void Age7Seed_HasFiveInteractionsAndTwelveOptions()
+    {
+        var inserts = ReadInserts();
+        var interactions = Rows(inserts, "listening_interactions")
+            .Where(row => row.TryGetValue("TargetAge", out var age) && age == "7").OrderBy(row => int.Parse(row["Id"])).ToArray();
+        Assert.Equal(["930", "931", "932", "933", "934"], interactions.Select(row => row["Id"]));
+        Assert.Equal(["PictureSearch", "TrueFalse", "SentenceBuilder", "FollowAction", "EventOrdering"],
+            interactions.Select(row => StringLiteral(row["Type"])));
+        Assert.Equal(["44", "148", "197", "231", "256"], interactions.Select(row => row["AnchorOffset"]));
+        var options = Rows(inserts, "listening_interaction_options")
+            .Where(row => int.TryParse(row["Id"], out var id) && id is >= 930 and <= 941).ToArray();
+        Assert.Equal(12, options.Length);
+        Assert.Equal(["Item", "Item", "Target"], options.Where(row => row["ListeningInteractionId"] == "933")
+            .OrderBy(row => int.Parse(row["Id"])).Select(row => StringLiteral(row["Role"])));
+    }
+
+    [Fact]
+    public void Age8Seed_HasTheFivePlannedInteractionsInTheirZones()
+    {
+        var inserts = ReadInserts();
+        var interactions = Rows(inserts, "listening_interactions")
+            .Where(row => row.TryGetValue("TargetAge", out var age) && age == "8").OrderBy(row => int.Parse(row["Id"])).ToArray();
+        Assert.Equal(["935", "936", "937", "938", "939"], interactions.Select(row => row["Id"]));
+        Assert.Equal(["InferenceQuestion", "AlternateReading", "SceneTitle", "ThoughtBubble", "CauseEffect"],
+            interactions.Select(row => StringLiteral(row["Type"])));
+        // Đúng vùng của planner: suy luận P1, đọc luân phiên P2 (đoạn thoại), đặt tên P3, bong bóng P5 (muộn nhất), nối nguyên nhân P4.
+        Assert.Equal(["44", "148", "197", "256", "231"], interactions.Select(row => row["AnchorOffset"]));
+        var plan = ListeningInteractionPlanner.Create(8, ListeningTestStory.Blocks);
+        Assert.Equal(["AlternateReading", "InferenceQuestion", "SceneTitle", "ThoughtBubble", "CauseEffect"], plan.Items.Select(x => x.Type.ToString()));
+        var options = Rows(inserts, "listening_interaction_options")
+            .Where(row => int.TryParse(row["Id"], out var id) && id is >= 942 and <= 961).ToArray();
+        Assert.Equal(20, options.Length);
+        Assert.Equal(["Clue", "Clue", "Clue"], options.Where(row => row["ListeningInteractionId"] == "935" && StringLiteral(row["Role"]) == "Clue")
+            .Select(row => StringLiteral(row["Role"])));
+        Assert.Equal(["Thỏ", "Bác Gấu"], options.Where(row => row["ListeningInteractionId"] == "936").OrderBy(row => int.Parse(row["Id"]))
+            .Select(row => StringLiteral(row["Speaker"])));
+        Assert.Equal(["vui", "sợ", "háo hức"], options.Where(row => row["ListeningInteractionId"] == "938").OrderBy(row => int.Parse(row["Id"]))
+            .Select(row => StringLiteral(row["Emotion"])));
+    }
+
     [Fact]
     public void SeedWishGeneration_HasFreshParentEntryPoints_WithoutFabricatedAiRequests()
     {

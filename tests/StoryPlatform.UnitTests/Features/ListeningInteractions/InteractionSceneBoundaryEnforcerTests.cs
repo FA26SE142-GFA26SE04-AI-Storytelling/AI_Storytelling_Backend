@@ -102,6 +102,15 @@ public sealed class InteractionSceneBoundaryEnforcerTests
                 [Interaction(1, ListeningInteractionType.PicturePrediction, "P2")], [])).Message);
 
     [Fact]
+    public void Age6PicturePrediction_DoesNotNeedRevealBoundary()
+    {
+        var interaction = Interaction(1, ListeningInteractionType.PicturePrediction, "P2");
+        interaction.TargetAge = 6;
+        Assert.Equal(["0:P1,P2:opening", "1:P3:opening", "2:P4,P5,P6:ending"], Shape(
+            InteractionSceneBoundaryEnforcer.Enforce(Blocks, TwoScenes, [interaction], [])));
+    }
+
+    [Fact]
     public void EventWithoutSourceStart_Throws()
     {
         var option = Event(1, "P1");

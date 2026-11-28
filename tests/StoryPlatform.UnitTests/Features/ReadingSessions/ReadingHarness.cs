@@ -156,8 +156,7 @@ public sealed class ReadingHarness
                 Status = MediaStatus.Ready, ValidationStatus = ValidationStatus.Passed,
                 Url = $"listen-{interaction.Id}-{part.OptionId?.ToString() ?? "i"}-{part.PartKey}.mp3"
             });
-        if (interaction.Type != ListeningInteractionType.PicturePrediction) return;
-        foreach (var option in ListeningOptions.Where(x => x.ListeningInteractionId == interaction.Id))
+        foreach (var option in ListeningMediaRequirements.ImageOptions(interaction, ListeningOptions))
             Assets.Add(new MediaAsset
             {
                 Id = Assets.Count + 1, StoryVersionId = interaction.StoryVersionId, ListeningInteractionId = interaction.Id,

@@ -1,5 +1,36 @@
 namespace StoryPlatform.Application.Features.ReadingSessions;
 
+public sealed record ParentListeningFeedbackDto
+{
+    public int InteractionId { get; init; }
+    public int? TargetAge { get; init; }
+    public string Type { get; init; } = string.Empty;
+    public string? Prompt { get; init; }
+    public int ChoiceCount { get; init; }
+    public bool Graded { get; init; }
+    public IReadOnlyList<ParentListeningChoiceDto> Choices { get; init; } = [];
+    public IReadOnlyList<ParentListeningTapDto> Taps { get; init; } = [];
+    public IReadOnlyDictionary<string, string> Steps { get; init; } = new Dictionary<string, string>();
+    public IReadOnlyList<string> WordStatuses { get; init; } = [];
+    public IReadOnlyList<string> UnclearWords { get; init; } = [];
+    /// <summary>Đọc luân phiên: nhân vật bé đã chọn đóng.</summary>
+    public string? Speaker { get; init; }
+    /// <summary>Đọc luân phiên: kết quả từng lượt thoại bé đã đọc (chỉ trạng thái từng chữ, không có lời bé nói).</summary>
+    public IReadOnlyList<ParentListeningLineDto> Lines { get; init; } = [];
+}
+
+public sealed record ParentListeningLineDto(
+    int OptionId, string Text, IReadOnlyList<string> WordStatuses, IReadOnlyList<string> UnclearWords, DateTime RecordedAt);
+
+public sealed record ParentListeningChoiceDto(int? SelectedOptionId, string? AnswerText, bool? IsMatch, DateTime AnsweredAt)
+{
+    public bool? Truth { get; init; }
+    public int? ActionTargetOptionId { get; init; }
+    public IReadOnlyList<int>? OrderedOptionIds { get; init; }
+}
+
+public sealed record ParentListeningTapDto(double X, double Y, bool? IsMatch, DateTime AnsweredAt);
+
 public class ParentReadingFeedbackQueryDto
 {
     public int PageIndex { get; set; } = 1;
@@ -34,6 +65,7 @@ public class ParentReadingFeedbackItemDto
     public decimal? QuizBestPercent { get; set; }
     /// <summary>Câu con trả lời ở Điểm dừng cảm xúc/cảm nhận trong lần đọc này, theo thời gian.</summary>
     public List<ConversationAnswerDto> ConversationAnswers { get; set; } = new();
+    public IReadOnlyList<ParentListeningFeedbackDto> ListeningInteractions { get; set; } = [];
     /// <summary>Tên SessionStatus: "Completed", "Started", "Reading", "Activity", "Abandoned", "ForceExited".</summary>
     public string Status { get; set; } = string.Empty;
     public DateTime StartedAt { get; set; }

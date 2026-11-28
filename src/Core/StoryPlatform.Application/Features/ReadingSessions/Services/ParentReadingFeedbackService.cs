@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
@@ -64,6 +66,7 @@ public partial class ParentReadingFeedbackService : IParentReadingFeedbackServic
 
         var sessionIds = sessions.Select(session => session.Id).ToList();
         var conversation = await LoadConversationAnswersAsync(sessionIds, ct);
+        var listeningFeedback = await LoadListeningFeedbackAsync(sessionIds, ct);
         var activity = await LoadActivityLogsAsync(sessionIds, ct);
         var terms = await LoadTermsAsync(activity.Values
             .SelectMany(logs => ReadingActivityTelemetry.CollectedVocabularyIds(logs))
@@ -123,6 +126,7 @@ public partial class ParentReadingFeedbackService : IParentReadingFeedbackServic
                     ? null
                     : QuizRunCalculator.Percent(runs[^1].Correct, quizCount),
                 ConversationAnswers = conversation.GetValueOrDefault(session.Id) ?? new(),
+                ListeningInteractions = listeningFeedback.GetValueOrDefault(session.Id) ?? [],
                 ReadAloud = ReadingActivityTelemetry.ReadAloud(logs),
                 ReadAloudPractice = ReadingActivityTelemetry.ReadAloudPractice(logs),
                 ReadAloudRecordingCount = recordingCounts.GetValueOrDefault(session.Id),
@@ -137,7 +141,86 @@ public partial class ParentReadingFeedbackService : IParentReadingFeedbackServic
 
         return new PagedResult<ParentReadingFeedbackItemDto>(rows, total, pageIndex, pageSize);
     }
-    // Chỉ Checkpoint cảm xúc/cảm nhận: các loại có đáp án không đưa cho phụ huynh như bài kiểm tra (spec 9).
+    private async Task<Dictionary<int, IReadOnlyList<ParentListeningFeedbackDto>>> LoadListeningFeedbackAsync(List<int> sessionIds, CancellationToken ct)
+    {
+        if (sessionIds.Count == 0) return new();
+        var attempts = await _unitOfWork.Repository<ListeningInteractionAttempt>().FindAsync(
+            x => sessionIds.Contains(x.ReadingSessionId) && !x.IsDeleted, cancellationToken: ct);
+        var recordings = await _unitOfWork.Repository<ReadAloudRecording>().FindAsync(
+            x => sessionIds.Contains(x.ReadingSessionId) && x.ListeningInteractionId != null && !x.IsDeleted, cancellationToken: ct);
+        var ids = attempts.Select(x => x.ListeningInteractionId).Concat(recordings.Select(x => x.ListeningInteractionId!.Value)).Distinct().ToList();
+        if (ids.Count == 0) return new();
+        var interactions = (await _unitOfWork.Repository<ListeningInteraction>().FindAsync(
+            x => ids.Contains(x.Id) && x.TargetAge != null, cancellationToken: ct)).ToDictionary(x => x.Id);
+        var optionIds = attempts.Where(x => x.SelectedOptionId.HasValue).Select(x => x.SelectedOptionId!.Value)
+            .Concat(recordings.Where(x => x.ListeningInteractionOptionId.HasValue).Select(x => x.ListeningInteractionOptionId!.Value)).Distinct().ToList();
+        var options = (await _unitOfWork.Repository<ListeningInteractionOption>().FindAsync(
+            x => optionIds.Contains(x.Id), cancellationToken: ct)).ToDictionary(x => x.Id);
+        var result = new Dictionary<int, IReadOnlyList<ParentListeningFeedbackDto>>();
+        foreach (var sessionId in sessionIds)
+        {
+            var sessionAttempts = attempts.Where(x => x.ReadingSessionId == sessionId).ToArray();
+            var sessionRecordings = recordings.Where(x => x.ReadingSessionId == sessionId).ToArray();
+            var sessionInteractionIds = sessionAttempts.Select(x => x.ListeningInteractionId)
+                .Concat(sessionRecordings.Select(x => x.ListeningInteractionId!.Value)).Distinct();
+            var feedback = new List<ParentListeningFeedbackDto>();
+            foreach (var interactionId in sessionInteractionIds)
+            {
+                if (!interactions.TryGetValue(interactionId, out var interaction)) continue;
+                var choices = sessionAttempts.Where(x => x.ListeningInteractionId == interactionId).OrderBy(x => x.AttemptedAt).ThenBy(x => x.Id).ToArray();
+                var recording = sessionRecordings.Where(x => x.ListeningInteractionId == interactionId && x.ListeningInteractionOptionId == null)
+                    .OrderByDescending(x => x.RecordedAt).FirstOrDefault();
+                var lineRecordings = sessionRecordings.Where(x => x.ListeningInteractionId == interactionId && x.ListeningInteractionOptionId != null)
+                    .OrderBy(x => options.TryGetValue(x.ListeningInteractionOptionId!.Value, out var line) ? line.SortOrder : int.MaxValue).ToArray();
+                var statuses = ReadJson<string[]>(recording?.WordStatusesJson) ?? [];
+                var words = Regex.Matches((interaction.SourceQuote ?? string.Empty).Normalize(), @"[\p{L}\p{N}]+")
+                    .Select(match => match.Value).ToArray();
+                feedback.Add(new ParentListeningFeedbackDto
+                {
+                    InteractionId = interactionId, TargetAge = interaction.TargetAge, Type = interaction.Type.ToString(), Prompt = interaction.Prompt,
+                    ChoiceCount = choices.Length, Graded = choices.Any(x => x.IsMatch.HasValue),
+                    Choices = choices.Select(x => new ParentListeningChoiceDto(x.SelectedOptionId,
+                        x.SelectedOptionId is int optionId && options.TryGetValue(optionId, out var option) ? option.Text : x.AnswerText,
+                        x.IsMatch, x.AttemptedAt)
+                    {
+                        Truth = interaction.Type == ListeningInteractionType.TrueFalse && bool.TryParse(x.AnswerText, out var truth) ? truth : null,
+                        ActionTargetOptionId = interaction.Type is ListeningInteractionType.FollowAction or ListeningInteractionType.CauseEffect
+                            ? ReadJson<Dictionary<string, int>>(x.AnswerText)?.GetValueOrDefault("target") : null,
+                        OrderedOptionIds = interaction.Type is ListeningInteractionType.EventOrdering or ListeningInteractionType.SentenceBuilder
+                            ? ReadJson<int[]>(x.OrderedOptionIdsJson) : null
+                    }).ToArray(),
+                    Taps = interaction.Type == ListeningInteractionType.PictureSearch
+                        ? choices.Select(x => (Attempt: x, Coordinates: ReadJson<Dictionary<string, double>>(x.AnswerText)))
+                            .Where(x => x.Coordinates is not null && x.Coordinates.ContainsKey("x") && x.Coordinates.ContainsKey("y"))
+                            .Select(x => new ParentListeningTapDto(x.Coordinates!["x"], x.Coordinates["y"], x.Attempt.IsMatch, x.Attempt.AttemptedAt)).ToArray()
+                        : [],
+                    Steps = ReadJson<Dictionary<string, string>>(choices.LastOrDefault()?.StepResultsJson) ?? new(),
+                    WordStatuses = statuses,
+                    UnclearWords = words.Where((_, i) => i < statuses.Length && statuses[i] == "Retry").ToArray(),
+                    Speaker = interaction.Type == ListeningInteractionType.AlternateReading ? choices.FirstOrDefault()?.AnswerText : null,
+                    Lines = lineRecordings.Where(x => options.ContainsKey(x.ListeningInteractionOptionId!.Value)).Select(x =>
+                    {
+                        var text = options[x.ListeningInteractionOptionId!.Value].Text;
+                        var lineStatuses = ReadJson<string[]>(x.WordStatusesJson) ?? [];
+                        var lineWords = Regex.Matches(text.Normalize(), @"[\p{L}\p{N}]+").Select(match => match.Value).ToArray();
+                        return new ParentListeningLineDto(x.ListeningInteractionOptionId!.Value, text, lineStatuses,
+                            lineWords.Where((_, i) => i < lineStatuses.Length && lineStatuses[i] == "Retry").ToArray(), x.RecordedAt);
+                    }).ToArray()
+                });
+            }
+            result[sessionId] = feedback;
+        }
+        return result;
+    }
+
+    private static T? ReadJson<T>(string? json) where T : class
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try { return JsonSerializer.Deserialize<T>(json); }
+        catch (JsonException) { return null; }
+    }
+
+    // Giữ phần hội thoại cảm xúc/cảm nhận cho các bộ tuổi dùng lại loại này.
     private async Task<Dictionary<int, List<ConversationAnswerDto>>> LoadConversationAnswersAsync(
         List<int> sessionIds, CancellationToken ct)
     {

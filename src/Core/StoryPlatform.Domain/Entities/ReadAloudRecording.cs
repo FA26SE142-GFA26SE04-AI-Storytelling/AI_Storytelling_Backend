@@ -19,6 +19,9 @@ public class ReadAloudRecording : BaseEntity
     public int? ListeningInteractionId { get; set; }
     public virtual ListeningInteraction? ListeningInteraction { get; set; }
 
+    /// <summary>AlternateReading: lượt thoại (option) bé đã đọc; null với các đoạn luyện khác.</summary>
+    public int? ListeningInteractionOptionId { get; set; }
+
     public string AudioStoragePath { get; set; } = string.Empty;
     public string AudioContentType { get; set; } = string.Empty;
     public int AudioBytes { get; set; }
@@ -27,6 +30,8 @@ public class ReadAloudRecording : BaseEntity
     public int RetryCount { get; set; }
     public int SkippedCount { get; set; }
     public int TotalCount { get; set; }
+    /// <summary>Per-word statuses only; never contains the child's transcription.</summary>
+    public string? WordStatusesJson { get; set; }
 
     public DateTime RecordedAt { get; set; }
 }

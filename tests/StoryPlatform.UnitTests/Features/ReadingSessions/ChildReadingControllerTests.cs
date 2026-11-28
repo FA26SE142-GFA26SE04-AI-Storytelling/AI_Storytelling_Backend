@@ -65,7 +65,7 @@ public class ChildReadingControllerTests
             .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Select(method => method.Name).OrderBy(name => name).ToArray();
 
-        Assert.Equal(new[] { "Complete", "GetContent", "GetDefinition", "GetSignal", "LogEvent", "ReadAloud", "ReadAloudPractice", "SaveProgress", "SearchStories", "SetBookmark", "SetFavorite", "SetFeeling", "SetListenOnly", "Start", "SubmitListeningAttempt" }, methods);
+        Assert.Equal(new[] { "Complete", "GetContent", "GetDefinition", "GetSignal", "LogEvent", "ReadAloud", "ReadAloudPractice", "SaveListeningSteps", "SaveProgress", "SearchStories", "SetBookmark", "SetFavorite", "SetFeeling", "SetListenOnly", "Start", "SubmitListeningAttempt" }, methods);
     }
 
     [Fact]
@@ -93,6 +93,20 @@ public class ChildReadingControllerTests
             .SubmitListeningAttempt(22, 7, request, default);
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         Assert.Same(expected, Assert.IsType<ApiResponse<ListeningAttemptResultDto>>(ok.Value).Data);
+    }
+
+    [Fact]
+    public async Task SaveListeningSteps_ForwardsSessionAndChildIdentity()
+    {
+        Assert.Equal("sessions/{sessionId:int}/listening/{interactionId:int}/steps",
+            typeof(ChildReadingController).GetMethod("SaveListeningSteps")!.GetCustomAttribute<HttpPatchAttribute>()!.Template);
+        using var cts = new CancellationTokenSource();
+        var request = new ListeningStepsRequestDto { Sound = "tried", Trace = "skipped" };
+        _listening.Setup(service => service.SaveStepsAsync(100, 22, 7, request, cts.Token)).Returns(Task.CompletedTask);
+        var result = await Controller(new Claim(ClaimTypes.NameIdentifier, "100"))
+            .SaveListeningSteps(22, 7, request, cts.Token);
+        Assert.IsType<OkObjectResult>(result);
+        _listening.VerifyAll();
     }
 
     [Fact]

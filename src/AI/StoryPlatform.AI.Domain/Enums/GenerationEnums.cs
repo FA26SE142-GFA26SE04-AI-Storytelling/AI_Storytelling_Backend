@@ -31,5 +31,19 @@ public enum PromptType
     ListeningFillBlank = 12,
     ListeningPicturePrediction = 13,
     ListeningEventOrdering = 14,
-    ListeningReadAloud = 15
+    ListeningReadAloud = 15,
+    ListeningCharacterLetter = 16,
+    ListeningWhoSaidIt = 17,
+    ListeningCheckpointLiteral = 18,
+    ListeningPicturePredictionAge6 = 19,
+    ListeningPictureSearch = 20,
+    ListeningTrueFalse = 21,
+    ListeningFollowAction = 22,
+    ListeningSentenceBuilder = 23,
+    ListeningEventOrderingAge7 = 24,
+    ListeningAlternateReading = 25,
+    ListeningInferenceQuestion = 26,
+    ListeningCauseEffect = 27,
+    ListeningSceneTitle = 28,
+    ListeningThoughtBubble = 29
 }

@@ -5,5 +5,6 @@ public enum CheckpointKind
 {
     Prediction = 1,
     Emotion = 2,
-    Opinion = 3
+    Opinion = 3,
+    Literal = 4
 }

@@ -94,6 +94,8 @@ public sealed partial class MediaGenerationService
                     throw new InvalidOperationException("STALE_MEDIA_RESULT");
                 previous.IsCurrent = false;
                 _unitOfWork.Repository<MediaAsset>().Update(previous);
+                if (previous.Type == MediaType.Illustration)
+                    await InvalidateListeningHotspotsAsync(previous.StoryVersionId, previous.Id, ct);
                 // Release the filtered unique key before selecting its replacement, in one transaction.
                 await _unitOfWork.SaveChangesAsync(ct);
                 asset.IsCurrent = true;

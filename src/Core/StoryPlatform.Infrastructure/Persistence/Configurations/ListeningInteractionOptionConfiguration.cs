@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using StoryPlatform.Domain.Entities;
+using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Infrastructure.Persistence.Configurations;
 
@@ -17,8 +18,13 @@ public class ListeningInteractionOptionConfiguration : IEntityTypeConfiguration<
             .HasColumnType("text");
 
         builder.Property(x => x.Feedback).HasColumnType("text");
+        builder.Property(x => x.HotspotJson).HasColumnType("text");
+        builder.Property(x => x.Role).HasConversion<string>().HasMaxLength(20)
+            .HasDefaultValue(ListeningOptionRole.None);
         builder.Property(x => x.SourceQuote).HasColumnType("text");
         builder.Property(x => x.ImageDescription).HasColumnType("text");
+        builder.Property(x => x.Speaker).HasMaxLength(60);
+        builder.Property(x => x.Emotion).HasMaxLength(20);
 
         builder.HasOne(x => x.ListeningInteraction)
             .WithMany()

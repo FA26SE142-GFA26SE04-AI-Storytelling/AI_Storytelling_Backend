@@ -11,6 +11,8 @@ public sealed class ReadAloudRequest
 {
     public byte[] Audio { get; init; } = [];
     public string? ContentType { get; init; }
+    /// <summary>Đọc luân phiên: id lượt thoại (option) bé đang đọc; null với các đoạn luyện khác.</summary>
+    public int? LineId { get; init; }
 }
 
 public sealed class ReadAloudResultDto
@@ -21,6 +23,9 @@ public sealed class ReadAloudResultDto
     /// <summary>Đoạn luyện được chấm; null khi bé đọc theo đoạn truyện.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? InteractionId { get; set; }
+    /// <summary>Đọc luân phiên: lượt thoại được chấm.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? LineId { get; set; }
     public IReadOnlyList<ReadAloudWordDto> Words { get; set; } = [];
     public int GoodCount { get; set; }
     public int RetryCount { get; set; }

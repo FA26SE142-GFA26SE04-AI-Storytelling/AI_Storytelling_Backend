@@ -11,6 +11,20 @@ public sealed class PromptTemplateProvider : IPromptTemplateProvider
     private static readonly IReadOnlyDictionary<PromptType, PromptTemplate> Templates =
         new Dictionary<PromptType, PromptTemplate>
         {
+            [PromptType.ListeningPictureSearch] = StoryPlatform.AI.Application.ContentGeneration.ListeningGenerationContract.Template("PictureSearch"),
+            [PromptType.ListeningTrueFalse] = StoryPlatform.AI.Application.ContentGeneration.ListeningGenerationContract.Template("TrueFalse"),
+            [PromptType.ListeningFollowAction] = StoryPlatform.AI.Application.ContentGeneration.ListeningGenerationContract.Template("FollowAction"),
+            [PromptType.ListeningSentenceBuilder] = StoryPlatform.AI.Application.ContentGeneration.ListeningGenerationContract.Template("SentenceBuilder"),
+            [PromptType.ListeningEventOrderingAge7] = StoryPlatform.AI.Application.ContentGeneration.ListeningGenerationContract.Template("EventOrdering:Age7"),
+            [PromptType.ListeningAlternateReading] = StoryPlatform.AI.Application.ContentGeneration.ListeningGenerationContract.Template("AlternateReading"),
+            [PromptType.ListeningInferenceQuestion] = StoryPlatform.AI.Application.ContentGeneration.ListeningGenerationContract.Template("InferenceQuestion"),
+            [PromptType.ListeningCauseEffect] = StoryPlatform.AI.Application.ContentGeneration.ListeningGenerationContract.Template("CauseEffect"),
+            [PromptType.ListeningSceneTitle] = StoryPlatform.AI.Application.ContentGeneration.ListeningGenerationContract.Template("SceneTitle"),
+            [PromptType.ListeningThoughtBubble] = StoryPlatform.AI.Application.ContentGeneration.ListeningGenerationContract.Template("ThoughtBubble"),
+            [PromptType.ListeningCharacterLetter] = StoryPlatform.AI.Application.ContentGeneration.ListeningGenerationContract.Template("CharacterLetter"),
+            [PromptType.ListeningWhoSaidIt] = StoryPlatform.AI.Application.ContentGeneration.ListeningGenerationContract.Template("WhoSaidIt"),
+            [PromptType.ListeningCheckpointLiteral] = StoryPlatform.AI.Application.ContentGeneration.ListeningGenerationContract.Template("Checkpoint:Age6"),
+            [PromptType.ListeningPicturePredictionAge6] = StoryPlatform.AI.Application.ContentGeneration.ListeningGenerationContract.Template("PicturePrediction:Age6"),
             [PromptType.ListeningCheckpoint] = StoryPlatform.AI.Application.ContentGeneration.ListeningGenerationContract.Template("Checkpoint"),
             [PromptType.ListeningRolePlay] = StoryPlatform.AI.Application.ContentGeneration.ListeningGenerationContract.Template("RolePlay"),
             [PromptType.ListeningFillBlank] = StoryPlatform.AI.Application.ContentGeneration.ListeningGenerationContract.Template("FillBlank"),

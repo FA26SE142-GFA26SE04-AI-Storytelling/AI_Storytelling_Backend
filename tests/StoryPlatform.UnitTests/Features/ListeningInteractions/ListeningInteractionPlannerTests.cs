@@ -15,134 +15,89 @@ public sealed class ListeningInteractionPlannerTests
         new StoryBlockParser().Parse(string.Join("\n\n", Enumerable.Range(1, blockCount)
             .Select(i => i == 1 && withDialogue ? "Thỏ hỏi: \"Ai đó?\"" : $"Đoạn số {i} kể chuyện.")));
 
-    private static string Describe(AgeBand age, int blocks, bool dialogue = true) =>
-        string.Join(",", ListeningInteractionPlanner.Create(age, Story(blocks, dialogue)).Items.Select(x => $"{x.Type}x{x.Count}"));
+    private static string DescribeAge6(int blocks, bool dialogue = true) =>
+        string.Join(",", ListeningInteractionPlanner.Create(6, Story(blocks, dialogue)).Items
+            .Select(x => $"{x.Type}{(x.Kind is { } k ? ":" + k : "")}x{x.Count}"));
 
     [Theory]
     [InlineData(1, "")]
-    [InlineData(2, "Checkpointx1,ReadAloudx1")]
-    [InlineData(3, "Checkpointx2,EventOrderingx1,ReadAloudx1")]
-    [InlineData(4, "Checkpointx2,RolePlayx1,EventOrderingx1,ReadAloudx1")]
-    [InlineData(5, "Checkpointx2,RolePlayx1,PicturePredictionx1,EventOrderingx1,ReadAloudx1")]
-    [InlineData(9, "Checkpointx2,RolePlayx1,PicturePredictionx1,EventOrderingx1,ReadAloudx1")]
-    public void Age6To8_FollowsSpecTable(int blocks, string expected) =>
-        Assert.Equal(expected, Describe(AgeBand.Age_6_8, blocks));
+    [InlineData(2, "Checkpoint:Literalx1")]
+    [InlineData(3, "Checkpoint:Literalx1,RolePlayx1")]
+    [InlineData(4, "Checkpoint:Literalx1,RolePlayx1,CharacterLetterx1")]
+    [InlineData(5, "Checkpoint:Literalx1,RolePlayx1,CharacterLetterx1,PicturePredictionx1")]
+    [InlineData(6, "Checkpoint:Literalx1,RolePlayx1,CharacterLetterx1,PicturePredictionx1,WhoSaidItx1")]
+    [InlineData(12, "Checkpoint:Literalx1,RolePlayx1,CharacterLetterx1,PicturePredictionx1,WhoSaidItx1")]
+    public void Age6_FiveDistinctTypes(int blocks, string expected) =>
+        Assert.Equal(expected, DescribeAge6(blocks));
+
+    [Fact]
+    public void Age6_WithoutDialogue_ReplacesDialogueTypesWithLiteral() =>
+        Assert.Equal("Checkpoint:Literalx2,CharacterLetterx1,PicturePredictionx1", DescribeAge6(6, dialogue: false));
+
+    [Fact]
+    public void Age6_HasNoEndOfStoryItems() =>
+        Assert.DoesNotContain(ListeningInteractionPlanner.Create(6, Story(9)).Items,
+            x => ListeningInteractionRules.IsEndOfStory(x.Type));
+
+    [Fact]
+    public void Age6_PlanCarriesTargetAge() =>
+        Assert.Equal(6, ListeningInteractionPlanner.Create(6, Story(6)).TargetAge);
+
+    [Theory]
+    [InlineData(9)]
+    [InlineData(10)]
+    public void UnbuiltAge_HasEmptyPlan(int age) =>
+        Assert.Empty(ListeningInteractionPlanner.Create(age, Story(6)).Items);
+
+    private static string DescribeAge8(int blocks, bool dialogue = true) =>
+        string.Join(",", ListeningInteractionPlanner.Create(8, Story(blocks, dialogue)).Items.Select(x => $"{x.Type}x{x.Count}"));
 
     [Theory]
     [InlineData(1, "")]
-    [InlineData(2, "Checkpointx1,ReadAloudx1")]
-    [InlineData(3, "Checkpointx2,EventOrderingx1,ReadAloudx1")]
-    [InlineData(4, "Checkpointx2,FillBlankx1,EventOrderingx1,ReadAloudx1")]
-    [InlineData(5, "Checkpointx2,FillBlankx1,PicturePredictionx1,EventOrderingx1,ReadAloudx1")]
-    [InlineData(6, "Checkpointx3,FillBlankx1,PicturePredictionx1,EventOrderingx1,ReadAloudx1")]
-    [InlineData(12, "Checkpointx3,FillBlankx1,PicturePredictionx1,EventOrderingx1,ReadAloudx1")]
-    public void Age9To10_FollowsSpecTable(int blocks, string expected) =>
-        Assert.Equal(expected, Describe(AgeBand.Age_9_10, blocks));
+    [InlineData(2, "AlternateReadingx1")]
+    [InlineData(3, "AlternateReadingx1,InferenceQuestionx1")]
+    [InlineData(5, "AlternateReadingx1,InferenceQuestionx1,SceneTitlex1,ThoughtBubblex1")]
+    [InlineData(6, "AlternateReadingx1,InferenceQuestionx1,SceneTitlex1,ThoughtBubblex1,CauseEffectx1")]
+    [InlineData(12, "AlternateReadingx1,InferenceQuestionx1,SceneTitlex1,ThoughtBubblex1,CauseEffectx1")]
+    public void Age8_PrioritizesFiveTypes(int blocks, string expected) => Assert.Equal(expected, DescribeAge8(blocks));
 
     [Fact]
-    public void Age6To8_WithoutDialogue_GivesRolePlaySlotToPicture() =>
-        Assert.Equal("Checkpointx2,PicturePredictionx1,EventOrderingx1,ReadAloudx1", Describe(AgeBand.Age_6_8, 5, dialogue: false));
+    public void Age8_WithoutDialogue_AndOneSlot_AsksOneInferenceQuestion() =>
+        Assert.Equal("InferenceQuestionx1", DescribeAge8(2, dialogue: false));
 
     [Fact]
-    public void Plan_ReportsSlotsAndDialogueBlocks()
+    public void Age8_WithoutDialogue_AsksTwoInferenceQuestionsInsteadOfReadingAlong() =>
+        Assert.Equal("InferenceQuestionx2,SceneTitlex1,ThoughtBubblex1,CauseEffectx1", DescribeAge8(6, dialogue: false));
+
+    [Fact]
+    public void Age8_UsesDistinctZones_ReadingAlongOnDialogue_ThoughtBubbleLatest()
     {
-        var plan = ListeningInteractionPlanner.Create(AgeBand.Age_6_8, ListeningTestStory.Blocks);
-        Assert.Equal(5, plan.Slots);
-        Assert.Equal(["P2"], plan.DialogueBlockIds);
-        Assert.Equal([T.Checkpoint, T.RolePlay, T.PicturePrediction, T.EventOrdering, T.ReadAloud], plan.Items.Select(x => x.Type));
-    }
-
-    private static string Zones(ListeningPlanItem item) => string.Join(" | ", item.Zones.Select(z => string.Join(",", z)));
-
-    private static ListeningPlanItem Item(ListeningInteractionPlan plan, T type) => plan.Items.Single(x => x.Type == type);
-
-    [Fact]
-    public void Zones_SplitLongStoryEvenly_AndGiveRolePlayTheDialogueZone()
-    {
-        var plan = ListeningInteractionPlanner.Create(AgeBand.Age_6_8, Story(15)); // thoại ở P1
-
-        Assert.Equal("P1,P2,P3", Zones(Item(plan, T.RolePlay)));
-        Assert.Equal("P4,P5,P6,P7 | P8,P9,P10", Zones(Item(plan, T.Checkpoint)));
-        Assert.Equal("P11,P12,P13,P14", Zones(Item(plan, T.PicturePrediction)));
-        Assert.Empty(Item(plan, T.EventOrdering).Zones);
-    }
-
-    [Fact]
-    public void Zones_RolePlayPrefersDialogueZoneNearestTheMiddle()
-    {
-        var text = string.Join("\n\n", Enumerable.Range(1, 15)
-            .Select(i => i is 5 or 12 ? $"Thỏ hỏi: \"Đoạn {i} có ai không?\"" : $"Đoạn số {i} kể chuyện."));
-        var plan = ListeningInteractionPlanner.Create(AgeBand.Age_6_8, new StoryBlockParser().Parse(text));
-
-        Assert.Equal("P4,P5,P6,P7", Zones(Item(plan, T.RolePlay)));
-        Assert.Equal("P1,P2,P3 | P8,P9,P10", Zones(Item(plan, T.Checkpoint)));
-        Assert.Equal("P11,P12,P13,P14", Zones(Item(plan, T.PicturePrediction)));
-    }
-
-    [Fact]
-    public void Zones_OlderChild_FillBlankTakesMiddleZone_CheckpointsFromStart_PictureLast()
-    {
-        var plan = ListeningInteractionPlanner.Create(AgeBand.Age_9_10, Story(8));
-
-        Assert.Equal("P3,P4", Zones(Item(plan, T.FillBlank)));
-        Assert.Equal("P1 | P2 | P5", Zones(Item(plan, T.Checkpoint)));
-        Assert.Equal("P6,P7", Zones(Item(plan, T.PicturePrediction)));
-    }
-
-    [Fact]
-    public void Zones_FillBlankSkipsZonesWithoutShortSentence()
-    {
-        var longSentence = string.Join(" ", Enumerable.Repeat("chữ", 16)) + ".";
-        var text = string.Join("\n\n", Enumerable.Range(1, 8).Select(i => i is 3 or 4 ? longSentence : $"Đoạn số {i} kể chuyện."));
-        var plan = ListeningInteractionPlanner.Create(AgeBand.Age_9_10, new StoryBlockParser().Parse(text));
-
-        Assert.Equal("P2", Zones(Item(plan, T.FillBlank))); // P3-P4 không có câu ≤ 15 chữ; hòa khoảng cách thì lấy vùng trước
-        Assert.Equal("P1 | P3,P4 | P5", Zones(Item(plan, T.Checkpoint)));
+        var plan = ListeningInteractionPlanner.Create(8, Story(6));
+        Assert.Equal(8, plan.TargetAge);
+        var zones = plan.Items.SelectMany(x => x.Zones).ToList();
+        Assert.Equal(5, zones.Count);
+        Assert.Equal(5, zones.SelectMany(z => z).Distinct().Count());   // mỗi tương tác một vùng riêng
+        var reading = plan.Items.Single(x => x.Type == T.AlternateReading).Zones.Single();
+        Assert.Contains(reading[0], plan.DialogueBlockIds);
+        var bubbleZone = plan.Items.Single(x => x.Type == T.ThoughtBubble).Zones.Single();
+        Assert.Equal(zones.Max(z => z.Max(id => Story(6).First(b => b.BlockId == id).EndOffset)),
+            bubbleZone.Max(id => Story(6).First(b => b.BlockId == id).EndOffset));
+        Assert.DoesNotContain(plan.Items, x => ListeningInteractionRules.IsEndOfStory(x.Type, 8));
     }
 
     [Theory]
-    [InlineData(AgeBand.Age_6_8)]
-    [InlineData(AgeBand.Age_9_10)]
-    public void Zones_PartitionEverySlotWithOneZonePerInteraction(AgeBand age)
+    [InlineData(2, "PictureSearchx1")]
+    [InlineData(3, "PictureSearchx1,TrueFalsex1")]
+    [InlineData(4, "PictureSearchx1,TrueFalsex1,SentenceBuilderx1")]
+    [InlineData(5, "PictureSearchx1,TrueFalsex1,SentenceBuilderx1,FollowActionx1")]
+    [InlineData(6, "PictureSearchx1,TrueFalsex1,SentenceBuilderx1,FollowActionx1,EventOrderingx1")]
+    public void Age7_PrioritizesFiveTypes(int blocks, string expected)
     {
-        for (var blocks = 2; blocks <= 20; blocks++)
-        {
-            var middle = ListeningInteractionPlanner.Create(age, Story(blocks)).Items.Where(x => !ListeningInteractionRules.IsEndOfStory(x.Type)).ToArray();
-            Assert.All(middle, x => Assert.Equal(x.Count, x.Zones.Count));
-            var zones = middle.SelectMany(x => x.Zones).ToArray();
-            Assert.All(zones, z => Assert.NotEmpty(z));
-            Assert.Equal(Enumerable.Range(1, blocks - 1).Select(i => $"P{i}"),
-                zones.SelectMany(z => z).OrderBy(id => int.Parse(id[1..])));
-        }
+        var plan = ListeningInteractionPlanner.Create(7, Story(blocks));
+        Assert.Equal(expected, string.Join(',', plan.Items.Select(item => $"{item.Type}x{item.Count}")));
+        Assert.Equal(7, plan.TargetAge);
+        Assert.All(plan.Items, item => Assert.Single(item.Zones));
+        Assert.DoesNotContain(plan.Items.SelectMany(item => item.Zones).SelectMany(zone => zone),
+            id => id == Story(blocks)[^1].BlockId);
     }
-
-    [Fact]
-    public void Dialogue_InLastBlockIsIgnored()
-    {
-        var blocks = new StoryBlockParser().Parse("Mở đầu.\n\nThỏ hỏi: \"Ai đó?\"");
-        Assert.Empty(ListeningInteractionPlanner.FindDialogueBlockIds(blocks));
-    }
-
-    [Theory]
-    [InlineData("- Ai đó? - Thỏ hỏi.")]
-    [InlineData("Thỏ nói “Chào bác”.")]
-    [InlineData("Mở đầu.\n— Chào bác!")]
-    public void Dialogue_DetectsQuotesAndDashLines(string first)
-    {
-        var blocks = new StoryBlockParser().Parse(first + "\n\nKết thúc.");
-        Assert.Equal(["P1"], ListeningInteractionPlanner.FindDialogueBlockIds(blocks));
-    }
-    [Theory]
-    [InlineData(2)]
-    [InlineData(7)]
-    public void ReadAloud_HasNoZone_AndDoesNotTakeAMiddleSlot(int blocks)
-    {
-        var plan = ListeningInteractionPlanner.Create(AgeBand.Age_6_8, Story(blocks));
-        var readAloud = plan.Items[^1];
-        Assert.Equal(T.ReadAloud, readAloud.Type);
-        Assert.Empty(readAloud.Zones);
-        var middleZones = plan.Items.Where(x => !ListeningInteractionRules.IsEndOfStory(x.Type)).SelectMany(x => x.Zones).ToArray();
-        Assert.Equal(middleZones.Length, middleZones.Distinct().Count());
-    }
-
 }

@@ -57,13 +57,16 @@ public sealed partial class ContentGenerationService
         if (!await _unitOfWork.Repository<StoryVocabulary>().ExistsAsync(x => x.ParentStoryPackageId == null && x.StoryVersionId == versionId, cancellationToken) ||
             !await _unitOfWork.Repository<QuizItem>().ExistsAsync(x => x.ParentStoryPackageId == null && x.StoryVersionId == versionId, cancellationToken))
             throw new InvalidOperationException("INVALID_PHASE3_HANDOFF");
-        var scope = ListeningInteractionGenerator.CreateScope(state.Version, state.Context);
+        var receipt = ReadListeningState(state.Job.GenerationMetadataJson);
+        // Job tạo trước khi có bộ theo tuổi chưa ghi TargetAge: lấy tuổi đầu tiên đã xây của nhóm (0 = không có, kế hoạch rỗng).
+        var targetAge = receipt.TargetAge > 0 ? receipt.TargetAge
+            : ListeningAgeSets.TargetAgesFor(ListeningInteractionGenerator.ToAgeBand(state.Context.AgeBand)).FirstOrDefault();
+        var scope = ListeningInteractionGenerator.CreateScope(state.Version, state.Context, targetAge);
         if (scope.Plan.Items.All(x => x.Type != type)) throw new InvalidOperationException("INVALID_PHASE3_HANDOFF");
         IReadOnlyList<ListeningInteractionDraft> drafts = [];
         var metadata = new GenerationMetadataDto();
-        if (!await HasListeningTypeAsync(versionId, type, cancellationToken))
+        if (!await HasListeningTypeAsync(versionId, type, scope.TargetAge, cancellationToken))
         {
-            var receipt = ReadListeningState(state.Job.GenerationMetadataJson);
             if (receipt.PinnedRequest is null) receipt.MaximumValidationAttempts = _artifactMaxAttempts;
             (drafts, metadata) = await _listeningGenerator.GenerateAsync(scope, type, $"listening-job-{state.Job.Id}", cancellationToken,
                 receipt, (value, ct) => PersistListeningStateAsync(state, claimedToken, value, ct));
@@ -72,15 +75,15 @@ public sealed partial class ContentGenerationService
         stopRenewal?.Invoke(); // Provider work is over; completion rotates the token and owns the short final transaction.
         await CompleteArtifactAsync(state, claimedToken, metadata, async () =>
         {
-            if (!await HasListeningTypeAsync(versionId, type, cancellationToken))
-                await _listeningGenerator.InsertAsync(versionId, drafts, cancellationToken);
-            if (ListeningNext(scope.Plan, type) is null)
+            if (!await HasListeningTypeAsync(versionId, type, scope.TargetAge, cancellationToken))
+                await _listeningGenerator.InsertAsync(versionId, drafts, cancellationToken, targetAge: scope.TargetAge);
+            if (ListeningNext(scope, type) is null)
             {
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 var inspection = await _listeningGenerator.InspectAsync(scope, cancellationToken);
                 if (!inspection.Valid) throw new InvalidOperationException("LISTENING_PACKAGE_INVALID");
             }
-        }, ListeningNext(scope.Plan, type), cancellationToken);
+        }, ListeningNext(scope, type), cancellationToken);
     }
 
     private static ListeningJobState ReadListeningState(string? json) => string.IsNullOrWhiteSpace(json)
@@ -91,7 +94,7 @@ public sealed partial class ContentGenerationService
         {
             var job = await RequireClaimedJobAsync(state.Job.Id, token, ct);
             var version = await _unitOfWork.Repository<StoryVersion>().FirstOrDefaultAsync(x => x.Id == state.Version.Id && x.IsCurrent, cancellationToken: ct);
-            if (version is null || ListeningJobState.Fingerprint(ListeningInteractionGenerator.CreateScope(version, state.Context)) != value.SourceFingerprint)
+            if (version is null || ListeningJobState.Fingerprint(ListeningInteractionGenerator.CreateScope(version, state.Context, value.TargetAge)) != value.SourceFingerprint)
                 throw new InvalidOperationException("LISTENING_SOURCE_STALE");
             if (value.PinnedRequest?.Snapshot is { } snapshot && job.PromptCatalogVersionId is int catalogId)
                 value.PinnedRequest = value.PinnedRequest with { Snapshot = snapshot with { PromptCatalogVersionId = catalogId } };
@@ -129,18 +132,31 @@ public sealed partial class ContentGenerationService
         }, ct);
     }
 
-    private Task<bool> HasListeningTypeAsync(int versionId, ListeningInteractionType type, CancellationToken cancellationToken) =>
+    private Task<bool> HasListeningTypeAsync(int versionId, ListeningInteractionType type, int targetAge, CancellationToken cancellationToken) =>
         _unitOfWork.Repository<ListeningInteraction>().ExistsAsync(
-            x => x.ParentStoryPackageId == null && x.StoryVersionId == versionId && x.Type == type && !x.IsDeleted, cancellationToken);
+            x => x.ParentStoryPackageId == null && x.StoryVersionId == versionId && x.Type == type && x.TargetAge == targetAge && !x.IsDeleted, cancellationToken);
 
     private static ListeningInteractionPlan ListeningPlan(AIStoryInputContextSnapshot context, IReadOnlyList<StoryTextBlock> blocks) =>
-        ListeningInteractionPlanner.Create(ListeningInteractionGenerator.ToAgeBand(context.AgeBand), blocks);
+        ListeningInteractionPlanner.Create(ListeningAgeSets.TargetAgesFor(ListeningInteractionGenerator.ToAgeBand(context.AgeBand)).FirstOrDefault(), blocks);
 
     /// <summary>Job kế tiếp sau loại after (null = ngay sau Quiz); null khi đã hết kế hoạch, truyện sang ContentReview.</summary>
     private static NextArtifact? ListeningNext(ListeningInteractionPlan plan, ListeningInteractionType? after)
     {
         var index = after is null ? 0 : plan.Items.Select(x => x.Type).ToList().IndexOf(after.Value) + 1;
-        return index < plan.Items.Count ? new(GenerationJobOperation.GenerateListeningInteraction, plan.Items[index].Type) : null;
+        return index < plan.Items.Count ? new(GenerationJobOperation.GenerateListeningInteraction, plan.Items[index].Type, plan.TargetAge) : null;
+    }
+
+    private static NextArtifact? ListeningNext(ListeningScope scope, ListeningInteractionType after)
+    {
+        var next = ListeningNext(scope.Plan, after);
+        if (next is not null) return next;
+        var ages = ListeningAgeSets.TargetAgesFor(ListeningInteractionGenerator.ToAgeBand(scope.Context.AgeBand));
+        foreach (var age in ages.Where(a => a > scope.TargetAge))
+        {
+            var plan = ListeningInteractionPlanner.Create(age, scope.Blocks);
+            if (ListeningNext(plan, null) is { } nextAge) return nextAge;
+        }
+        return null;
     }
 
 

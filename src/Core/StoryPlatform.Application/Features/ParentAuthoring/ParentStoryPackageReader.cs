@@ -80,7 +80,7 @@ public sealed class ParentStoryPackageReader(IUnitOfWork uow, IChildProfileAcces
             var sceneIds = manifest.SceneIds.ToList(); var segmentIds = manifest.SegmentIds.ToList();
             var scenes = await uow.Repository<StoryScene>().FindAsync(x => sceneIds.Contains(x.Id) && x.StoryVersionId == p.StoryVersionId && !x.IsDeleted, cancellationToken: ct);
             var segments = await uow.Repository<StorySegment>().FindAsync(x => segmentIds.Contains(x.Id) && !x.IsDeleted, cancellationToken: ct);
-            foreach (var interaction in interactions)
+            foreach (var interaction in interactions.Where(x => x.TargetAge.HasValue))
                 if (StoryPlatform.Application.Features.ListeningInteractions.Services.ListeningMediaRequirements.Missing(interaction, options, assets).Count > 0 ||
                     interaction.Type == ListeningInteractionType.RolePlay &&
                     StoryPlatform.Application.Features.ReadingSessions.ChildListeningContent.ModelAudioUrl(interaction, scenes, segments, assets) is null)

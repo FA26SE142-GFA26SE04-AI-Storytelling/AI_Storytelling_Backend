@@ -2742,7 +2742,13 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("AcceptedOrdersJson")
+                        .HasColumnType("text");
+
                     b.Property<int>("AnchorOffset")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("BlankIndex")
                         .HasColumnType("integer");
 
                     b.Property<string>("CharacterName")
@@ -2760,6 +2766,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasColumnType("character varying(100)");
 
                     b.Property<string>("Hint")
+                        .HasColumnType("text");
+
+                    b.Property<string>("HotspotJson")
                         .HasColumnType("text");
 
                     b.Property<bool>("IsDeleted")
@@ -2799,6 +2808,12 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int>("StoryVersionId")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("TargetAge")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("TargetLabel")
+                        .HasColumnType("text");
+
                     b.Property<string>("Type")
                         .IsRequired()
                         .HasMaxLength(30)
@@ -2814,15 +2829,17 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasIndex("StorySceneId");
 
-                    b.HasIndex("ParentStoryPackageId", "AnchorOffset")
+                    b.HasIndex("StoryVersionId", "Type");
+
+                    b.HasIndex("ParentStoryPackageId", "TargetAge", "AnchorOffset")
                         .IsUnique()
                         .HasFilter("\"IsDeleted\" = false AND \"ParentStoryPackageId\" IS NOT NULL AND \"Type\" <> 'ReadAloud'");
 
-                    b.HasIndex("StoryVersionId", "AnchorOffset")
+                    b.HasIndex("StoryVersionId", "ParentStoryPackageId", "TargetAge");
+
+                    b.HasIndex("StoryVersionId", "TargetAge", "AnchorOffset")
                         .IsUnique()
                         .HasFilter("\"IsDeleted\" = false AND \"ParentStoryPackageId\" IS NULL AND \"Type\" <> 'ReadAloud'");
-
-                    b.HasIndex("StoryVersionId", "Type");
 
                     b.ToTable("listening_interactions", (string)null);
                 });
@@ -2867,6 +2884,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int?>("SelectedOptionId")
                         .HasColumnType("integer");
 
+                    b.Property<string>("StepResultsJson")
+                        .HasColumnType("text");
+
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -2897,7 +2917,14 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("Emotion")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
                     b.Property<string>("Feedback")
+                        .HasColumnType("text");
+
+                    b.Property<string>("HotspotJson")
                         .HasColumnType("text");
 
                     b.Property<string>("ImageDescription")
@@ -2912,6 +2939,13 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int>("ListeningInteractionId")
                         .HasColumnType("integer");
 
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("None");
+
                     b.Property<int>("SortOrder")
                         .HasColumnType("integer");
 
@@ -2923,6 +2957,10 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.Property<int?>("SourceStart")
                         .HasColumnType("integer");
+
+                    b.Property<string>("Speaker")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
 
                     b.Property<string>("Text")
                         .IsRequired()
@@ -4332,6 +4370,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int?>("ListeningInteractionId")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("ListeningInteractionOptionId")
+                        .HasColumnType("integer");
+
                     b.Property<int>("ReadingSessionId")
                         .HasColumnType("integer");
 
@@ -4353,6 +4394,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("WordStatusesJson")
+                        .HasColumnType("text");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ChildProfileId")
@@ -4362,15 +4406,17 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasIndex("StorySegmentId");
 
-                    b.HasIndex("ReadingSessionId", "ListeningInteractionId")
-                        .IsUnique()
-                        .HasDatabaseName("UX_read_aloud_recordings_session_practice")
-                        .HasFilter("\"ListeningInteractionId\" IS NOT NULL AND \"IsDeleted\" = false");
-
                     b.HasIndex("ReadingSessionId", "StorySegmentId")
                         .IsUnique()
                         .HasDatabaseName("UX_read_aloud_recordings_session_segment")
                         .HasFilter("\"StorySegmentId\" IS NOT NULL AND \"IsDeleted\" = false");
+
+                    b.HasIndex("ReadingSessionId", "ListeningInteractionId", "ListeningInteractionOptionId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_read_aloud_recordings_session_practice")
+                        .HasFilter("\"ListeningInteractionId\" IS NOT NULL AND \"IsDeleted\" = false");
+
+                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("ReadingSessionId", "ListeningInteractionId", "ListeningInteractionOptionId"), false);
 
                     b.ToTable("read_aloud_recordings", null, t =>
                         {
@@ -5737,10 +5783,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .IsUnique()
                         .HasFilter("\"ParentStoryPackageId\" IS NOT NULL AND \"IsDeleted\" = false");
 
-                    b.HasIndex("StoryVersionId", "ListeningInteractionType")
-                        .IsUnique()
-                        .HasFilter("\"ParentStoryPackageId\" IS NULL AND \"Operation\" = 'GenerateListeningInteraction' AND \"StoryVersionId\" IS NOT NULL AND \"IsDeleted\" = false");
-
                     b.HasIndex("ParentJobId", "Status", "NextAttemptAt");
 
                     b.HasIndex("RequestedByUserId", "Operation", "OperationKey")
@@ -5748,6 +5790,10 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasFilter("\"RequestedByUserId\" IS NOT NULL AND \"OperationKey\" IS NOT NULL AND \"IsDeleted\" = false");
 
                     b.HasIndex("Status", "Stage", "LeaseExpiresAt");
+
+                    b.HasIndex("StoryVersionId", "ListeningInteractionType", "OperationKey")
+                        .IsUnique()
+                        .HasFilter("\"ParentStoryPackageId\" IS NULL AND \"Operation\" = 'GenerateListeningInteraction' AND \"StoryVersionId\" IS NOT NULL AND \"IsDeleted\" = false");
 
                     b.ToTable("story_generation_jobs", (string)null);
                 });

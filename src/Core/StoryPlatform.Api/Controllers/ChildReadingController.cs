@@ -136,6 +136,15 @@ public sealed class ChildReadingController : ControllerBase
         return Ok(ApiResponse<ListeningAttemptResultDto>.Ok(result));
     }
 
+    /// <summary>Ghi bước đọc âm/vẽ của tương tác chữ cái.</summary>
+    [HttpPatch("sessions/{sessionId:int}/listening/{interactionId:int}/steps")]
+    public async Task<IActionResult> SaveListeningSteps(int sessionId, int interactionId,
+        [FromBody] ListeningStepsRequestDto request, CancellationToken ct)
+    {
+        await _listening.SaveStepsAsync(ChildId, sessionId, interactionId, request, ct);
+        return Ok(ApiResponse<object>.Ok(new { }));
+    }
+
     /// <summary>Trẻ chọn cảm nhận sau khi đọc xong. Chỉ ghi lại, không có phản hồi hay thưởng.</summary>
     [HttpPut("sessions/{sessionId:int}/feeling")]
     public async Task<ActionResult<ApiResponse<ReadingFeelingDto>>> SetFeeling(
@@ -213,7 +222,7 @@ public sealed class ChildReadingController : ControllerBase
             audio = buffer.ToArray();
         }
 
-        return new ReadAloudRequest { Audio = audio, ContentType = form.Audio?.ContentType };
+        return new ReadAloudRequest { Audio = audio, ContentType = form.Audio?.ContentType, LineId = form.LineId };
     }
 }
 
@@ -221,4 +230,6 @@ public sealed class ReadAloudForm
 {
     /// <summary>Đoạn ghi âm (webm/ogg/wav/mp3/m4a/flac), tối đa 1 MB.</summary>
     public IFormFile? Audio { get; set; }
+    /// <summary>Đọc luân phiên: id lượt thoại bé đang đọc (lời của nhân vật bé đã chọn).</summary>
+    public int? LineId { get; set; }
 }

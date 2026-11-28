@@ -4,57 +4,68 @@ using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.ListeningInteractions.Services;
 
-/// <summary>
-/// Kế hoạch tương tác lúc nghe theo số chỗ trống (số đoạn - 1) và nhóm tuổi; không ngẫu nhiên.
-/// Thứ tự lấp chỗ: Checkpoint x2, RolePlay (6-8) hoặc FillBlank (9-10), PicturePrediction, thêm Checkpoint tới trần.
-/// EventOrdering và ReadAloud đặt sau đoạn cuối nên không chiếm chỗ trống; cần lần lượt từ 3 và 2 đoạn.
-/// Các tương tác giữa truyện được chia vùng (AssignZones) để rải đều, không để khúc dài không có tương tác.
-/// </summary>
+/// <summary>Plans independent listening interaction sets for each exact age.</summary>
 public static class ListeningInteractionPlanner
 {
-    public static ListeningInteractionPlan Create(AgeBand ageBand, IReadOnlyList<StoryTextBlock> blocks)
+    public static ListeningInteractionPlan Create(int targetAge, IReadOnlyList<StoryTextBlock> blocks) => targetAge switch
+    {
+        6 => CreateAge6(blocks) with { TargetAge = 6 },
+        7 => CreateAge7(blocks) with { TargetAge = 7 },
+        8 => CreateAge8(blocks) with { TargetAge = 8 },
+        _ => ListeningInteractionPlan.Empty with { TargetAge = targetAge }
+    };
+
+    private static ListeningInteractionPlan CreateAge6(IReadOnlyList<StoryTextBlock> blocks)
     {
         var slots = Math.Max(0, blocks.Count - 1);
         if (slots == 0) return ListeningInteractionPlan.Empty;
         var dialogue = FindDialogueBlockIds(blocks);
-        // Truyện 2 đoạn: chỉ 1 điểm dừng (ngoại lệ đã chốt 31/10/2026).
-        if (slots == 1) return new(slots, AssignZones([new(ListeningInteractionType.Checkpoint, 1),
-            new(ListeningInteractionType.ReadAloud, 1)], blocks, dialogue), dialogue);
+        var hasDialogue = dialogue.Count > 0;
+        var order = new List<ListeningInteractionType> { ListeningInteractionType.Checkpoint };
+        if (hasDialogue) order.Add(ListeningInteractionType.RolePlay);
+        order.Add(ListeningInteractionType.CharacterLetter);
+        order.Add(ListeningInteractionType.PicturePrediction);
+        if (hasDialogue) order.Add(ListeningInteractionType.WhoSaidIt);
+        var chosen = order.Take(slots).ToList();
+        var literals = 1 + (!hasDialogue && slots > chosen.Count ? 1 : 0);
+        var items = chosen.Select(type => type == ListeningInteractionType.Checkpoint
+            ? new ListeningPlanItem(type, literals) { Kind = CheckpointKind.Literal }
+            : new ListeningPlanItem(type, 1)).ToArray();
+        return new(slots, AssignZones(items, blocks, dialogue, 6), dialogue);
+    }
 
-        var cap = ageBand == AgeBand.Age_6_8 ? 3 : 4; // Checkpoint + PicturePrediction
-        var checkpoints = 2;
-        var remaining = slots - checkpoints;
-        var middle = new List<ListeningPlanItem>();
+    private static ListeningInteractionPlan CreateAge7(IReadOnlyList<StoryTextBlock> blocks)
+    {
+        var slots = Math.Max(0, blocks.Count - 1);
+        if (slots == 0) return ListeningInteractionPlan.Empty;
+        ListeningInteractionType[] priority = [ListeningInteractionType.PictureSearch, ListeningInteractionType.TrueFalse,
+            ListeningInteractionType.SentenceBuilder, ListeningInteractionType.FollowAction, ListeningInteractionType.EventOrdering];
+        var items = priority.Take(slots).Select(type => new ListeningPlanItem(type, 1)).ToArray();
+        var dialogue = FindDialogueBlockIds(blocks);
+        return new(slots, AssignZones(items, blocks, dialogue, 7), dialogue);
+    }
 
-        if (remaining > 0 && ageBand == AgeBand.Age_6_8 && dialogue.Count > 0)
+    private static ListeningInteractionPlan CreateAge8(IReadOnlyList<StoryTextBlock> blocks)
+    {
+        var slots = Math.Max(0, blocks.Count - 1);
+        if (slots == 0) return ListeningInteractionPlan.Empty;
+        var dialogue = FindDialogueBlockIds(blocks);
+        // Không có thoại thì không đọc luân phiên được: thay bằng câu suy luận thứ hai.
+        var order = new List<ListeningPlanItem>();
+        if (dialogue.Count > 0) order.Add(new(ListeningInteractionType.AlternateReading, 1));
+        order.Add(new(ListeningInteractionType.InferenceQuestion, dialogue.Count > 0 ? 1 : Math.Min(2, slots)));
+        order.Add(new(ListeningInteractionType.SceneTitle, 1));
+        order.Add(new(ListeningInteractionType.ThoughtBubble, 1));
+        order.Add(new(ListeningInteractionType.CauseEffect, 1));
+        var items = new List<ListeningPlanItem>();
+        var used = 0;
+        foreach (var item in order)
         {
-            middle.Add(new(ListeningInteractionType.RolePlay, 1));
-            remaining--;
+            if (used + item.Count > slots) break;
+            items.Add(item);
+            used += item.Count;
         }
-        else if (remaining > 0 && ageBand == AgeBand.Age_9_10)
-        {
-            middle.Add(new(ListeningInteractionType.FillBlank, 1));
-            remaining--;
-        }
-        var picture = 0;
-        if (remaining > 0 && checkpoints + 1 <= cap)
-        {
-            picture = 1;
-            remaining--;
-        }
-        while (remaining > 0 && checkpoints + picture < cap)
-        {
-            checkpoints++;
-            remaining--;
-        }
-
-        var items = new List<ListeningPlanItem> { new(ListeningInteractionType.Checkpoint, checkpoints) };
-        items.AddRange(middle);
-        if (picture > 0) items.Add(new(ListeningInteractionType.PicturePrediction, picture));
-        // Đặt sau đoạn cuối, chạy sau cùng; cần 3 đoạn để 3 sự kiện ở 3 đoạn khác nhau.
-        if (blocks.Count >= 3) items.Add(new(ListeningInteractionType.EventOrdering, 1));
-        items.Add(new(ListeningInteractionType.ReadAloud, 1));
-        return new(slots, AssignZones(items, blocks, dialogue), dialogue);
+        return new(slots, AssignZones(items, blocks, dialogue, 8), dialogue);
     }
 
     /// <summary>
@@ -64,10 +75,10 @@ public static class ListeningInteractionPlanner
     /// PicturePrediction lấy vùng muộn nhất để đáp án gần cuối truyện.
     /// </summary>
     private static IReadOnlyList<ListeningPlanItem> AssignZones(
-        IReadOnlyList<ListeningPlanItem> items, IReadOnlyList<StoryTextBlock> blocks, IReadOnlyList<string> dialogue)
+        IReadOnlyList<ListeningPlanItem> items, IReadOnlyList<StoryTextBlock> blocks, IReadOnlyList<string> dialogue, int targetAge)
     {
         var slots = blocks.Count - 1;
-        var middle = items.Where(x => !ListeningInteractionRules.IsEndOfStory(x.Type)).Sum(x => x.Count);
+        var middle = items.Where(x => !ListeningInteractionRules.IsEndOfStory(x.Type, targetAge)).Sum(x => x.Count);
         var zones = Enumerable.Range(0, middle).Select(k => blocks
             .Skip(k * slots / middle).Take((k + 1) * slots / middle - k * slots / middle).ToArray()).ToArray();
         var free = Enumerable.Range(0, middle).ToList();
@@ -82,16 +93,33 @@ public static class ListeningInteractionPlanner
         IReadOnlyList<string> TakeFitting(Func<StoryTextBlock, bool> fits) => Claim(free
             .OrderBy(z => zones[z].Any(fits) ? 0 : 1).ThenBy(z => Math.Abs(z - center)).ThenBy(z => z).First());
         IReadOnlyList<string> TakeEarliest() => Claim(free[0]);
+        IReadOnlyList<string> TakeLatest() => Claim(free[^1]);
 
         var assigned = new Dictionary<ListeningInteractionType, IReadOnlyList<IReadOnlyList<string>>>();
         foreach (var item in items.Where(x => x.Type == ListeningInteractionType.RolePlay))
             assigned[item.Type] = [TakeFitting(b => dialogue.Contains(b.BlockId))];
+        foreach (var item in items.Where(x => x.Type == ListeningInteractionType.WhoSaidIt))
+            assigned[item.Type] = [TakeFitting(b => blocks.Any(d => dialogue.Contains(d.BlockId) && d.EndOffset <= b.EndOffset))];
         foreach (var item in items.Where(x => x.Type == ListeningInteractionType.FillBlank))
             assigned[item.Type] = [TakeFitting(HasShortSentence)];
-        foreach (var item in items.Where(x => x.Type == ListeningInteractionType.Checkpoint))
+        foreach (var item in items.Where(x => x.Type == ListeningInteractionType.SentenceBuilder))
+            assigned[item.Type] = [TakeFitting(HasShortSentence)];
+        foreach (var item in items.Where(x => x.Type == ListeningInteractionType.EventOrdering && targetAge == 7))
+            assigned[item.Type] = [TakeLatest()];
+        foreach (var item in items.Where(x => x.Type is ListeningInteractionType.Checkpoint or ListeningInteractionType.CharacterLetter))
             assigned[item.Type] = Enumerable.Range(0, item.Count).Select(_ => TakeEarliest()).ToArray();
         foreach (var item in items.Where(x => x.Type == ListeningInteractionType.PicturePrediction))
             assigned[item.Type] = [TakeEarliest()];
+        foreach (var item in items.Where(x => x.Type is ListeningInteractionType.PictureSearch or ListeningInteractionType.TrueFalse or ListeningInteractionType.FollowAction))
+            assigned[item.Type] = [TakeEarliest()];
+        // Tuổi 8: đọc luân phiên cần vùng có thoại; bong bóng suy nghĩ lấy vùng muộn nhất (cao trào cảm xúc); còn lại từ đầu truyện.
+        foreach (var item in items.Where(x => x.Type == ListeningInteractionType.AlternateReading))
+            assigned[item.Type] = [TakeFitting(b => dialogue.Contains(b.BlockId))];
+        foreach (var item in items.Where(x => x.Type == ListeningInteractionType.ThoughtBubble))
+            assigned[item.Type] = [TakeLatest()];
+        foreach (var item in items.Where(x => x.Type is ListeningInteractionType.InferenceQuestion or ListeningInteractionType.CauseEffect
+            or ListeningInteractionType.SceneTitle))
+            assigned[item.Type] = Enumerable.Range(0, item.Count).Select(_ => TakeEarliest()).ToArray();
 
         return items.Select(x => assigned.TryGetValue(x.Type, out var z) ? x with { Zones = z } : x).ToArray();
     }

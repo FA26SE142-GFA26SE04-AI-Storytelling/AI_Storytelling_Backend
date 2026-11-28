@@ -41,7 +41,7 @@ public interface IStoryReviewService
     Task<ListeningReviewDto> GetListeningForReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default);
     Task<ListeningReviewDto> UpdateListeningInteractionAsync(int userId, int storyId, int interactionId, UpdateListeningInteractionRequestDto input, CancellationToken cancellationToken = default);
     Task<bool> CompleteListeningReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default);
-    Task<CreateProposalResponseDto> CreateListeningProposalAsync(int userId, int storyId, ListeningInteractionType type, CancellationToken cancellationToken = default);
+    Task<CreateProposalResponseDto> CreateListeningProposalAsync(int userId, int storyId, ListeningInteractionType type, CancellationToken cancellationToken = default, int? targetAge = null);
     Task ApplyListeningProposalAsync(int userId, AIProposalDto proposal, CancellationToken cancellationToken = default);
 
     Task<bool> CompleteStoryReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default);

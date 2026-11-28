@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using StoryPlatform.Application.Features.ListeningInteractions.Services;
+using StoryPlatform.Domain.Enums;
 namespace StoryPlatform.Application.Features.StoryReview.DTOs;
 
 #region Review Package
@@ -169,11 +171,13 @@ public sealed record ListeningReviewDto
     public bool Reviewed { get; init; }
     public IReadOnlyList<ListeningPlanItemDto> Plan { get; init; } = [];
     public IReadOnlyList<ListeningInteractionReviewDto> Items { get; init; } = [];
+    public IReadOnlyList<ListeningAgeSetReviewDto> AgeSets { get; init; } = [];
     public IReadOnlyList<ListeningIssueDto> Issues { get; init; } = [];
 }
 
 public sealed record ListeningPlanItemDto
 {
+    public int? TargetAge { get; init; }
     public string Type { get; init; } = string.Empty;
     public int Count { get; init; }
     public IReadOnlyList<IReadOnlyList<string>> Zones { get; init; } = [];
@@ -182,11 +186,17 @@ public sealed record ListeningPlanItemDto
 public sealed record ListeningInteractionReviewDto
 {
     public int Id { get; init; }
+    public int? TargetAge { get; init; }
+    public int? BlankIndex { get; init; }
     public string Type { get; init; } = string.Empty;
     public string AnchorBlockId { get; init; } = string.Empty;
     public int AnchorOffset { get; init; }
     public string? Kind { get; init; }
     public string? Prompt { get; init; }
+    public string? TargetLabel { get; init; }
+    public HotspotBox? Hotspot { get; init; }
+    public bool HasValidHotspot { get; init; }
+    public IReadOnlyList<IReadOnlyList<int>>? AcceptedOrders { get; init; }
     public string? SourceQuote { get; init; }
     public string? CharacterName { get; init; }
     public string? HiddenWord { get; init; }
@@ -200,6 +210,8 @@ public sealed record ListeningInteractionReviewDto
     public IReadOnlyList<ListeningOptionReviewDto> Options { get; init; } = [];
 }
 
+public sealed record ListeningAgeSetReviewDto(int TargetAge, IReadOnlyList<ListeningInteractionReviewDto> Items);
+
 public sealed record ListeningOptionReviewDto
 {
     public int Id { get; init; }
@@ -211,6 +223,11 @@ public sealed record ListeningOptionReviewDto
     public string? BlockId { get; init; }
     public string? SourceQuote { get; init; }
     public string? ImageDescription { get; init; }
+    public ListeningOptionRole Role { get; init; }
+    /// <summary>Đọc luân phiên: người nói lượt này.</summary>
+    public string? Speaker { get; init; }
+    /// <summary>Bong bóng suy nghĩ: cảm xúc của bong bóng.</summary>
+    public string? Emotion { get; init; }
 }
 
 public sealed record ListeningIssueDto
@@ -225,7 +242,12 @@ public sealed record ListeningIssueDto
 public sealed record UpdateListeningInteractionRequestDto
 {
     public int VersionId { get; init; }
+    public int? BlankIndex { get; init; }
+    public string? CharacterName { get; init; }
+    public string? SourceQuote { get; init; }
     public string? Prompt { get; init; }
+    public string? TargetLabel { get; init; }
+    public IReadOnlyList<IReadOnlyList<int>>? AcceptedOrders { get; init; }
     public string? Hint { get; init; }
     public string? Explanation { get; init; }
     public string? MatchFeedback { get; init; }
@@ -238,8 +260,13 @@ public sealed record UpdateListeningInteractionRequestDto
 public sealed record UpdateListeningOptionDto
 {
     public int Id { get; init; }
+    public string? ImageDescription { get; init; }
+    public ListeningOptionRole? Role { get; init; }
+    public bool? IsMatch { get; init; }
     public string? Text { get; init; }
     public string? Feedback { get; init; }
+    public string? Speaker { get; init; }
+    public string? Emotion { get; init; }
     [JsonExtensionData] public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }
 
@@ -328,6 +355,8 @@ public sealed record ApplyDiscardResponseDto
 
 public sealed record GenerateArtifactsRequestDto
 {
+    /// <summary>Only regenerate this built age set; null regenerates all built ages in the story band.</summary>
+    public int? TargetAge { get; init; }
     public int? StoryVersionId { get; init; }
     public bool IncludeVocabulary { get; init; } = true;
     public bool IncludeQuiz { get; init; } = true;

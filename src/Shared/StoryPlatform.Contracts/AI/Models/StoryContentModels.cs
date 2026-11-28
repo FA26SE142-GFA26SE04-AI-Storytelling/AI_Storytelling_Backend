@@ -89,6 +89,8 @@ public sealed record ListeningChoiceDto
     public string? Text { get; init; }
     public string? Feedback { get; init; }
     public bool IsMatch { get; init; }
+    /// <summary>Checkpoint Literal (tuổi 6): tranh của đáp án, lấy từ cảnh truyện.</summary>
+    public string? ImageDescription { get; init; }
 }
 
 public sealed record CheckpointItemDto
@@ -140,6 +142,8 @@ public sealed record ReadAloudItemDto
 /// <summary>No afterBlockId: the backend always places event ordering after the last block.</summary>
 public sealed record EventOrderingItemDto
 {
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? AfterBlockId { get; init; }
     public IReadOnlyList<ListeningEventDto> Events { get; init; } = [];
     public string? MatchFeedback { get; init; }
     public string? RetryFeedback { get; init; }
@@ -161,4 +165,117 @@ public sealed record PicturePredictionItemDto
     public string? SourceQuote { get; init; }
     public string? WaitFeedback { get; init; }
     public IReadOnlyList<PicturePredictionOptionDto> Options { get; init; } = [];
+}
+
+public sealed record CharacterLetterItemDto
+{
+    public string? ImageDescription { get; init; }
+    public string? AfterBlockId { get; init; }
+    public string? CharacterName { get; init; }
+    public int? BlankIndex { get; init; }
+    public string? PraiseFeedback { get; init; }
+    public IReadOnlyList<ListeningChoiceDto> Options { get; init; } = [];
+}
+
+public sealed record ListeningSpeakerDto(string Name, bool IsMatch, string ImageDescription);
+
+public sealed record WhoSaidItItemDto
+{
+    public string? AfterBlockId { get; init; }
+    public string? SourceQuote { get; init; }
+    public string? LineQuote { get; init; }
+    public string? MatchFeedback { get; init; }
+    public string? RetryFeedback { get; init; }
+    public IReadOnlyList<ListeningSpeakerDto> Speakers { get; init; } = [];
+}
+
+public sealed record PictureSearchItemDto
+{
+    public string? AfterBlockId { get; init; }
+    public string? SourceQuote { get; init; }
+    public string? TargetLabel { get; init; }
+    public string? Question { get; init; }
+    public string? MatchFeedback { get; init; }
+    public string? RetryFeedback { get; init; }
+}
+
+public sealed record TrueFalseStatementDto(string Text, bool IsTrue, string? EvidenceLabel);
+public sealed record TrueFalseItemDto
+{
+    public string? AfterBlockId { get; init; }
+    public IReadOnlyList<TrueFalseStatementDto> Statements { get; init; } = [];
+    public string? MatchFeedback { get; init; }
+    public string? RetryFeedback { get; init; }
+}
+
+public sealed record FollowActionItemOptionDto(string Name, bool IsCorrect, string ImageDescription);
+public sealed record FollowActionTargetDto(string Name, string ImageDescription);
+public sealed record FollowActionItemDto
+{
+    public string? AfterBlockId { get; init; }
+    public string? CharacterName { get; init; }
+    public string? Question { get; init; }
+    public IReadOnlyList<FollowActionItemOptionDto> Items { get; init; } = [];
+    public FollowActionTargetDto? Target { get; init; }
+    public string? MatchFeedback { get; init; }
+    public string? RetryFeedback { get; init; }
+}
+
+public sealed record SentenceBuilderItemDto
+{
+    public string? AfterBlockId { get; init; }
+    public string? SentenceQuote { get; init; }
+    public IReadOnlyList<string> Cards { get; init; } = [];
+    public IReadOnlyList<IReadOnlyList<int>> AcceptedOrders { get; init; } = [];
+    public string? MatchFeedback { get; init; }
+    public string? RetryFeedback { get; init; }
+}
+
+public sealed record AlternateLineDto(string Speaker, string Text);
+public sealed record AlternateReadingItemDto
+{
+    public string? AfterBlockId { get; init; }
+    public IReadOnlyList<AlternateLineDto> Lines { get; init; } = [];
+    public string? PraiseFeedback { get; init; }
+}
+
+public sealed record InferenceAnswerDto(string Text, bool IsCorrect);
+public sealed record InferenceQuestionItemDto
+{
+    public string? AfterBlockId { get; init; }
+    public string? Passage { get; init; }
+    public string? Question { get; init; }
+    public IReadOnlyList<InferenceAnswerDto> Answers { get; init; } = [];
+    public IReadOnlyList<string> Clues { get; init; } = [];
+    public string? Explanation { get; init; }
+    public string? MatchFeedback { get; init; }
+}
+
+public sealed record CauseCardDto(string Text, string SourceQuote);
+public sealed record CausePairDto(CauseCardDto Effect, CauseCardDto Cause);
+public sealed record CauseEffectItemDto
+{
+    public string? AfterBlockId { get; init; }
+    public IReadOnlyList<CausePairDto> Pairs { get; init; } = [];
+    public string? MatchFeedback { get; init; }
+}
+
+public sealed record SceneTitleOptionDto(string Text, bool IsCorrect, string Feedback);
+public sealed record SceneTitleItemDto
+{
+    public string? AfterBlockId { get; init; }
+    public IReadOnlyList<SceneTitleOptionDto> Titles { get; init; } = [];
+    public string? Explanation { get; init; }
+    public string? MatchFeedback { get; init; }
+}
+
+public sealed record ThoughtBubbleOptionDto(string Text, bool IsCorrect, string Emotion);
+public sealed record ThoughtBubbleItemDto
+{
+    public string? AfterBlockId { get; init; }
+    public string? CharacterName { get; init; }
+    public string? Question { get; init; }
+    public string? SourceQuote { get; init; }
+    public IReadOnlyList<ThoughtBubbleOptionDto> Bubbles { get; init; } = [];
+    public string? MatchFeedback { get; init; }
 }

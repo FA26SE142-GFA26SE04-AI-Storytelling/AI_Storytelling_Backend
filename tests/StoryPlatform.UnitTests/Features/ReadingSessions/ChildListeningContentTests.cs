@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Moq;
 using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
+using StoryPlatform.Application.Features.ListeningInteractions.Services;
 using StoryPlatform.Application.Features.ReadingSessions;
 using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
 using StoryPlatform.Application.Features.ReadingSessions.Services;
@@ -22,6 +23,7 @@ public sealed class ChildListeningContentTests
         _sut = new ChildReadingService(_h.UnitOfWork.Object, new Mock<IChildRoadmapEligibility>().Object,
             new Mock<IChildRoadmapProgressRecorder>().Object, new Mock<IChildRewardService>().Object);
         _session = _h.AddSession();
+        _h.Children.Single(x => x.Id == ReadingHarness.Child).Age = 8;
         // 3 scene liền nhau: [0,20), [20,40), [40,60).
         _scenes = Enumerable.Range(0, 3).Select(i =>
         {
@@ -36,7 +38,7 @@ public sealed class ChildListeningContentTests
     {
         var interaction = new ListeningInteraction
         {
-            Id = id, StoryVersionId = ReadingHarness.Version, Type = type,
+            Id = id, StoryVersionId = ReadingHarness.Version, TargetAge = 8, Type = type,
             AnchorOffset = _scenes[sceneIndex].TextRangeEnd, StorySceneId = _scenes[sceneIndex].Id,
             MatchFeedback = "Giỏi quá!", NoMatchFeedback = "Mình nghe lại nhé."
         };
@@ -69,6 +71,394 @@ public sealed class ChildListeningContentTests
     }
 
     private Task<ReadingContentDto> Content() => _sut.GetContentAsync(ReadingHarness.Child, _session.Id);
+
+    [Theory]
+    [InlineData(6, 2)]
+    [InlineData(7, 3)]
+    [InlineData(8, null)]
+    public async Task Build_OnlyReturnsChildAgeSet(int age, int? expectedInteraction)
+    {
+        _h.Children.Single(x => x.Id == ReadingHarness.Child).Age = age;
+        foreach (var (id, target) in new (int, int?)[] { (1, null), (2, 6), (3, 7) })
+        {
+            var interaction = Add(id, ListeningInteractionType.Checkpoint, 0, x => { x.TargetAge = target; x.Prompt = "Ai đây?"; });
+            Option(id * 10, id, 1, "Thỏ");
+            _h.AddListeningMedia(interaction);
+        }
+        var content = await Content();
+        Assert.Equal(expectedInteraction, content.Scenes[0].Interaction?.Id);
+    }
+
+    // ---- Tuổi 7: nội dung gửi cho bé ----
+    // Fixture mặc định dùng tuổi 8 (chưa có bộ riêng); các test tuổi 7 đặt bé và tương tác sang tuổi 7.
+    private ListeningInteraction Add7(int id, ListeningInteractionType type, int sceneIndex, Action<ListeningInteraction>? setup = null)
+    {
+        _h.Children.Single(x => x.Id == ReadingHarness.Child).Age = 7;
+        return Add(id, type, sceneIndex, x => { x.TargetAge = 7; setup?.Invoke(x); });
+    }
+
+    private ListeningInteraction SearchInScene0(string? hotspot = "valid")
+    {
+        var picture = _h.AddIllustration(_scenes[0], "scene-0.png");
+        picture.ValidationStatus = ValidationStatus.Passed;
+        var interaction = Add7(31, ListeningInteractionType.PictureSearch, 0, x =>
+        {
+            x.Prompt = "Tìm Thỏ con trong tranh"; x.TargetLabel = "Thỏ con"; x.SourceStart = 5;
+            x.HotspotJson = hotspot == "valid" ? new HotspotBox(picture.Id, 0.4, 0.5, 0.2, 0.2).ToJson() : hotspot;
+        });
+        _h.AddListeningMedia(interaction);
+        return interaction;
+    }
+
+    [Fact]
+    public async Task Age7PictureSearch_ShowsTheStoryPictureAndTarget_ButNeverTheBox()
+    {
+        SearchInScene0();
+        var dto = (await Content()).Scenes[0].Interaction!;
+        Assert.Equal("PictureSearch", dto.Type);
+        Assert.Equal("scene-0.png", dto.SearchImageUrl);
+        Assert.Equal("Thỏ con", dto.SearchTarget);
+        Assert.Equal(2, dto.MaxChoices);
+        Assert.NotNull(dto.AudioUrls.GetValueOrDefault(ListeningAudioParts.Prompt));
+        var json = Json(dto);
+        Assert.DoesNotContain("hotspot", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("0.4", json);
+        Assert.DoesNotContain("assetId", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("not json")]
+    public async Task Age7PictureSearch_WithoutAUsableBox_IsHidden(string? hotspot)
+    {
+        SearchInScene0(hotspot);
+        Assert.Null((await Content()).Scenes[0].Interaction);
+    }
+
+    [Fact]
+    public async Task Age7PictureSearch_BoxOfAnotherPicture_IsHidden()
+    {
+        SearchInScene0(new HotspotBox(9999, 0.4, 0.5, 0.2, 0.2).ToJson());
+        Assert.Null((await Content()).Scenes[0].Interaction);
+    }
+
+    [Fact]
+    public async Task Age7PictureSearch_PictureNotYetValidated_IsHidden()
+    {
+        var interaction = SearchInScene0();
+        _h.Assets.Single(x => x.Type == MediaType.Illustration).ValidationStatus = ValidationStatus.Pending;
+        Assert.Null((await Content()).Scenes[0].Interaction);
+        Assert.NotNull(interaction.HotspotJson);
+    }
+
+    [Fact]
+    public async Task Age7TrueFalse_ShowsBothStatementsInASessionStableOrder_WithoutTheAnswer()
+    {
+        var interaction = Add7(32, ListeningInteractionType.TrueFalse, 1);
+        Option(320, 32, 1, "Thỏ nghe tiếng động", isMatch: true);
+        Option(321, 32, 2, "Thỏ ngủ trong hang");
+        _h.AddListeningMedia(interaction);
+        var first = (await Content()).Scenes[1].Interaction!;
+        var second = (await Content()).Scenes[1].Interaction!;
+        Assert.Equal(2, first.Statements!.Count);
+        Assert.Equal(first.Statements.Select(x => x.Id), second.Statements!.Select(x => x.Id));
+        Assert.All(first.Statements, statement => Assert.NotNull(statement.AudioUrl));
+        Assert.DoesNotContain("IsMatch", Json(first));
+        Assert.DoesNotContain("isTrue", Json(first), StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(first.Options);
+    }
+
+    [Fact]
+    public async Task Age7FollowAction_ShowsItemsAndTargetWithPictures_WithoutTheAnswer()
+    {
+        var interaction = Add7(33, ListeningInteractionType.FollowAction, 1, x => { x.Prompt = "Bé giúp Thỏ nhé"; x.CharacterName = "Thỏ"; });
+        Option(330, 33, 1, "bác Gấu", isMatch: true);
+        Option(331, 33, 2, "bụi cây");
+        Option(332, 33, 3, "cửa hang");
+        _h.ListeningOptions.Single(x => x.Id == 330).Role = ListeningOptionRole.Item;
+        _h.ListeningOptions.Single(x => x.Id == 331).Role = ListeningOptionRole.Item;
+        _h.ListeningOptions.Single(x => x.Id == 332).Role = ListeningOptionRole.Target;
+        _h.AddListeningMedia(interaction);
+        var dto = (await Content()).Scenes[1].Interaction!;
+        Assert.Equal(["bác Gấu", "bụi cây"], dto.ActionItems!.Select(x => x.Name));
+        Assert.Equal("cửa hang", dto.ActionTarget!.Name);
+        Assert.All(dto.ActionItems.Append(dto.ActionTarget), card =>
+        {
+            Assert.NotNull(card.ImageUrl);
+            Assert.NotNull(card.AudioUrl);
+        });
+        Assert.DoesNotContain("IsMatch", Json(dto));
+    }
+
+    [Fact]
+    public async Task Age7FollowAction_HiddenWhenAnyCardPictureIsMissing()
+    {
+        var interaction = Add7(33, ListeningInteractionType.FollowAction, 1, x => x.Prompt = "Bé giúp Thỏ nhé");
+        Option(330, 33, 1, "bác Gấu", isMatch: true);
+        Option(332, 33, 2, "cửa hang");
+        _h.ListeningOptions.Single(x => x.Id == 330).Role = ListeningOptionRole.Item;
+        _h.ListeningOptions.Single(x => x.Id == 332).Role = ListeningOptionRole.Target;
+        _h.AddListeningMedia(interaction);
+        _h.Assets.RemoveAll(x => x.Type == MediaType.ListeningImage && x.ListeningInteractionOptionId == 332);
+        Assert.Null((await Content()).Scenes[1].Interaction);
+    }
+
+    private ListeningInteraction BuilderInScene1()
+    {
+        var interaction = Add7(34, ListeningInteractionType.SentenceBuilder, 1, x =>
+        { x.SourceQuote = "Bác Gấu dẫn Thỏ về hang."; x.AcceptedOrdersJson = "[[1,2,3],[2,1,3]]"; });
+        Option(340, 34, 1, "Bác Gấu", correctOrder: 1);
+        Option(341, 34, 2, "dẫn Thỏ", correctOrder: 2);
+        Option(342, 34, 3, "về hang", correctOrder: 3);
+        _h.AddListeningMedia(interaction);
+        return interaction;
+    }
+
+    [Fact]
+    public async Task Age7SentenceBuilder_ShowsShuffledCardsNeverInStoryOrder_WithoutTheOrders()
+    {
+        BuilderInScene1();
+        var dto = (await Content()).Scenes[1].Interaction!;
+        Assert.Equal(3, dto.SlotCount);
+        Assert.Equal(3, dto.WordCards!.Count);
+        Assert.NotEqual([340, 341, 342], dto.WordCards.Select(x => x.Id));
+        Assert.All(dto.WordCards, card => Assert.NotNull(card.AudioUrl));
+        Assert.Equal(("SentenceBuilder", 7, 2), (dto.Type, dto.TargetAge, dto.MaxVoiceRetries));
+        var json = Json(dto);
+        Assert.DoesNotContain("acceptedOrders", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("correctOrder", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("[[1,2,3]", json);
+    }
+
+    [Fact]
+    public async Task Age7SentenceBuilder_OrderIsStableWithinASession()
+    {
+        BuilderInScene1();
+        var first = (await Content()).Scenes[1].Interaction!.WordCards!.Select(x => x.Id).ToArray();
+        var second = (await Content()).Scenes[1].Interaction!.WordCards!.Select(x => x.Id).ToArray();
+        Assert.Equal(first, second);
+    }
+
+    [Fact]
+    public async Task Age7SentenceBuilder_NeedsAudioForEveryAcceptedSentence()
+    {
+        var interaction = BuilderInScene1();
+        _h.Assets.RemoveAll(x => x.AudioPartKey == "sentence:2");
+        Assert.Null((await Content()).Scenes[1].Interaction);
+        Assert.NotNull(interaction);
+    }
+
+    [Fact]
+    public async Task Age7EventOrdering_IsShownMidStoryWithTheSceneIllustrations()
+    {
+        var picture = _h.AddIllustration(_scenes[0], "scene-0.png");
+        picture.ValidationStatus = ValidationStatus.Passed;
+        var interaction = Add7(35, ListeningInteractionType.EventOrdering, 1);
+        Option(350, 35, 1, "Thỏ lạc", correctOrder: 1, sourceStart: 5);
+        Option(351, 35, 2, "Gấu giúp", correctOrder: 2, sourceStart: 25);
+        Option(352, 35, 3, "Về nhà", correctOrder: 3, sourceStart: 45);
+        _h.AddListeningMedia(interaction);
+        var content = await Content();
+        var dto = content.Scenes[1].Interaction!;
+        Assert.Equal("EventOrdering", dto.Type);
+        Assert.Null(content.Scenes[2].Interaction);                       // không bị đẩy xuống scene cuối
+        Assert.Equal("scene-0.png", dto.Options.Single(o => o.Id == 350).ImageUrl);
+        Assert.NotEqual([350, 351, 352], dto.Options.Select(o => o.Id));
+    }
+
+    [Fact]
+    public async Task Age7TrueFalse_CountsAsAttemptedOnlyAfterBothStatements()
+    {
+        var interaction = Add7(32, ListeningInteractionType.TrueFalse, 1);
+        Option(320, 32, 1, "Thỏ nghe tiếng động", isMatch: true);
+        Option(321, 32, 2, "Thỏ ngủ trong hang");
+        _h.AddListeningMedia(interaction);
+        _h.ListeningAttempts.Add(new ListeningInteractionAttempt
+        { Id = 1, ReadingSessionId = _session.Id, ListeningInteractionId = 32, SelectedOptionId = 320, IsMatch = true });
+        Assert.False((await Content()).Scenes[1].AttemptedInSession);
+        _h.ListeningAttempts.Add(new ListeningInteractionAttempt
+        { Id = 2, ReadingSessionId = _session.Id, ListeningInteractionId = 32, SelectedOptionId = 321, IsMatch = false });
+        _h.ListeningAttempts.Add(new ListeningInteractionAttempt
+        { Id = 3, ReadingSessionId = _session.Id, ListeningInteractionId = 32, SelectedOptionId = 321, IsMatch = false });
+        Assert.True((await Content()).Scenes[1].AttemptedInSession);
+    }
+
+    [Fact]
+    public async Task Age7EventOrdering_CountsAsAttemptedAfterTwoWrongOrders()
+    {
+        var interaction = Add7(35, ListeningInteractionType.EventOrdering, 1);
+        Option(350, 35, 1, "Thỏ lạc", correctOrder: 1, sourceStart: 5);
+        Option(351, 35, 2, "Gấu giúp", correctOrder: 2, sourceStart: 25);
+        Option(352, 35, 3, "Về nhà", correctOrder: 3, sourceStart: 45);
+        _h.AddListeningMedia(interaction);
+        _h.ListeningAttempts.Add(new ListeningInteractionAttempt { Id = 1, ReadingSessionId = _session.Id, ListeningInteractionId = 35, IsMatch = false });
+        Assert.False((await Content()).Scenes[1].AttemptedInSession);
+        _h.ListeningAttempts.Add(new ListeningInteractionAttempt { Id = 2, ReadingSessionId = _session.Id, ListeningInteractionId = 35, IsMatch = false });
+        Assert.True((await Content()).Scenes[1].AttemptedInSession);
+    }
+
+    [Fact]
+    public async Task Age7Child_SeesTheAge7SetOnly_AndAge6ChildSeesTheAge6Set()
+    {
+        var age7 = Add7(36, ListeningInteractionType.TrueFalse, 1);
+        Option(360, 36, 1, "Thỏ nghe tiếng động", isMatch: true);
+        Option(361, 36, 2, "Thỏ ngủ trong hang");
+        _h.AddListeningMedia(age7);
+        var age6 = Add7(37, ListeningInteractionType.Checkpoint, 1, x => { x.TargetAge = 6; x.Kind = CheckpointKind.Literal; x.Prompt = "Ai đi lạc?"; });
+        Option(370, 37, 1, "Thỏ", isMatch: true, feedback: "Đúng rồi!");
+        Option(371, 37, 2, "Gấu", feedback: "Xem lại nhé.");
+        _h.AddListeningMedia(age6);
+        Assert.Equal(36, (await Content()).Scenes[1].Interaction!.Id);
+        _h.Children.Single(x => x.Id == ReadingHarness.Child).Age = 6;
+        Assert.Equal(37, (await Content()).Scenes[1].Interaction!.Id);
+    }
+
+    [Fact]
+    public async Task Literal_CardsHavePictureAndText_WithoutRevealingTheAnswer()
+    {
+        _h.Children.Single(x => x.Id == ReadingHarness.Child).Age = 6;
+        var interaction = Add(1, ListeningInteractionType.Checkpoint, 0, x =>
+        {
+            x.TargetAge = 6; x.Kind = CheckpointKind.Literal; x.Prompt = "Ai đi lạc vào rừng?";
+        });
+        Option(10, 1, 1, "Thỏ con", isMatch: true, feedback: "Đúng là Thỏ con!");
+        Option(11, 1, 2, "bác Gấu", feedback: "Mình xem lại nhé.");
+        _h.AddListeningMedia(interaction);
+        var dto = (await Content()).Scenes[0].Interaction!;
+        Assert.Equal(["Thỏ con", "bác Gấu"], dto.Options.Select(o => o.Text));
+        Assert.Equal(["picture-10.png", "picture-11.png"], dto.Options.Select(o => o.ImageUrl));
+        Assert.All(dto.Options, o => Assert.NotNull(o.AudioUrl));
+        Assert.All(dto.Options, o => Assert.Null(o.Feedback));
+        Assert.All(dto.Options, o => Assert.Null(o.FeedbackAudioUrl));
+        Assert.DoesNotContain("IsMatch", Json(dto));
+    }
+
+    [Fact]
+    public async Task Literal_HiddenUntilEveryOptionPictureIsReady()
+    {
+        _h.Children.Single(x => x.Id == ReadingHarness.Child).Age = 6;
+        var interaction = Add(1, ListeningInteractionType.Checkpoint, 0, x =>
+        {
+            x.TargetAge = 6; x.Kind = CheckpointKind.Literal; x.Prompt = "Ai đi lạc vào rừng?";
+        });
+        Option(10, 1, 1, "Thỏ con", isMatch: true);
+        Option(11, 1, 2, "bác Gấu");
+        _h.AddListeningMedia(interaction);
+        _h.Assets.RemoveAll(a => a.Type == MediaType.ListeningImage && a.ListeningInteractionOptionId == 11);
+        Assert.Null((await Content()).Scenes[0].Interaction);
+    }
+
+    [Fact]
+    public async Task RolePlayAge6_ExposesWordTimingsOnlyForSpokenLine()
+    {
+        _h.Children.Single(x => x.Id == ReadingHarness.Child).Age = 6;
+        var interaction = Add(1, ListeningInteractionType.RolePlay, 0, x =>
+        {
+            x.TargetAge = 6; x.CharacterName = "Thỏ"; x.SourceQuote = "Có ai ở đó không";
+        });
+        _h.AddListeningMedia(interaction);
+        const string timings = "[{\"word\":\"Có\",\"start\":0.0,\"end\":0.4},{\"word\":\"ai\",\"start\":0.4,\"end\":0.8}]";
+        foreach (var asset in _h.Assets.Where(a => a.ListeningInteractionId == 1 && a.Type == MediaType.ListeningAudio &&
+                     a.AudioPartKey is ListeningAudioParts.Text or ListeningAudioParts.Match))
+            asset.WordTimings = timings;
+        var dto = (await Content()).Scenes[0].Interaction!;
+        Assert.Equal([ListeningAudioParts.Text], dto.AudioWordTimings.Keys);
+        Assert.Equal(timings, dto.AudioWordTimings[ListeningAudioParts.Text]);
+        Assert.True(dto.AudioUrls.ContainsKey(ListeningAudioParts.Match));
+    }
+
+    [Fact]
+    public async Task ProviderWithoutTimings_ReturnsEmptyWordTimings()
+    {
+        _h.Children.Single(x => x.Id == ReadingHarness.Child).Age = 6;
+        var interaction = Add(1, ListeningInteractionType.RolePlay, 0, x =>
+        {
+            x.TargetAge = 6; x.CharacterName = "Thỏ"; x.SourceQuote = "Có ai ở đó không";
+        });
+        _h.AddListeningMedia(interaction);
+        var dto = (await Content()).Scenes[0].Interaction!;
+        Assert.Empty(dto.AudioWordTimings);
+    }
+
+    [Fact]
+    public async Task CharacterLetter_MasksSingleUnit_AndDoesNotExposeAnswer()
+    {
+        _h.Children.Single(x => x.Id == ReadingHarness.Child).Age = 6;
+        var interaction = Add(1, ListeningInteractionType.CharacterLetter, 0, x =>
+        {
+            x.TargetAge = 6; x.CharacterName = "Thỏ"; x.BlankIndex = 0;
+        });
+        Option(10, 1, 1, "th", isMatch: true);
+        Option(11, 1, 2, "b");
+        Option(12, 1, 3, "c");
+        _h.AddListeningMedia(interaction);
+        var dto = (await Content()).Scenes[0].Interaction!;
+        Assert.Equal(new string?[] { null, "ỏ" }, dto.NameUnits);
+        Assert.Equal("_ỏ", dto.MaskedName);
+        Assert.Equal("picture-10.png", dto.CharacterImageUrl);
+        Assert.Equal(2, dto.MaxChoices);
+        Assert.Equal(2, dto.MaxVoiceRetries);
+        Assert.Equal(3, dto.LetterOptions!.Count);
+        Assert.All(dto.LetterOptions, option => Assert.NotNull(option.SoundAudioUrl));
+        Assert.DoesNotContain("IsMatch", Json(dto));
+    }
+
+    [Fact]
+    public async Task CharacterLetter_PortraitAndLetterSoundsAreSigned()
+    {
+        _h.Children.Single(x => x.Id == ReadingHarness.Child).Age = 6;
+        var interaction = Add(1, ListeningInteractionType.CharacterLetter, 0, x =>
+        {
+            x.TargetAge = 6; x.CharacterName = "Thỏ"; x.BlankIndex = 0;
+        });
+        Option(10, 1, 1, "th", isMatch: true);
+        Option(11, 1, 2, "b");
+        Option(12, 1, 3, "c");
+        _h.AddListeningMedia(interaction);
+        var content = await Content();
+        await new PortraitSigner().SignAsync(content, CancellationToken.None);
+        var dto = content.Scenes[0].Interaction!;
+        Assert.Equal("signed:picture-10.png", dto.CharacterImageUrl);
+        Assert.All(dto.LetterOptions!, option => Assert.StartsWith("signed:", option.SoundAudioUrl));
+    }
+
+    private sealed class PortraitSigner : IChildMediaUrlSigner
+    {
+        public Task<Func<string?, string?>> SignAsync(IEnumerable<string?> paths, CancellationToken cancellationToken = default)
+        {
+            var allowed = paths.OfType<string>().ToHashSet();
+            return Task.FromResult<Func<string?, string?>>(path => path is not null && allowed.Contains(path) ? "signed:" + path : null);
+        }
+    }
+
+    [Fact]
+    public async Task WhoSaidIt_HasLineAndSpeakerPictures()
+    {
+        _h.Children.Single(x => x.Id == ReadingHarness.Child).Age = 6;
+        var interaction = Add(1, ListeningInteractionType.WhoSaidIt, 0, x => { x.TargetAge = 6; x.SourceQuote = "Chào bạn!"; });
+        Option(10, 1, 1, "Thỏ", isMatch: true);
+        Option(11, 1, 2, "Gấu");
+        _h.AddListeningMedia(interaction);
+        var dto = (await Content()).Scenes[0].Interaction!;
+        Assert.Equal("Chào bạn!", dto.SpeakerLine);
+        Assert.Equal(2, dto.Speakers!.Count);
+        Assert.All(dto.Speakers, speaker => { Assert.NotNull(speaker.ImageUrl); Assert.NotNull(speaker.NameAudioUrl); });
+        Assert.DoesNotContain("IsMatch", Json(dto));
+    }
+
+    [Fact]
+    public async Task Age6Picture_IsUngradedWithoutReveal()
+    {
+        _h.Children.Single(x => x.Id == ReadingHarness.Child).Age = 6;
+        var interaction = Add(1, ListeningInteractionType.PicturePrediction, 0, x => { x.TargetAge = 6; x.Prompt = "Chuyện gì tiếp theo?"; });
+        Option(10, 1, 1, "Thỏ chạy");
+        Option(11, 1, 2, "Gấu chạy");
+        _h.AddListeningMedia(interaction);
+        var dto = (await Content()).Scenes[0].Interaction!;
+        Assert.False(dto.Graded);
+        Assert.Equal(1, dto.MaxChoices);
+        Assert.Null(dto.RevealSceneIndex);
+    }
 
     // Giữ nguyên chữ có dấu; encoder mặc định đổi sang \uXXXX làm phép kiểm "không chứa" luôn đạt.
     private static string Json(object? value) => JsonSerializer.Serialize(value,
@@ -184,8 +574,11 @@ public sealed class ChildListeningContentTests
     [Fact]
     public async Task RolePlay_CreatedBeforeInstructionAudio_IsStillReturnedWithInstructionText()
     {
+        // Tuổi chưa có bộ riêng (9): dòng cũ tạo trước khi có câu hướng dẫn vẫn hiện, không đòi audio câu hướng dẫn.
+        _h.Children.Single(x => x.Id == ReadingHarness.Child).Age = 9;
         var interaction = Add(4, ListeningInteractionType.RolePlay, 1, x =>
         {
+            x.TargetAge = 9;
             x.CharacterName = "Thỏ";
             x.SourceQuote = "Có ai không?";
             x.SourceStart = 32;

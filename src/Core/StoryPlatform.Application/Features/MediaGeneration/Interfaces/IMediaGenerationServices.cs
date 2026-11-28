@@ -50,10 +50,26 @@ public interface ITtsProvider
     Task<GeneratedMedia> GenerateAsync(string exactSceneText, CancellationToken cancellationToken = default);
 }
 
+/// <summary>Một chữ nghe được trong audio, kèm mốc bắt đầu/kết thúc (giây).</summary>
+public sealed record TimedWord(string Text, double StartSeconds, double EndSeconds);
+
+/// <summary>Nghe lại audio đã tạo và trả mốc từng chữ nghe được. Không đổi văn bản truyện.</summary>
+public interface IAudioWordAligner
+{
+    Task<IReadOnlyList<TimedWord>> RecognizeWordsAsync(byte[] audio, CancellationToken cancellationToken = default);
+}
+
 public interface IMediaAlignmentEvaluator
 {
     Task<MediaEvaluationResult> EvaluateAsync(
         SceneSpecification specification, GeneratedMedia illustration, CancellationToken cancellationToken = default);
+}
+
+public sealed record LocatedObject(double X, double Y, double W, double H, double Confidence);
+
+public interface IPictureObjectLocator
+{
+    Task<LocatedObject?> LocateAsync(GeneratedMedia picture, string objectLabel, CancellationToken ct = default);
 }
 
 public interface IMediaSafetyEvaluator
@@ -88,6 +104,10 @@ public interface IMediaGenerationJobProcessor
     Task<MediaJobProcessResult> ProcessBranchNextAsync(StoryPlatform.Domain.Enums.MediaType type, CancellationToken cancellationToken = default);
     /// <summary>Lúc rảnh: tạo bù một audio câu hướng dẫn cho truyện có media từ trước. True nếu đã làm một câu.</summary>
     Task<bool> BackfillListeningInstructionAudioAsync(CancellationToken cancellationToken = default) => Task.FromResult(false);
+    /// <summary>Lúc rảnh: định vị bù khung đồ vật trong tranh cho tương tác Tìm chi tiết / Đúng sai chưa có khung. True nếu đã làm một truyện.</summary>
+    Task<bool> BackfillListeningHotspotsAsync(CancellationToken cancellationToken = default) => Task.FromResult(false);
+    /// <summary>Lúc rảnh: nghe lại audio Gemini cũ bằng STT để bù mốc từng chữ (chỉ khi đã bật căn mốc). True nếu đã xử lý một audio.</summary>
+    Task<bool> BackfillWordTimingsAsync(CancellationToken cancellationToken = default) => Task.FromResult(false);
 }
 
 public interface IMediaGenerationJobFailureFinalizer

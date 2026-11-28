@@ -72,6 +72,17 @@ public sealed record GenerateQuizResponse
 /// <summary>The AI fills only the list of the requested interaction type.</summary>
 public sealed record GenerateListeningInteractionResponse
 {
+    public IReadOnlyList<PictureSearchItemDto> PictureSearches { get; init; } = [];
+    public IReadOnlyList<TrueFalseItemDto> TrueFalses { get; init; } = [];
+    public IReadOnlyList<FollowActionItemDto> FollowActions { get; init; } = [];
+    public IReadOnlyList<SentenceBuilderItemDto> SentenceBuilders { get; init; } = [];
+    public IReadOnlyList<AlternateReadingItemDto> AlternateReadings { get; init; } = [];
+    public IReadOnlyList<InferenceQuestionItemDto> InferenceQuestions { get; init; } = [];
+    public IReadOnlyList<CauseEffectItemDto> CauseEffects { get; init; } = [];
+    public IReadOnlyList<SceneTitleItemDto> SceneTitles { get; init; } = [];
+    public IReadOnlyList<ThoughtBubbleItemDto> ThoughtBubbles { get; init; } = [];
+    public IReadOnlyList<CharacterLetterItemDto> CharacterLetters { get; init; } = [];
+    public IReadOnlyList<WhoSaidItItemDto> WhoSaidIts { get; init; } = [];
     public string RequestId { get; init; } = string.Empty;
     public IReadOnlyList<CheckpointItemDto> Checkpoints { get; init; } = [];
     public IReadOnlyList<RolePlayItemDto> RolePlays { get; init; } = [];

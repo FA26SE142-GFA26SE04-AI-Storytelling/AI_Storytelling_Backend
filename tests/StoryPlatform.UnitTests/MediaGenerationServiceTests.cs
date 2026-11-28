@@ -1067,7 +1067,8 @@ public sealed partial class MediaGenerationServiceTests
         IMediaReadinessService? readiness = null, IChildProfileAccessGuard? supervision = null,
         Microsoft.Extensions.Logging.ILogger<MediaGenerationService>? logger = null, MediaGenerationOptions? options = null,
         ISceneSegmentationProvider? segmenter = null,
-        StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? tokenQuota = null)
+        StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? tokenQuota = null,
+        IPictureObjectLocator? locator = null, IAudioWordAligner? aligner = null)
     {
         var evaluatorImpl = evaluator ?? new PassingEvaluator();
         var clock = new MediaTestPump.Clock();
@@ -1092,7 +1093,7 @@ public sealed partial class MediaGenerationServiceTests
             readiness ?? new MediaReadinessService(uow),
             options ?? new MediaGenerationOptions { AssetMaxAttempts = 3, JobLeaseMinutes = 5 },
             logger ?? NullLogger<MediaGenerationService>.Instance, supervision ?? new Mock<IChildProfileAccessGuard>().Object, clock, new CreatorMediaUploadValidator(),
-            tokenQuota: tokenQuota);
+            tokenQuota: tokenQuota, pictureObjectLocator: locator, audioWordAligner: aligner);
         MediaTestPump.Register(service, uow, clock);
         return service;
     }
@@ -1144,9 +1145,11 @@ public sealed partial class MediaGenerationServiceTests
     {
         var uow = new StoryReviewServiceTests.FakeUnitOfWork();
         uow.Seed(new UserAccount { Id = 1, Role = UserRole.User, Status = AccountStatus.Active });
-        uow.Seed(new ChildProfile { Id = 1, OwnerUserId = 1, Status = ChildProfileStatus.Active });
+        uow.Seed(new ChildProfile { Id = 1, OwnerUserId = 1, AgeBand = AgeBand.Age_9_10, Status = ChildProfileStatus.Active });
         uow.Seed(new SafetyPolicy { Id = 1, ChildProfileId = 1, ConsentRecorded = true, ConsentRecordedAt = DateTime.UtcNow, ConsentPolicyVersion = 1 });
-        uow.Seed(new Story { Id = 1, AuthorUserId = 1, ChildProfileId = 1, Status = StoryStatus.Approved });
+        // General media fixtures use a band whose listening set is not built yet.
+        // Listening-specific tests explicitly configure the age-6 story and interactions.
+        uow.Seed(new Story { Id = 1, AuthorUserId = 1, ChildProfileId = 1, AgeBand = "9-10", Status = StoryStatus.Approved });
         uow.Seed(new StoryVersion
         {
             Id = 10,

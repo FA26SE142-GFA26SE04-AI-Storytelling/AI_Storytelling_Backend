@@ -1,3 +1,4 @@
+using StoryPlatform.Application.Features.ListeningInteractions.Models;
 using StoryPlatform.Application.Features.Moderation;
 using StoryPlatform.Application.Features.Moderation.Services;
 using StoryPlatform.Application.Common;
@@ -686,7 +687,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                 var receipt = ReadListeningState(job.GenerationMetadataJson);
                 if (receipt.PinnedRequest is not null && receipt.SourceFingerprint !=
                     StoryPlatform.Application.Features.ListeningInteractions.Models.ListeningJobState.Fingerprint(
-                        ListeningInteractionGenerator.CreateScope(version, state.Context)))
+                        ListeningInteractionGenerator.CreateScope(version, state.Context, receipt.TargetAge)))
                     throw new InvalidOperationException("LISTENING_SOURCE_STALE");
             }
             if (_learningBatches is not null && state.Context.LearningProfile is not null)
@@ -843,9 +844,11 @@ public sealed partial class ContentGenerationService : IContentGenerationService
     {
         var operation = next.Operation;
         var listeningType = next.ListeningType;
+        var key = $"p3:{source.StoryId}:{stableVersionId}:{OperationName(operation)}";
+        var operationKey = listeningType is null ? key : $"{key}:a{next.TargetAge}:{listeningType}";
         var existing = await _unitOfWork.Repository<StoryGenerationJob>().FirstOrDefaultAsync(
             item => item.Operation == operation && item.StoryVersionId == stableVersionId &&
-                    item.ListeningInteractionType == listeningType, cancellationToken: cancellationToken);
+                    item.ListeningInteractionType == listeningType && (listeningType == null || item.OperationKey == operationKey), cancellationToken: cancellationToken);
         if (existing is not null)
         {
             if (_learningBatches is not null && source.Operation == GenerationJobOperation.GenerateVocabulary &&
@@ -861,7 +864,6 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             }
             return;
         }
-        var key = $"p3:{source.StoryId}:{stableVersionId}:{OperationName(operation)}";
         await _unitOfWork.Repository<StoryGenerationJob>().AddAsync(new StoryGenerationJob
         {
             StoryId = source.StoryId,
@@ -870,7 +872,8 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             BaseStoryVersionId = stableVersionId,
             RequestedByUserId = source.RequestedByUserId,
             PromptCatalogVersionId = source.PromptCatalogVersionId,
-            OperationKey = listeningType is null ? key : $"{key}:{listeningType}",
+            OperationKey = operationKey,
+            GenerationMetadataJson = next.TargetAge is { } age ? JsonSerializer.Serialize(new ListeningJobState { TargetAge = age }, JsonOptions) : null,
             Operation = operation,
             ListeningInteractionType = listeningType,
             Stage = JobStage.ContentArtifactPending,
@@ -1232,7 +1235,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         string? Description = null,
         int? LastMeasuredWordCount = null);
     private sealed record ArtifactState(StoryGenerationJob Job, StoryVersion Version, AIStoryInputContextSnapshot Context);
-    private sealed record NextArtifact(GenerationJobOperation Operation, ListeningInteractionType? ListeningType = null);
+    private sealed record NextArtifact(GenerationJobOperation Operation, ListeningInteractionType? ListeningType = null, int? TargetAge = null);
     private sealed record QuizItemSeed(QuizType Type, string Question, string CorrectAnswer, string Choices)
     {
         public StoryPlatform.Contracts.AI.Models.QuizItemDto? Detail { get; init; }

@@ -48,7 +48,7 @@ public static class InteractionSceneBoundaryEnforcer
         foreach (var interaction in interactions)
         {
             required.Add(BlockEndingAt(blocks, interaction.AnchorOffset));
-            if (interaction.Type == ListeningInteractionType.PicturePrediction)
+            if (interaction.Type == ListeningInteractionType.PicturePrediction && interaction.TargetAge != 6)
                 required.Add(BlockEndingAt(blocks, interaction.RevealOffset ?? throw Unresolved()));
             if (interaction.Type != ListeningInteractionType.EventOrdering) continue;
             // Mỗi sự kiện cần kết thúc một scene để có ảnh và vị trí nghe lại riêng.

@@ -204,6 +204,9 @@ public static class DependencyInjection
             services.AddHttpClient<GeminiMediaAlignmentEvaluator>(client => client.Timeout = TimeSpan.FromMinutes(2)),
             mediaOptions, evaluationOptions.TransportRetryCount, evaluationOptions.TransportRetryBaseDelayMs);
         ConfigureMediaHttpClient(
+            services.AddHttpClient<GeminiPictureObjectLocator>(client => client.Timeout = TimeSpan.FromMinutes(2)),
+            mediaOptions, evaluationOptions.TransportRetryCount, evaluationOptions.TransportRetryBaseDelayMs);
+        ConfigureMediaHttpClient(
             services.AddHttpClient<GeminiMediaSafetyEvaluator>(client => client.Timeout = TimeSpan.FromMinutes(2)),
             mediaOptions, evaluationOptions.TransportRetryCount, evaluationOptions.TransportRetryBaseDelayMs);
         ConfigureMediaHttpClient(
@@ -220,13 +223,23 @@ public static class DependencyInjection
         services.AddSingleton<IImageGenerationProvider>(sp => new GatedImageProvider(sp.GetRequiredService<GeminiImageGenerationProvider>(),
             new MediaBranchProviderGate(mediaOptions.Images, sp.GetRequiredService<ILoggerFactory>().CreateLogger("MediaProviderTiming"), "Image")));
         services.AddSingleton<GoogleCloudTtsProvider>();
-        services.AddSingleton<ITtsProvider>(sp => new GatedTtsProvider(ttsOptions.Provider.Trim().ToUpperInvariant() switch
+        services.AddSingleton<ITtsProvider>(sp =>
         {
-            "GEMINI" or "GEMINITTS" => sp.GetRequiredService<GeminiTtsProvider>(),
-            "GOOGLECLOUD" or "GOOGLECLOUDTTS" => sp.GetRequiredService<GoogleCloudTtsProvider>(),
-            _ => throw new InvalidOperationException(
-                $"Unsupported AI:TTS:Provider '{ttsOptions.Provider}'. Supported values: GeminiTTS, GoogleCloudTTS.")
-        }, new MediaBranchProviderGate(mediaOptions.Audio, sp.GetRequiredService<ILoggerFactory>().CreateLogger("MediaProviderTiming"), "Audio")));
+            ITtsProvider inner = ttsOptions.Provider.Trim().ToUpperInvariant() switch
+            {
+                "GEMINI" or "GEMINITTS" => sp.GetRequiredService<GeminiTtsProvider>(),
+                "GOOGLECLOUD" or "GOOGLECLOUDTTS" => sp.GetRequiredService<GoogleCloudTtsProvider>(),
+                _ => throw new InvalidOperationException(
+                    $"Unsupported AI:TTS:Provider '{ttsOptions.Provider}'. Supported values: GeminiTTS, GoogleCloudTTS.")
+            };
+            // Gemini không trả mốc từng chữ: bật thì nghe lại audio bằng STT để lấy mốc (giữ một giọng duy nhất).
+            if (ttsOptions.AlignWordTimingsWithStt && inner is GeminiTtsProvider)
+                inner = new SttAlignedTtsProvider(inner, sp.GetRequiredService<IServiceScopeFactory>(),
+                    sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<TtsServiceOptions>>(),
+                    sp.GetRequiredService<ILoggerFactory>().CreateLogger<SttAlignedTtsProvider>());
+            return new GatedTtsProvider(inner,
+                new MediaBranchProviderGate(mediaOptions.Audio, sp.GetRequiredService<ILoggerFactory>().CreateLogger("MediaProviderTiming"), "Audio"));
+        });
         services.AddOptions<SpeechToTextOptions>()
             .Bind(configuration.GetSection(SpeechToTextOptions.SectionName))
             .PostConfigure<Microsoft.Extensions.Options.IOptions<VertexOptions>>((stt, vertex) =>
@@ -237,7 +250,13 @@ public static class DependencyInjection
         services.AddHttpClient<GoogleSpeechToTextRecognizer>(client => client.Timeout = TimeSpan.FromSeconds(60))
             .AddHttpMessageHandler<SpeechToTextAuthHandler>();
         services.AddScoped<ISpeechRecognizer>(sp => sp.GetRequiredService<GoogleSpeechToTextRecognizer>());
+        services.AddHttpClient<GoogleSpeechWordAligner>(client => client.Timeout = TimeSpan.FromSeconds(60))
+            .AddHttpMessageHandler<SpeechToTextAuthHandler>();
+        // Chỉ đăng ký khi bật căn mốc: không có thì không căn mốc lúc tạo audio và worker không bù mốc.
+        if (ttsOptions.AlignWordTimingsWithStt)
+            services.AddScoped<IAudioWordAligner>(sp => sp.GetRequiredService<GoogleSpeechWordAligner>());
         services.AddSingleton<IMediaAlignmentEvaluator>(sp => sp.GetRequiredService<GeminiMediaAlignmentEvaluator>());
+        services.AddSingleton<IPictureObjectLocator>(sp => sp.GetRequiredService<GeminiPictureObjectLocator>());
         services.AddSingleton<IMediaSafetyEvaluator>(sp => sp.GetRequiredService<GeminiMediaSafetyEvaluator>());
         services.AddSingleton<ISemanticSceneSegmentationProvider>(sp => sp.GetRequiredService<GeminiSemanticSceneSegmentationProvider>());
         services.AddSingleton<IIllustrationBeatPlanner>(sp => sp.GetRequiredService<GeminiIllustrationBeatPlanner>());

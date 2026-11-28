@@ -253,28 +253,29 @@ public sealed partial class ParentStoryPackageProcessor(IUnitOfWork uow, IChildP
                 state.Completed = state.Completed.Append("learning").ToArray();
             }, state, ct);
         }
-        if (c.Listening)
+        foreach (var targetAge in c.Listening ? ListeningAgeSets.TargetAgesFor(ListeningInteractionGenerator.ToAgeBand(audience.Profile.AgeBand)) : [])
         {
-            var scope = ListeningInteractionGenerator.CreateScope(version, audience.Profile) with { ParentStoryPackageId = p.Id };
+            var scope = ListeningInteractionGenerator.CreateScope(version, audience.Profile, targetAge) with { ParentStoryPackageId = p.Id };
             if (scope.Plan.Items.Count == 0) throw new ConflictException("LISTENING_PLAN_INFEASIBLE");
             foreach (var item in scope.Plan.Items)
             {
-                var key = "listening:" + item.Type;
+                var key = $"listening:a{targetAge}:" + item.Type;
                 if (state.Completed.Contains(key)) continue;
                 var listeningState = state.ListeningStates.GetValueOrDefault(key) ?? new ListeningJobState();
                 state.ListeningStates[key] = listeningState;
-                var result = await listening.GenerateAsync(scope, item.Type, $"parent-package-{p.Id}", ct, listeningState,
+                var result = await listening.GenerateAsync(scope, item.Type, $"parent-package-{p.Id}-a{targetAge}", ct, listeningState,
                     async (value, cancellation) => await Checkpoint(job, token, () => Task.CompletedTask, state, cancellation));
                 await Checkpoint(job, token, async () =>
                 {
-                    if (!await uow.Repository<ListeningInteraction>().ExistsAsync(x => x.ParentStoryPackageId == p.Id && x.Type == item.Type && !x.IsDeleted, ct))
-                        await listening.InsertAsync(version.Id, result.Drafts, ct, p.Id);
+                    if (!await uow.Repository<ListeningInteraction>().ExistsAsync(x => x.ParentStoryPackageId == p.Id && x.Type == item.Type && x.TargetAge == targetAge && !x.IsDeleted, ct))
+                        await listening.InsertAsync(version.Id, result.Drafts, ct, p.Id, targetAge);
                     state.Completed = state.Completed.Append(key).ToArray();
                 }, state, ct);
             }
         }
-        if (c.Listening && !(await listening.InspectAsync(ListeningInteractionGenerator.CreateScope(version, audience.Profile) with { ParentStoryPackageId = p.Id }, ct)).Valid)
-            throw new ConflictException("LISTENING_PACKAGE_INVALID");
+        foreach (var targetAge in c.Listening ? ListeningAgeSets.TargetAgesFor(ListeningInteractionGenerator.ToAgeBand(audience.Profile.AgeBand)) : [])
+            if (!(await listening.InspectAsync(ListeningInteractionGenerator.CreateScope(version, audience.Profile, targetAge) with { ParentStoryPackageId = p.Id }, ct)).Valid)
+                throw new ConflictException("LISTENING_PACKAGE_INVALID");
         await Finish(job, token, p, async (_, package) =>
         {
             if (c.Images || c.Narration || c.Listening)

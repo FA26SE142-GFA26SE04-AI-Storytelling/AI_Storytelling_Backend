@@ -16,15 +16,15 @@ public sealed class ListeningInteractionModelTests
         entity.GetIndexes().Single(i => i.Properties.Select(p => p.Name).SequenceEqual(columns));
 
     [Fact]
-    public void Interaction_HasOneRowPerAnchorPerVersion()
+    public void Interaction_HasOneRowPerAgeAndAnchorPerVersion()
     {
         using var db = MetadataOnly();
         var entity = db.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(ListeningInteraction))!;
         Assert.Equal("listening_interactions", entity.GetTableName());
-        var index = Index(entity, nameof(ListeningInteraction.StoryVersionId), nameof(ListeningInteraction.AnchorOffset));
+        var index = Index(entity, nameof(ListeningInteraction.StoryVersionId), nameof(ListeningInteraction.TargetAge), nameof(ListeningInteraction.AnchorOffset));
         Assert.True(index.IsUnique);
         Assert.Equal("\"IsDeleted\" = false AND \"ParentStoryPackageId\" IS NULL AND \"Type\" <> 'ReadAloud'", index.GetFilter());
-        var packageIndex = Index(entity, nameof(ListeningInteraction.ParentStoryPackageId), nameof(ListeningInteraction.AnchorOffset));
+        var packageIndex = Index(entity, nameof(ListeningInteraction.ParentStoryPackageId), nameof(ListeningInteraction.TargetAge), nameof(ListeningInteraction.AnchorOffset));
         Assert.True(packageIndex.IsUnique);
         Assert.Equal("\"IsDeleted\" = false AND \"ParentStoryPackageId\" IS NOT NULL AND \"Type\" <> 'ReadAloud'", packageIndex.GetFilter());
         Assert.Equal("Checkpoint", entity.FindProperty(nameof(ListeningInteraction.Type))!.GetTypeMapping().Converter!
@@ -69,7 +69,7 @@ public sealed class ListeningInteractionModelTests
         var entity = db.Model.FindEntityType(typeof(StoryGenerationJob))!;
         var legacy = Index(entity, nameof(StoryGenerationJob.Operation), nameof(StoryGenerationJob.StoryVersionId));
         Assert.Contains("\"Operation\" <> 'GenerateListeningInteraction'", legacy.GetFilter());
-        var perType = Index(entity, nameof(StoryGenerationJob.StoryVersionId), nameof(StoryGenerationJob.ListeningInteractionType));
+        var perType = Index(entity, nameof(StoryGenerationJob.StoryVersionId), nameof(StoryGenerationJob.ListeningInteractionType), nameof(StoryGenerationJob.OperationKey));
         Assert.True(perType.IsUnique);
         Assert.Contains("\"Operation\" = 'GenerateListeningInteraction'", perType.GetFilter());
         // Index FK thường vẫn phải còn; index có filter ở trên không thay được nó.

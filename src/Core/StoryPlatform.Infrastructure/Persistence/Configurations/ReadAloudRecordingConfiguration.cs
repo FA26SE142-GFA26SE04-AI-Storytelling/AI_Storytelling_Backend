@@ -30,8 +30,10 @@ public class ReadAloudRecordingConfiguration : IEntityTypeConfiguration<ReadAlou
             .IsUnique()
             .HasFilter("\"StorySegmentId\" IS NOT NULL AND \"IsDeleted\" = false")
             .HasDatabaseName("UX_read_aloud_recordings_session_segment");
-        builder.HasIndex(x => new { x.ReadingSessionId, x.ListeningInteractionId })
+        // Đọc luân phiên có một bản ghi cho mỗi lượt thoại; các đoạn luyện khác để lượt = NULL (NULL tính là một giá trị).
+        builder.HasIndex(x => new { x.ReadingSessionId, x.ListeningInteractionId, x.ListeningInteractionOptionId })
             .IsUnique()
+            .AreNullsDistinct(false)
             .HasFilter("\"ListeningInteractionId\" IS NOT NULL AND \"IsDeleted\" = false")
             .HasDatabaseName("UX_read_aloud_recordings_session_practice");
         builder.HasIndex(x => x.ChildProfileId).HasDatabaseName("IX_read_aloud_recordings_child");

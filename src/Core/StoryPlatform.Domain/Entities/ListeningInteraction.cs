@@ -14,6 +14,13 @@ public class ListeningInteraction : BaseEntity
     public virtual StoryVersion? StoryVersion { get; set; }
 
     public ListeningInteractionType Type { get; set; }
+    /// <summary>Exact target age. Legacy untagged rows are never served to children.</summary>
+    public int? TargetAge { get; set; }
+    /// <summary>Missing Vietnamese letter unit in CharacterName, indexed from zero.</summary>
+    public int? BlankIndex { get; set; }
+    public string? TargetLabel { get; set; }
+    public string? HotspotJson { get; set; }
+    public string? AcceptedOrdersJson { get; set; }
     /// <summary>Vị trí ký tự kết thúc của đoạn neo trong StoryVersion.Content.</summary>
     public int AnchorOffset { get; set; }
     /// <summary>Null tới khi Phase 5 gắn scene.</summary>

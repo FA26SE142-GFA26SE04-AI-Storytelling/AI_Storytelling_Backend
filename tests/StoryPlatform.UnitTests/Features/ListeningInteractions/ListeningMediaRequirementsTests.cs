@@ -8,6 +8,71 @@ namespace StoryPlatform.UnitTests.Features.ListeningInteractions;
 public sealed class ListeningMediaRequirementsTests
 {
     [Fact]
+    public void PictureSearch_RequiresCurrentIllustrationHotspot()
+    {
+        var interaction = new ListeningInteraction { Id = 7, Type = ListeningInteractionType.PictureSearch,
+            TargetAge = 7, HotspotJson = new HotspotBox(50, 0.4, 0.5, 0.2, 0.2).ToJson() };
+        Assert.Contains("7:i:hotspot", ListeningMediaRequirements.Missing(interaction, [], []));
+        var image = new MediaAsset { Id = 50, Type = MediaType.Illustration, IsCurrent = true,
+            Status = MediaStatus.Ready, ValidationStatus = ValidationStatus.Passed, Url = "picture.png" };
+        Assert.DoesNotContain("7:i:hotspot", ListeningMediaRequirements.Missing(interaction, [], [image]));
+        image.IsCurrent = false;
+        Assert.Contains("7:i:hotspot", ListeningMediaRequirements.Missing(interaction, [], [image]));
+    }
+
+    [Fact]
+    public void FollowAction_RequiresPicturesForItemsAndTarget()
+    {
+        var interaction = new ListeningInteraction { Id = 8, Type = ListeningInteractionType.FollowAction };
+        var options = new[] { new ListeningInteractionOption { Id = 80, ListeningInteractionId = 8, Text = "Gấu", Role = ListeningOptionRole.Item },
+            new ListeningInteractionOption { Id = 81, ListeningInteractionId = 8, Text = "hang", Role = ListeningOptionRole.Target } };
+        var missing = ListeningMediaRequirements.Missing(interaction, options, []);
+        Assert.Contains("8:o80:image", missing);
+        Assert.Contains("8:o81:image", missing);
+    }
+
+    [Theory]
+    [InlineData(ListeningInteractionType.WhoSaidIt)]
+    [InlineData(ListeningInteractionType.CharacterLetter)]
+    public void NewTypes_RequireCharacterImages(ListeningInteractionType type)
+    {
+        var interaction = new ListeningInteraction { Id = 5, Type = type };
+        var options = new[] {
+            new ListeningInteractionOption { Id = 50, ListeningInteractionId = 5, Text = "b", IsMatch = true },
+            new ListeningInteractionOption { Id = 51, ListeningInteractionId = 5, Text = "m" }
+        };
+        var missing = ListeningMediaRequirements.Missing(interaction, options, []);
+        Assert.Contains("5:o50:image", missing);
+        Assert.Equal(type == ListeningInteractionType.WhoSaidIt, missing.Contains("5:o51:image"));
+    }
+
+    [Fact]
+    public void Literal_RequiresPictureForEveryOption()
+    {
+        var interaction = new ListeningInteraction { Id = 7, Type = ListeningInteractionType.Checkpoint, Kind = CheckpointKind.Literal };
+        var options = new[] {
+            new ListeningInteractionOption { Id = 70, ListeningInteractionId = 7, Text = "Thỏ con", IsMatch = true },
+            new ListeningInteractionOption { Id = 71, ListeningInteractionId = 7, Text = "bác Gấu" }
+        };
+        var missing = ListeningMediaRequirements.Missing(interaction, options, []);
+        Assert.Contains("7:o70:image", missing);
+        Assert.Contains("7:o71:image", missing);
+        Assert.Equal(["70", "71"], ListeningMediaRequirements.ImageOptions(interaction, options).Select(x => x.Id.ToString()));
+    }
+
+    [Theory]
+    [InlineData(CheckpointKind.Prediction)]
+    [InlineData(CheckpointKind.Emotion)]
+    [InlineData(CheckpointKind.Opinion)]
+    public void OtherCheckpointKinds_DoNotRequirePictures(CheckpointKind kind)
+    {
+        var interaction = new ListeningInteraction { Id = 8, Type = ListeningInteractionType.Checkpoint, Kind = kind };
+        var options = new[] { new ListeningInteractionOption { Id = 80, ListeningInteractionId = 8, Text = "Thỏ vui" } };
+        Assert.False(ListeningMediaRequirements.HasOptionImages(interaction));
+        Assert.DoesNotContain(ListeningMediaRequirements.Missing(interaction, options, []), x => x.EndsWith(":image"));
+    }
+
+    [Fact]
     public void ReadAloud_RequiresBothPassageAndPraiseAudio()
     {
         var interaction = new ListeningInteraction

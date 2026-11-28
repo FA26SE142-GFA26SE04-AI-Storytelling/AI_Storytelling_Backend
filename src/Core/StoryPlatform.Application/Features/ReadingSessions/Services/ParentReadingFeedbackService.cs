@@ -35,7 +35,7 @@ public partial class ParentReadingFeedbackService : IParentReadingFeedbackServic
         var (sessions, total) = await _unitOfWork.Repository<ReadingSession>().GetPagedAsync(
             pageIndex,
             pageSize,
-            ParentReadingFeedbackFilter.Sessions(childProfileId, unfinished, query.From, query.To),
+            ParentReadingFeedbackFilter.Sessions(childProfileId, unfinished, query.From, query.To, query.StoryId),
             orderBy: orderBy,
             cancellationToken: ct);
 

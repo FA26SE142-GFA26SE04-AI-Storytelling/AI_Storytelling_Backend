@@ -112,6 +112,145 @@ public sealed partial class MediaGenerationService
         }
     }
 
+    /// <summary>Audio đang tạo dở quá lâu (worker bị ngắt) thì coi như hỏng để tạo lại.</summary>
+    private static readonly TimeSpan InstructionBackfillStale = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// Tạo bù audio câu hướng dẫn cho tương tác đã có media từ trước khi có phần này (truyện cũ).
+    /// Worker gọi lúc rảnh, mỗi lần một câu. Trả true nếu đã làm một câu (còn việc thì gọi tiếp ngay).
+    /// Câu hướng dẫn do hệ thống viết sẵn nên không cần duyệt lại. Bỏ qua gói của phụ huynh vì manifest đã chốt
+    /// danh sách media, và bỏ qua câu đã hết lượt thử.
+    /// </summary>
+    public async Task<bool> BackfillListeningInstructionAudioAsync(CancellationToken ct = default)
+    {
+        var target = FindInstructionBackfillTarget();
+        if (target is null) return false;
+        var (interaction, storyId) = target.Value;
+        var text = ListeningAudioParts.InstructionFor(interaction)!;
+
+        var asset = await ClaimInstructionAssetAsync(interaction, storyId, ct);
+        if (asset is null) return true;
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(_options.Audio.ProviderTimeoutSeconds, 1, 600)));
+            var audio = await _ttsProvider.GenerateAsync(text, timeout.Token);
+            timeout.Token.ThrowIfCancellationRequested();
+            var gate = _audioQualityGate.Validate(audio, SsmlTokenizer.Tokenize(text));
+            if (!gate.IsPass) throw new InvalidOperationException(gate.Reason ?? "AUDIO_QUALITY_GATE_FAILED");
+
+            var path = $"{storyId}/versions/{interaction.StoryVersionId}/listening-{interaction.Id}-i-{ListeningAudioParts.Instruction}-asset-{asset.Id}-{Guid.NewGuid():N}-backfill-a{asset.AttemptCount}{audio.SuggestedExtension}";
+            await using (var content = audio.OpenReadStream())
+                asset.Url = await _mediaStorage.UploadAsync(path, content, audio.MimeType, ct);
+            asset.MimeType = audio.MimeType;
+            asset.Provider = audio.GetMetadata("provider") ?? "GoogleCloud";
+            asset.Model = audio.GetMetadata("model") ?? "unknown";
+            asset.Status = MediaStatus.Ready;
+            asset.ValidationStatus = ValidationStatus.Passed;
+            asset.LastValidationReason = null;
+            asset.CompletedAt = _clock.GetUtcNow().UtcDateTime;
+        }
+        catch (TransientMediaGenerationException exception) when (!ct.IsCancellationRequested)
+        {
+            // Nhà cung cấp tạm bận hoặc hết hạn mức: trả lượt thử, chờ vòng rảnh sau.
+            asset.AttemptCount = Math.Max(0, asset.AttemptCount - 1);
+            asset.Status = MediaStatus.Failed;
+            asset.LastValidationReason = exception.ErrorCode;
+            await SaveInstructionAssetAsync(asset, ct);
+            return false;
+        }
+        catch (Exception exception) when (!ct.IsCancellationRequested)
+        {
+            asset.Status = MediaStatus.Failed;
+            asset.ValidationStatus = ValidationStatus.Failed;
+            asset.LastValidationReason = exception.Message.Length > 200 ? exception.Message[..200] : exception.Message;
+            _logger.LogWarning(exception, "Listening instruction backfill failed Story={StoryId} Interaction={InteractionId} Asset={AssetId} Attempt={Attempt}",
+                storyId, interaction.Id, asset.Id, asset.AttemptCount);
+        }
+        await SaveInstructionAssetAsync(asset, ct);
+        return true;
+    }
+
+    private (ListeningInteraction Interaction, int StoryId)? FindInstructionBackfillTarget()
+    {
+        var interaction = InstructionBackfillCandidates(_unitOfWork.Repository<ListeningInteraction>().Query(),
+            _unitOfWork.Repository<MediaAsset>().Query(), _assetMaxAttempts,
+            _clock.GetUtcNow().UtcDateTime - InstructionBackfillStale).FirstOrDefault();
+        if (interaction is null) return null;
+        var storyId = _unitOfWork.Repository<StoryVersion>().Query()
+            .Where(x => x.Id == interaction.StoryVersionId).Select(x => x.StoryId).First();
+        return (interaction, storyId);
+    }
+
+    /// <summary>Tương tác cần tạo bù audio câu hướng dẫn, theo Id tăng dần. Public để test dịch được sang SQL.</summary>
+    public static IQueryable<ListeningInteraction> InstructionBackfillCandidates(IQueryable<ListeningInteraction> interactions,
+        IQueryable<MediaAsset> assets, int maxAttempts, DateTime staleBefore) =>
+        interactions
+            .Where(interaction => !interaction.IsDeleted && interaction.ParentStoryPackageId == null && interaction.StorySceneId != null
+                // So từng loại thay vì array.Contains: C# 14 đổi Contains sang ReadOnlySpan, EF không dịch được.
+                && (interaction.Type == ListeningInteractionType.RolePlay || interaction.Type == ListeningInteractionType.FillBlank
+                    || interaction.Type == ListeningInteractionType.EventOrdering)
+                // Media của tương tác đã tạo xong; chưa xong thì bước tạo media thường sẽ tạo luôn câu hướng dẫn.
+                && assets.Any(a => a.ListeningInteractionId == interaction.Id && a.Type == MediaType.ListeningAudio
+                    && a.ParentStoryPackageId == null && a.Status == MediaStatus.Ready && a.IsCurrent && !a.IsDeleted)
+                && !assets.Any(a => a.ListeningInteractionId == interaction.Id && a.Type == MediaType.ListeningAudio
+                    && a.ParentStoryPackageId == null && a.ListeningInteractionOptionId == null
+                    && a.AudioPartKey == ListeningAudioParts.Instruction && a.IsCurrent && !a.IsDeleted
+                    && (a.Status == MediaStatus.Ready || a.Status == MediaStatus.ManualReview || a.AttemptCount >= maxAttempts
+                        || (a.Status == MediaStatus.Processing && (a.UpdatedAt ?? a.CreatedAt) > staleBefore))))
+            .OrderBy(interaction => interaction.Id);
+
+    // Giữ khoá truyện khi nhận việc để hai worker không cùng tạo một câu.
+    private async Task<MediaAsset?> ClaimInstructionAssetAsync(ListeningInteraction interaction, int storyId, CancellationToken ct)
+    {
+        await _unitOfWork.BeginTransactionAsync(ct);
+        try
+        {
+            await _unitOfWork.AcquireTransactionLockAsync(storyId, ct);
+            var now = _clock.GetUtcNow().UtcDateTime;
+            var existing = (await _unitOfWork.Repository<MediaAsset>().FindAsync(x =>
+                    x.StoryVersionId == interaction.StoryVersionId && x.ParentStoryPackageId == null &&
+                    x.ListeningInteractionId == interaction.Id && x.ListeningInteractionOptionId == null &&
+                    x.AudioPartKey == ListeningAudioParts.Instruction && x.Type == MediaType.ListeningAudio &&
+                    x.IsCurrent && !x.IsDeleted, cancellationToken: ct))
+                .OrderByDescending(x => x.Id).FirstOrDefault();
+            var busy = existing is not null && (existing.Status is MediaStatus.Ready or MediaStatus.ManualReview ||
+                existing.AttemptCount >= _assetMaxAttempts ||
+                (existing.Status == MediaStatus.Processing && (existing.UpdatedAt ?? existing.CreatedAt) > now - InstructionBackfillStale));
+            if (busy)
+            {
+                await _unitOfWork.CommitTransactionAsync(ct);
+                return null;
+            }
+
+            var asset = existing ?? new MediaAsset
+            {
+                StoryVersionId = interaction.StoryVersionId,
+                RequestedPackageRevision = (await FreshAsync<StoryVersion>(interaction.StoryVersionId, ct))!.MediaState.MediaPackageRevision,
+                ListeningInteractionId = interaction.Id,
+                AudioPartKey = ListeningAudioParts.Instruction,
+                Type = MediaType.ListeningAudio
+            };
+            asset.Status = MediaStatus.Processing;
+            asset.ValidationStatus = ValidationStatus.Pending;
+            asset.AttemptCount++;
+            asset.UpdatedAt = now;
+            if (existing is null) await _unitOfWork.Repository<MediaAsset>().AddAsync(asset, ct);
+            else _unitOfWork.Repository<MediaAsset>().Update(asset);
+            await _unitOfWork.SaveChangesAsync(ct);
+            await _unitOfWork.CommitTransactionAsync(ct);
+            return asset;
+        }
+        catch { await RollbackMediaAsync(CancellationToken.None); throw; }
+    }
+
+    private async Task SaveInstructionAssetAsync(MediaAsset asset, CancellationToken ct)
+    {
+        asset.UpdatedAt = _clock.GetUtcNow().UtcDateTime;
+        _unitOfWork.Repository<MediaAsset>().Update(asset);
+        await _unitOfWork.SaveChangesAsync(ct);
+    }
+
     private async Task<MediaAsset> GetOrCreateListeningAudioAssetAsync(
         int versionId, int interactionId, ListeningAudioPart part, CancellationToken ct)
     {

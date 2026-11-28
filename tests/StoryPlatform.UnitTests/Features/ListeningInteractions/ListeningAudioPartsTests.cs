@@ -27,21 +27,45 @@ public sealed class ListeningAudioPartsTests
                 [Option(11, 1, 2, "Buồn", "Thỏ không buồn."), Option(10, 1, 1, "Vui", "Thỏ vui lắm.")])));
     }
 
+    private const string FillBlankInstruction = "i:instruction:Em hãy nghe câu rồi điền chữ còn thiếu vào chỗ trống nhé!";
+    private const string OrderingInstruction = "i:instruction:Em hãy chạm vào các thẻ theo đúng thứ tự chuyện xảy ra trong truyện nhé!";
+
     [Fact]
-    public void RolePlay_ReadsOnlyMatch() =>
-        Assert.Equal(["i:match:Giỏi quá!"], Keys(ListeningAudioParts.For(
-            new ListeningInteraction { Id = 2, Type = ListeningInteractionType.RolePlay, MatchFeedback = "Giỏi quá!" }, [])));
+    public void RolePlay_ReadsInstructionWithCharacterAndMatch() =>
+        Assert.Equal(["i:instruction:Em hãy đóng vai Thỏ, nghe mẫu rồi nói theo câu này nhé!", "i:match:Giỏi quá!"], Keys(ListeningAudioParts.For(
+            new ListeningInteraction { Id = 2, Type = ListeningInteractionType.RolePlay, CharacterName = " Thỏ ", MatchFeedback = "Giỏi quá!" }, [])));
+
+    [Fact]
+    public void RolePlay_WithoutCharacter_UsesGenericInstruction() =>
+        Assert.Equal("Em hãy nghe mẫu rồi nói theo câu này nhé!",
+            ListeningAudioParts.InstructionFor(new ListeningInteraction { Type = ListeningInteractionType.RolePlay }));
+
+    [Theory]
+    [InlineData(ListeningInteractionType.Checkpoint)]
+    [InlineData(ListeningInteractionType.PicturePrediction)]
+    [InlineData(ListeningInteractionType.ReadAloud)]
+    public void TypesWithPromptOrNoChildCard_HaveNoInstruction(ListeningInteractionType type) =>
+        Assert.Null(ListeningAudioParts.InstructionFor(new ListeningInteraction { Type = type, CharacterName = "Thỏ" }));
+
+    [Fact]
+    public void InstructionIsOptional_OtherPartsRequired()
+    {
+        var parts = ListeningAudioParts.For(new ListeningInteraction { Id = 2, Type = ListeningInteractionType.RolePlay,
+            CharacterName = "Thỏ", MatchFeedback = "Giỏi quá!" }, []);
+        Assert.False(parts.Single(x => x.PartKey == ListeningAudioParts.Instruction).Required);
+        Assert.True(parts.Single(x => x.PartKey == ListeningAudioParts.Match).Required);
+    }
 
     [Fact]
     public void FillBlank_ReadsShortSentenceHintAndFeedback_ButNotAcceptedAnswers() =>
-        Assert.Equal(["i:text:Thỏ gặp thỏ mẹ.", "i:hint:Một con vật.", "i:match:Đúng rồi!", "i:noMatch:Thử nghe lại nhé."], Keys(
+        Assert.Equal([FillBlankInstruction, "i:text:Thỏ gặp thỏ mẹ.", "i:hint:Một con vật.", "i:match:Đúng rồi!", "i:noMatch:Thử nghe lại nhé."], Keys(
             ListeningAudioParts.For(new ListeningInteraction { Id = 3, Type = ListeningInteractionType.FillBlank,
                 SourceQuote = "Thỏ gặp thỏ mẹ.", Hint = "Một con vật.", MatchFeedback = "Đúng rồi!", NoMatchFeedback = "Thử nghe lại nhé." },
                 [Option(30, 3, 1, "thỏ")])));
 
     [Fact]
     public void EventOrdering_ReadsCardTextWithoutFeedback() =>
-        Assert.Equal(["i:match:Đúng rồi!", "i:noMatch:Xếp lại nhé.", "o40:text:Thỏ lạc đường"], Keys(
+        Assert.Equal([OrderingInstruction, "i:match:Đúng rồi!", "i:noMatch:Xếp lại nhé.", "o40:text:Thỏ lạc đường"], Keys(
             ListeningAudioParts.For(new ListeningInteraction { Id = 4, Type = ListeningInteractionType.EventOrdering,
                 MatchFeedback = "Đúng rồi!", NoMatchFeedback = "Xếp lại nhé." },
                 [Option(40, 4, 1, "Thỏ lạc đường", "không đọc")])));

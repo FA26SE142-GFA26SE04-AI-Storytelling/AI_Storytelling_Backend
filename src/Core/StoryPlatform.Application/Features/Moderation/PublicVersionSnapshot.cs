@@ -107,11 +107,13 @@ public sealed record PublicVersionSnapshot(
         option.ImageDescription ?? string.Empty))));
 
     // Audio của thẻ ghi kèm SortOrder (Id đổi khi chép revision); audio của cả tương tác giữ khoá cũ.
+    // Bỏ audio câu hướng dẫn: câu do hệ thống viết sẵn và được tạo bù cho truyện cũ, không phải thay đổi của tác giả.
     public string ListeningMediaKey(ListeningInteraction interaction)
     {
         var options = OptionsOf(interaction.Id);
         var audio = Assets
             .Where(asset => asset.ListeningInteractionId == interaction.Id && asset.Type == MediaType.ListeningAudio
+                            && asset.AudioPartKey != ListeningInteractions.Services.ListeningAudioParts.Instruction
                             && asset.Status == MediaStatus.Ready)
             .Select(asset => (Asset: asset, Option: options.FirstOrDefault(option => option.Id == asset.ListeningInteractionOptionId)))
             .Where(x => x.Asset.ListeningInteractionOptionId is null || x.Option is not null)

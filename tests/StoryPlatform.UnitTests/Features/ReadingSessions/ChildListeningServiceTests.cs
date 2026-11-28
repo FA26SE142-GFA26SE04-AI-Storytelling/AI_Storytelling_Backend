@@ -234,7 +234,7 @@ public sealed class ChildListeningServiceTests
         _h.ListeningInteractions.Single(x => x.Id == 1).StoryVersionId = 999;
         await Assert.ThrowsAsync<NotFoundException>(() => Submit(1, new SubmitListeningAttemptRequestDto { OptionId = 10 }));
 
-        _h.Assets.Single(x => x.ListeningInteractionId == 3).Status = MediaStatus.ManualReview;
+        _h.Assets.Single(x => x.ListeningInteractionId == 3 && x.AudioPartKey == "match").Status = MediaStatus.ManualReview;
         await Assert.ThrowsAsync<NotFoundException>(() => Submit(3, new SubmitListeningAttemptRequestDto()));
 
         _h.ListeningInteractions.Single(x => x.Id == 2).StorySceneId = null;

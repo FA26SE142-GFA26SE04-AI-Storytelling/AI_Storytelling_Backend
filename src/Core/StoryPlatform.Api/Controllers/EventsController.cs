@@ -211,6 +211,11 @@ public class EventsController : BaseApiController
     public async Task<ActionResult<ApiResponse<EventMissionDashboardDto>>> MissionDashboard(int eventId, CancellationToken ct = default) =>
         HandleResult(await _participation.GetMissionDashboardAsync(GetCurrentUserId(), eventId, ct));
 
+    [HttpGet("{eventId:int}/voting-stories")]
+    [HasPermission(Permissions.Shared.EventParticipate)]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<EventStoryLibraryItemDto>>>> VotingStories(int eventId, CancellationToken ct = default) =>
+        HandleResult(await _participation.GetVotingStoriesAsync(GetCurrentUserId(), eventId, ct));
+
     [HttpPost("{eventId:int}/votes")]
     [HasPermission(Permissions.Shared.EventParticipate)]
     public async Task<ActionResult<ApiResponse<EventVoteDto>>> CastVote(int eventId, [FromBody] CastEventVoteRequestDto request, CancellationToken ct = default) =>

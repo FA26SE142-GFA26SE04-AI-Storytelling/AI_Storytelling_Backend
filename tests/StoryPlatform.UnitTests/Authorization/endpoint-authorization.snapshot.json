@@ -957,6 +957,10 @@
     "Administrator",
     "Moderator"
   ],
+  "EventsController.VotingStories#GET {eventId:int}/voting-stories": [
+    "ContentCreator",
+    "User"
+  ],
   "ExistingStoriesController.Adapt#POST {storyId:int}/existing/adapt": [
     "User"
   ],

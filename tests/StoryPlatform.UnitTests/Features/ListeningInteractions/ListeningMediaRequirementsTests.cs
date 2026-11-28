@@ -23,6 +23,17 @@ public sealed class ListeningMediaRequirementsTests
         Assert.Equal(["5:i:match"], ListeningMediaRequirements.Missing(interaction, [], [passage, praise]));
     }
 
+    [Fact]
+    public void MissingInstructionAudio_DoesNotBlock_ButMissingMatchStillDoes()
+    {
+        var interaction = new ListeningInteraction
+        {
+            Id = 5, Type = ListeningInteractionType.RolePlay, CharacterName = "Thỏ", MatchFeedback = "Giỏi quá!"
+        };
+        Assert.Empty(ListeningMediaRequirements.Missing(interaction, [], [Audio(null, ListeningAudioParts.Match)]));
+        Assert.Equal(["5:i:match"], ListeningMediaRequirements.Missing(interaction, [], [Audio(null, ListeningAudioParts.Instruction)]));
+    }
+
     private static readonly ListeningInteraction Picture = new()
     {
         Id = 5, Type = ListeningInteractionType.PicturePrediction, Prompt = "Ai đến?", WaitFeedback = "Nghe tiếp nhé!"

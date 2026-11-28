@@ -10,6 +10,8 @@ public class ParentReadingFeedbackQueryDto
     public DateTime? From { get; set; }
     /// <summary>Mốc cuối (UTC, không tính mốc).</summary>
     public DateTime? To { get; set; }
+    /// <summary>Chỉ lấy các lần đọc của một truyện (bỏ trống = mọi truyện).</summary>
+    public int? StoryId { get; set; }
 }
 
 public class ParentReadingFeedbackItemDto
